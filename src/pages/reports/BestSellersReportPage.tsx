@@ -1,0 +1,263 @@
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Award, Loader2, ShoppingCart, TrendingUp, DollarSign } from "lucide-react";
+import { getApiBase } from "@/lib/apiBase";
+import { getToken } from "@/lib/authStorage";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ReportFilters } from "@/components/reports/ReportFilters";
+import { useReportRestaurants } from "@/hooks/useReportRestaurants";
+import { formatCurrency } from "@/lib/restaurant";
+
+type BestSellerRow = {
+  rank: number;
+  restaurant_id: string;
+  restaurant_name: string;
+  menu_item_id: string | null;
+  item_name: string;
+  category_name: string | null;
+  quantity_sold: number;
+  order_count: number;
+  revenue: number;
+  revenue_share_pct: number;
+};
+
+type BestSellersResponse = {
+  items: BestSellerRow[];
+  summary: {
+    total_revenue: number;
+    total_units: number;
+    period_days: number | null;
+    sort_by: string;
+  };
+};
+
+export default function BestSellersReportPage() {
+  const { data: meta, isLoading: metaLoading, error: metaError } = useReportRestaurants();
+  const restaurants = meta?.restaurants ?? [];
+  const [restaurantId, setRestaurantId] = useState("all");
+  const [periodDays, setPeriodDays] = useState("30");
+  const [limit, setLimit] = useState("10");
+  const [sortBy, setSortBy] = useState("revenue");
+
+  useEffect(() => {
+    if (restaurants.length === 1) {
+      setRestaurantId(restaurants[0].restaurant_id);
+    }
+  }, [restaurants]);
+
+  const { data, isLoading, error } = useQuery<BestSellersResponse>({
+    queryKey: ["best-sellers", restaurantId, periodDays, limit, sortBy],
+    queryFn: async () => {
+      const token = getToken();
+      const params = new URLSearchParams();
+      if (restaurantId !== "all") params.set("restaurant_id", restaurantId);
+      if (periodDays !== "0") params.set("days", periodDays);
+      params.set("limit", limit);
+      params.set("sort", sortBy);
+      const res = await fetch(`${getApiBase()}/api/stats/best-sellers?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch best sellers");
+      return res.json();
+    },
+    enabled: !metaLoading && restaurants.length > 0,
+    refetchInterval: 30000,
+  });
+
+  const rows = data?.items ?? [];
+  const summary = data?.summary;
+  const showRestaurantCol = restaurantId === "all";
+  const colSpan = showRestaurantCol ? 7 : 6;
+
+  const topItem = rows[0];
+
+  if (metaLoading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (metaError || restaurants.length === 0) {
+    return (
+      <div className="p-8 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
+        <p className="font-bold">No restaurant access</p>
+        <p className="text-sm">Link your account to a restaurant to view best sellers.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <Award className="h-8 w-8 text-primary" />
+            Best selling products
+          </h1>
+          <p className="text-muted-foreground mt-1">Top menu items by revenue or units sold</p>
+        </div>
+        <ReportFilters
+          restaurants={restaurants}
+          restaurantId={restaurantId}
+          onRestaurantChange={setRestaurantId}
+          periodDays={periodDays}
+          onPeriodChange={setPeriodDays}
+          showPeriod
+          extra={
+            <>
+              <Select value={limit} onValueChange={setLimit}>
+                <SelectTrigger className="w-full sm:w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">Top 10</SelectItem>
+                  <SelectItem value="25">Top 25</SelectItem>
+                  <SelectItem value="50">Top 50</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-full sm:w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="revenue">By revenue</SelectItem>
+                  <SelectItem value="quantity">By quantity</SelectItem>
+                </SelectContent>
+              </Select>
+            </>
+          }
+        />
+      </div>
+
+      {error ? (
+        <div className="p-6 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
+          <p className="font-bold">Error loading report</p>
+          <p className="text-sm">{(error as Error).message}</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <StatCard
+              label="Top product"
+              value={isLoading ? "…" : topItem?.item_name ?? "—"}
+              icon={Award}
+              sub={topItem ? formatCurrency(topItem.revenue) : undefined}
+            />
+            <StatCard
+              label="Total revenue"
+              value={isLoading ? "…" : formatCurrency(summary?.total_revenue ?? 0)}
+              icon={DollarSign}
+            />
+            <StatCard
+              label="Units sold"
+              value={isLoading ? "…" : String(summary?.total_units ?? 0)}
+              icon={ShoppingCart}
+            />
+            <StatCard
+              label="Products ranked"
+              value={isLoading ? "…" : String(rows.length)}
+              icon={TrendingUp}
+            />
+          </div>
+
+          <Card className="border-none bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
+            <CardHeader>
+              <CardTitle>Rankings</CardTitle>
+              <p className="text-sm text-muted-foreground font-normal">
+                Delivered and completed orders{periodDays !== "0" ? ` · last ${periodDays} days` : ""}.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-muted/50 text-muted-foreground font-medium border-y">
+                    <tr>
+                      <th className="px-6 py-4 w-14">#</th>
+                      {showRestaurantCol && <th className="px-6 py-4">Restaurant</th>}
+                      <th className="px-6 py-4">Product</th>
+                      <th className="px-6 py-4">Category</th>
+                      <th className="px-6 py-4 text-right">Qty sold</th>
+                      <th className="px-6 py-4 text-right">Orders</th>
+                      <th className="px-6 py-4 text-right">Revenue</th>
+                      <th className="px-6 py-4 text-right">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {isLoading && (
+                      <tr>
+                        <td colSpan={colSpan} className="px-6 py-12 text-center">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary inline" />
+                        </td>
+                      </tr>
+                    )}
+                    {!isLoading &&
+                      rows.map((row) => (
+                        <tr key={`${row.restaurant_id}-${row.menu_item_id ?? row.item_name}`} className="hover:bg-muted/30">
+                          <td className="px-6 py-4">
+                            <Badge variant={row.rank <= 3 ? "default" : "secondary"} className="tabular-nums">
+                              {row.rank}
+                            </Badge>
+                          </td>
+                          {showRestaurantCol && (
+                            <td className="px-6 py-4 font-medium">{row.restaurant_name}</td>
+                          )}
+                          <td className="px-6 py-4 font-semibold">{row.item_name}</td>
+                          <td className="px-6 py-4 text-muted-foreground">{row.category_name ?? "—"}</td>
+                          <td className="px-6 py-4 text-right tabular-nums">{row.quantity_sold}</td>
+                          <td className="px-6 py-4 text-right tabular-nums">{row.order_count}</td>
+                          <td className="px-6 py-4 text-right font-medium tabular-nums">
+                            {formatCurrency(row.revenue)}
+                          </td>
+                          <td className="px-6 py-4 text-right text-muted-foreground tabular-nums">
+                            {row.revenue_share_pct}%
+                          </td>
+                        </tr>
+                      ))}
+                    {!isLoading && rows.length === 0 && (
+                      <tr>
+                        <td colSpan={colSpan} className="px-6 py-8 text-center text-muted-foreground">
+                          No sales data for this period.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  sub,
+}: {
+  label: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  sub?: string;
+}) {
+  return (
+    <Card className="bg-card/50 backdrop-blur-sm border-none shadow-lg">
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm text-muted-foreground">{label}</p>
+            <p className="text-lg font-bold mt-1 truncate">{value}</p>
+            {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+          </div>
+          <Icon className="h-6 w-6 text-primary flex-shrink-0" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

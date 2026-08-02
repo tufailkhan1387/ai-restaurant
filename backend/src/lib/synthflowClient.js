@@ -1,0 +1,221 @@
+const SYNTHFLOW_API = (
+  process.env.SYNTHFLOW_API_BASE ||
+  process.env.SYNTHFLOW_API_BASE_URL ||
+  "https://api.synthflow.ai/v2"
+).replace(/\/$/, "");
+
+const FETCH_TIMEOUT_MS = Number(process.env.SYNTHFLOW_FETCH_TIMEOUT_MS || 45000);
+const FETCH_RETRIES = Number(process.env.SYNTHFLOW_FETCH_RETRIES || 2);
+
+function apiKey() {
+  const key = String(process.env.SYNTHFLOW_API_KEY || "").trim();
+  if (!key) throw new Error("SYNTHFLOW_API_KEY is not configured");
+  return key;
+}
+
+function workspaceId() {
+  return String(process.env.SYNTHFLOW_WORKSPACE_ID || "").trim();
+}
+
+function formatFetchError(err, url) {
+  const cause = err?.cause;
+  const code = cause?.code || err?.code;
+  const detail = cause?.message || err?.message || String(err);
+  if (code === "UND_ERR_CONNECT_TIMEOUT" || /timeout/i.test(detail)) {
+    return `Synthflow connect timeout to ${url} (${FETCH_TIMEOUT_MS}ms). Check network/VPN/firewall, or try again.`;
+  }
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+    return `Cannot resolve Synthflow host for ${url}. Check DNS/internet.`;
+  }
+  return `Synthflow request failed (${url}): ${detail}${code ? ` [${code}]` : ""}`;
+}
+
+/**
+ * @param {string} path
+ * @param {{ method?: string; body?: unknown; retries?: number }} [opts]
+ */
+export async function synthflowRequest(path, opts = {}) {
+  const url = path.startsWith("http") ? path : `${SYNTHFLOW_API}${path}`;
+  const retries = opts.retries ?? FETCH_RETRIES;
+  let lastErr = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const resp = await fetch(url, {
+        method: opts.method || "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey()}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: opts.body != null ? JSON.stringify(opts.body) : undefined,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      const text = await resp.text();
+      let json = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = { raw: text };
+      }
+      if (!resp.ok) {
+        const msg =
+          json?.detail?.description ||
+          json?.detail?.status ||
+          json?.error ||
+          json?.message ||
+          text ||
+          `Synthflow HTTP ${resp.status}`;
+        const err = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+        err.status = resp.status;
+        err.payload = json;
+        // Retry only transient 5xx / 429
+        if ((resp.status >= 500 || resp.status === 429) && attempt < retries) {
+          lastErr = err;
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+      return json;
+    } catch (e) {
+      lastErr = e;
+      const retryable =
+        e?.name === "TimeoutError" ||
+        e?.cause?.code === "UND_ERR_CONNECT_TIMEOUT" ||
+        e?.cause?.code === "ECONNRESET" ||
+        e?.message === "fetch failed";
+      if (retryable && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+        continue;
+      }
+      if (e?.status) throw e;
+      throw new Error(formatFetchError(e, url));
+    }
+  }
+  throw lastErr || new Error(`Synthflow request failed: ${url}`);
+}
+
+/** Map app language codes to Synthflow-style locales. */
+export function toSynthflowLanguage(code) {
+  const c = String(code || "en").toLowerCase();
+  const map = {
+    en: "en-US",
+    es: "es-ES",
+    fr: "fr-FR",
+    de: "de-DE",
+    it: "it-IT",
+    pt: "pt-BR",
+    ar: "ar-SA",
+    hi: "hi-IN",
+    ja: "ja-JP",
+    ko: "ko-KR",
+    zh: "zh-CN",
+    tr: "tr-TR",
+    nl: "nl-NL",
+    pl: "pl-PL",
+  };
+  if (c.includes("-")) return c;
+  return map[c] || "en-US";
+}
+
+/**
+ * Import a Telnyx (or other SIP) number into Synthflow workspace.
+ * Requires SIP trunk already pointing at sip.synthflow.ai (Enterprise).
+ */
+export async function importCustomNumber({ phone_number, friendly_name }) {
+  const ws = workspaceId();
+  if (!ws) throw new Error("SYNTHFLOW_WORKSPACE_ID is required to import Telnyx numbers");
+
+  const trunkUser = String(process.env.TELNYX_SIP_USERNAME || "").trim();
+  const trunkPwd = String(process.env.TELNYX_SIP_PASSWORD || "").trim();
+
+  const body = {
+    workspace_id: ws,
+    phone_number,
+    friendly_name: friendly_name || phone_number,
+  };
+  if (trunkUser) body.trunk_username = trunkUser;
+  if (trunkPwd) body.trunk_pwd = trunkPwd;
+  if (process.env.TELNYX_SIP_DOMAIN) {
+    body.sip_domain = String(process.env.TELNYX_SIP_DOMAIN).trim();
+  } else {
+    body.sip_domain = "sip.telnyx.com";
+  }
+
+  return synthflowRequest("/custom-numbers", { method: "POST", body });
+}
+
+export async function listWorkspaceNumbers() {
+  const ws = workspaceId();
+  if (!ws) return [];
+  const json = await synthflowRequest(`/numbers?workspace=${encodeURIComponent(ws)}&limit=100`);
+  return (
+    json?.response?.phone_numbers ||
+    json?.response?.numbers ||
+    json?.phone_numbers ||
+    json?.numbers ||
+    []
+  );
+}
+
+/**
+ * Create an inbound Synthflow voice agent.
+ */
+export async function createInboundAgent(payload) {
+  return synthflowRequest("/assistants", {
+    method: "POST",
+    body: {
+      type: "inbound",
+      voice_engine_version: "2.0",
+      is_recording: true,
+      ...payload,
+    },
+  });
+}
+
+export async function updateAgent(modelId, payload) {
+  return synthflowRequest(`/assistants/${encodeURIComponent(modelId)}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function createInformationExtractor({ kind, identifier, description, examples, choices }) {
+  /** @type {Record<string, unknown>} */
+  const inner = { identifier, description };
+  if (kind === "OPEN_QUESTION" && examples?.length) inner.examples = examples;
+  if (kind === "SINGLE_CHOICE" && choices?.length) inner.choices = choices;
+
+  const body = {
+    INFORMATION_EXTRACTOR: {
+      [kind]: inner,
+    },
+  };
+  const json = await synthflowRequest("/actions", { method: "POST", body });
+  const actionId =
+    json?.response?.action_id ||
+    json?.action_id ||
+    json?.response?.id ||
+    json?.id ||
+    null;
+  return { raw: json, action_id: actionId };
+}
+
+export async function attachActions(modelId, actionIds) {
+  const ids = (actionIds || []).filter(Boolean);
+  if (!ids.length) return null;
+  return synthflowRequest("/actions/attach", {
+    method: "POST",
+    body: { model_id: modelId, actions: ids },
+  });
+}
+
+/**
+ * Prefer PUBLIC_API_URL. Do not silently use the Vite frontend origin.
+ */
+export function postCallWebhookUrl() {
+  const api = String(process.env.PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+  if (api) return `${api}/api/functions/synthflow-post-call-webhook`;
+  return null;
+}

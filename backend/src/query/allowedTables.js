@@ -1,0 +1,78 @@
+/** Tables the generic query API may touch (defense in depth — keep aligned with the app). */
+export const ALLOWED_TABLES = new Set([
+  "profiles",
+  "user_roles",
+  "restaurant_members",
+  "restaurants",
+  "restaurant_settings",
+  "menu_categories",
+  "menu_items",
+  "menu_sub_categories",
+  "menu_addons",
+  "menu_item_addons",
+  "menu_item_variants",
+  "deals",
+  "discounts",
+  "orders",
+  "order_items",
+  "order_status_history",
+  "drivers",
+  "driver_restaurants",
+  "vehicles",
+  "calls",
+  "conversations",
+  "customers",
+  "leads",
+  "ai_agents",
+  "agent_knowledge",
+  "notification_queue",
+  "auto_dialer_sessions",
+  "auto_dialer_leads",
+  "auto_dialer_events",
+  "auto_dialer_prompt_variants",
+  "outbound_campaigns",
+  "outbound_leads",
+  "mockup_followups",
+  "website_analysis",
+  "restaurant_hours",
+  "cuisines",
+  "restaurant_cuisines",
+]);
+
+/**
+ * Tables with a real `restaurant_id` column (tenant filter uses whereIn on this column).
+ * Do not list tables scoped only via joins (e.g. order_items) here.
+ */
+export const RESTAURANT_SCOPED = new Set([
+  "restaurant_settings",
+  "menu_categories",
+  "menu_sub_categories",
+  "menu_items",
+  "menu_addons",
+  "deals",
+  "discounts",
+  "orders",
+  "driver_restaurants",
+  "vehicles",
+  "notification_queue",
+  "agent_knowledge",
+  "restaurant_hours",
+  "restaurant_cuisines",
+]);
+
+/** No per-row restaurant_id — tenant users get no rows via generic query API */
+export const TENANT_QUERY_DENY = new Set([
+  "ai_agents",
+  "calls",
+  "conversations",
+  "customers",
+  "leads",
+  "auto_dialer_sessions",
+  "auto_dialer_leads",
+  "auto_dialer_events",
+  "auto_dialer_prompt_variants",
+  "outbound_campaigns",
+  "outbound_leads",
+  "mockup_followups",
+  "website_analysis",
+]);

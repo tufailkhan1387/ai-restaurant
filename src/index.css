@@ -1,0 +1,197 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Royal Restaurant — design system */
+
+@layer base {
+  :root {
+    /* Warm restaurant palette: orange primary, deep red accents, cream background */
+    --background: 36 40% 97%;
+    --foreground: 20 30% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 20 30% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 30% 15%;
+
+    --primary: 22 92% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 36 35% 92%;
+    --secondary-foreground: 20 30% 15%;
+
+    --muted: 36 30% 94%;
+    --muted-foreground: 20 12% 42%;
+
+    --accent: 0 72% 51%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 75% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 25% 88%;
+    --input: 30 25% 88%;
+    --ring: 22 92% 52%;
+
+    --radius: 0.5rem;
+
+    /* Status tokens (kept for legacy components; recolored to warm palette) */
+    --status-available: 142 65% 38%;
+    --status-on-call: 22 92% 52%;
+    --status-busy: 38 92% 50%;
+    --status-offline: 20 12% 50%;
+    --status-break: 320 55% 55%;
+
+    --priority-low: 142 65% 38%;
+    --priority-medium: 38 92% 50%;
+    --priority-high: 22 92% 52%;
+    --priority-urgent: 0 75% 45%;
+
+    /* Sidebar — deep warm brown */
+    --sidebar-background: 20 30% 14%;
+    --sidebar-foreground: 36 35% 92%;
+    --sidebar-primary: 22 92% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 20 25% 20%;
+    --sidebar-accent-foreground: 36 35% 95%;
+    --sidebar-border: 20 25% 20%;
+    --sidebar-ring: 22 92% 52%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(22 92% 52%) 0%, hsl(0 72% 51%) 100%);
+    --gradient-success: linear-gradient(135deg, hsl(142 65% 38%) 0%, hsl(160 70% 38%) 100%);
+    --gradient-warning: linear-gradient(135deg, hsl(38 92% 50%) 0%, hsl(22 92% 52%) 100%);
+    --gradient-dark: linear-gradient(180deg, hsl(20 30% 14%) 0%, hsl(20 30% 10%) 100%);
+  }
+
+  .dark {
+    --background: 20 25% 8%;
+    --foreground: 36 30% 95%;
+
+    --card: 20 25% 12%;
+    --card-foreground: 36 30% 95%;
+
+    --popover: 20 25% 12%;
+    --popover-foreground: 36 30% 95%;
+
+    --primary: 22 92% 55%;
+    --primary-foreground: 20 30% 10%;
+
+    --secondary: 20 20% 18%;
+    --secondary-foreground: 36 30% 95%;
+
+    --muted: 20 20% 18%;
+    --muted-foreground: 36 15% 65%;
+
+    --accent: 0 72% 51%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 65% 40%;
+    --destructive-foreground: 36 30% 95%;
+
+    --border: 20 20% 18%;
+    --input: 20 20% 18%;
+    --ring: 22 92% 55%;
+
+    --sidebar-background: 20 30% 6%;
+    --sidebar-foreground: 36 30% 92%;
+    --sidebar-primary: 22 92% 55%;
+    --sidebar-primary-foreground: 20 30% 10%;
+    --sidebar-accent: 20 25% 14%;
+    --sidebar-accent-foreground: 36 30% 95%;
+    --sidebar-border: 20 25% 14%;
+    --sidebar-ring: 22 92% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Outfit', sans-serif;
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-success {
+    background: var(--gradient-success);
+  }
+
+  .gradient-warning {
+    background: var(--gradient-warning);
+  }
+
+  .gradient-dark {
+    background: var(--gradient-dark);
+  }
+
+  .status-available {
+    @apply bg-status-available text-white;
+  }
+
+  .status-on-call {
+    @apply bg-status-on-call text-white;
+  }
+
+  .status-busy {
+    @apply bg-status-busy text-white;
+  }
+
+  .status-offline {
+    @apply bg-status-offline text-white;
+  }
+
+  .status-break {
+    @apply bg-status-break text-white;
+  }
+
+  .animate-pulse-subtle {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-subtle {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .animate-slide-in {
+    animation: slide-in 0.3s ease-out;
+  }
+
+  @keyframes slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Custom Sleek Scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 5px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--sidebar-accent));
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary));
+  }
+}

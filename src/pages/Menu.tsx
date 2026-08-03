@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge } from "lucide-react";
+import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge, Search, X, FilterX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/lib/restaurant";
@@ -129,100 +129,157 @@ function buildAddonRestaurantClusters(
 
 function MenuItemsTable({
   items: rows,
-  onEdit,
-  onDelete,
-  emptyMessage,
-  addonSummary,
+  categories,
   subCategories,
   itemVariants,
+  onEdit,
+  onDelete,
+  onToggleAvailability,
+  addonSummary,
+  itemAddonCount,
   showRestaurant,
   restaurantMap,
+  emptyMessage,
 }: {
   items: MenuItem[];
-  onEdit: (it: MenuItem) => void;
-  onDelete: (id: string) => void;
-  emptyMessage?: string;
-  addonSummary?: Record<string, string>;
+  categories?: Category[];
   subCategories?: SubCategory[];
   itemVariants?: MenuItemVariant[];
+  onEdit: (it: MenuItem) => void;
+  onDelete: (id: string) => void;
+  onToggleAvailability?: (it: MenuItem) => void;
+  addonSummary?: Record<string, string>;
+  itemAddonCount?: Record<string, number>;
   showRestaurant?: boolean;
   restaurantMap?: Record<string, string>;
+  emptyMessage?: string;
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm min-w-[920px]">
-        <thead className="text-left bg-muted/50">
+      <table className="w-full text-sm min-w-[980px] border-collapse">
+        <thead className="text-left bg-muted/40 text-muted-foreground border-b text-xs font-semibold uppercase tracking-wider">
           <tr>
-            <th className="p-3 w-14">Image</th>
-            <th className="p-3">Name</th>
-            <th className="p-3 max-w-[180px]">Description</th>
-            <th className="p-3 whitespace-nowrap">Price</th>
-            <th className="p-3 whitespace-nowrap">Prep</th>
-            <th className="p-3">Tags</th>
-            <th className="p-3 max-w-[140px]">Add-ons</th>
-            <th className="p-3">Sub-category</th>
-            {showRestaurant && <th className="p-3">Restaurant</th>}
-            <th className="p-3">Available</th>
-            <th className="p-3 w-[100px]"></th>
+            <th className="py-3 px-4 w-12 text-center">#</th>
+            <th className="py-3 px-4 w-20">ID</th>
+            <th className="py-3 px-4 w-16">Image</th>
+            <th className="py-3 px-4 min-w-[180px]">Product name</th>
+            {showRestaurant && <th className="py-3 px-4">Business</th>}
+            <th className="py-3 px-4">Menu category</th>
+            <th className="py-3 px-4 whitespace-nowrap">Price</th>
+            <th className="py-3 px-4">Prep / Tags</th>
+            <th className="py-3 px-4">Sub-category</th>
+            <th className="py-3 px-4 text-center whitespace-nowrap">Add-on groups</th>
+            <th className="py-3 px-4 text-center">Status</th>
+            <th className="py-3 px-4 w-24 text-right">Actions</th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map((it) => {
+        <tbody className="divide-y divide-border/60">
+          {rows.map((it, idx) => {
             const thumbSrc = resolveMediaUrl(it.image_url);
+            const categoryName = categories?.find((c) => c.id === it.category_id)?.name || "Uncategorized";
+            const subCategoryName = subCategories?.find((sc) => sc.id === it.sub_category_id)?.name || "—";
+            const addOnCount = itemAddonCount?.[it.id] ?? (addonSummary?.[it.id] ? addonSummary[it.id].split(',').length : 0);
+            const addOnNames = addonSummary?.[it.id];
+            const shortId = it.id ? (it.id.length > 8 ? it.id.slice(0, 4) : it.id) : String(idx + 1000);
+
             return (
-              <tr key={it.id} className="border-t">
-                <td className="p-2 align-middle">
+              <tr key={it.id} className="hover:bg-muted/40 transition-colors">
+                <td className="py-3 px-4 align-middle text-center text-xs font-medium text-muted-foreground">
+                  {idx + 1}
+                </td>
+                <td className="py-3 px-4 align-middle text-xs font-mono text-muted-foreground">
+                  {shortId}
+                </td>
+                <td className="py-3 px-4 align-middle">
                   {thumbSrc ? (
-                    <img src={thumbSrc} alt="" className="h-10 w-10 rounded object-cover border" />
+                    <img src={thumbSrc} alt={it.name} className="h-10 w-10 rounded-md object-cover border bg-muted/20" />
                   ) : (
-                    <span className="text-muted-foreground text-xs">—</span>
+                    <div className="h-10 w-10 rounded-md border bg-muted/30 flex items-center justify-center text-muted-foreground text-xs font-medium">
+                      <UtensilsCrossed className="h-4 w-4 opacity-50" />
+                    </div>
                   )}
                 </td>
-                <td className="p-3 align-middle font-medium">
-                  <div>{it.name}</div>
-                  {itemVariants?.filter(v => v.menu_item_id === it.id).length ? (
-                    <div className="flex gap-1 mt-1">
-                      {itemVariants.filter(v => v.menu_item_id === it.id).map(v => (
-                        <Badge key={v.id} variant="secondary" className="text-[9px] px-1 py-0 h-3.5 font-normal">
+                <td className="py-3 px-4 align-middle font-medium">
+                  <div className="text-foreground font-semibold">{it.name}</div>
+                  {it.description && (
+                    <div className="text-xs text-muted-foreground line-clamp-1 max-w-[220px]" title={it.description}>
+                      {it.description}
+                    </div>
+                  )}
+                  {itemVariants?.filter((v) => v.menu_item_id === it.id).length ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {itemVariants.filter((v) => v.menu_item_id === it.id).map((v) => (
+                        <Badge key={v.id} variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">
                           {v.name}
                         </Badge>
                       ))}
                     </div>
                   ) : null}
                 </td>
-                <td className="p-3 align-middle text-muted-foreground max-w-[200px] truncate" title={it.description || undefined}>{it.description || "—"}</td>
-                <td className="p-3 align-middle whitespace-nowrap">{formatCurrency(it.price)}</td>
-                <td className="p-3 align-middle whitespace-nowrap text-muted-foreground">{it.prep_time_minutes ?? "—"} min</td>
-                <td className="p-3 align-middle">
-                  <div className="flex flex-wrap gap-1">
-                    {it.dietary_tags?.length ? it.dietary_tags.map((t) => <Badge key={t} variant="outline" className="text-xs font-normal">{t}</Badge>) : <span className="text-muted-foreground">—</span>}
-                  </div>
-                </td>
-                <td className="p-3 align-middle text-muted-foreground text-xs max-w-[160px] truncate" title={addonSummary?.[it.id]}>
-                  {addonSummary?.[it.id] ? addonSummary[it.id] : "—"}
-                </td>
-                <td className="p-3 align-middle text-muted-foreground">
-                  {subCategories?.find((sc) => sc.id === it.sub_category_id)?.name || "—"}
-                </td>
                 {showRestaurant && (
-                  <td className="p-3 align-middle text-muted-foreground">
+                  <td className="py-3 px-4 align-middle text-xs text-muted-foreground font-medium">
                     {restaurantMap?.[it.restaurant_id] || "—"}
                   </td>
                 )}
-                <td className="p-3 align-middle">
-                  {it.is_available ? (
-                    <Badge variant="outline" className="bg-green-500/15 text-green-700">Yes</Badge>
+                <td className="py-3 px-4 align-middle">
+                  <Badge variant="outline" className="text-xs font-medium bg-muted/40 text-foreground border-muted-foreground/30">
+                    {categoryName}
+                  </Badge>
+                </td>
+                <td className="py-3 px-4 align-middle whitespace-nowrap font-semibold text-foreground">
+                  {formatCurrency(it.price)}
+                </td>
+                <td className="py-3 px-4 align-middle">
+                  <div className="space-y-1">
+                    {it.prep_time_minutes ? (
+                      <div className="text-xs text-muted-foreground whitespace-nowrap">{it.prep_time_minutes} min</div>
+                    ) : null}
+                    {it.dietary_tags?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {it.dietary_tags.map((t) => (
+                          <Badge key={t} variant="outline" className="text-[10px] px-1 py-0 font-normal">
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="py-3 px-4 align-middle text-xs text-muted-foreground">
+                  {subCategoryName}
+                </td>
+                <td className="py-3 px-4 align-middle text-center">
+                  {addOnNames ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 text-xs font-semibold rounded-full bg-muted text-foreground cursor-help underline decoration-dotted">
+                          {addOnCount}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs">
+                        {addOnNames}
+                      </TooltipContent>
+                    </Tooltip>
                   ) : (
-                    <Badge variant="secondary">No</Badge>
+                    <span className="text-xs text-muted-foreground font-medium">{addOnCount}</span>
                   )}
                 </td>
-                <td className="p-2 align-middle text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => onEdit(it)}>
-                      <Pencil className="h-3.5 w-3.5" />
+                <td className="py-3 px-4 align-middle text-center">
+                  <div className="flex items-center justify-center">
+                    <Switch
+                      checked={Boolean(it.is_available)}
+                      onCheckedChange={() => onToggleAvailability?.(it)}
+                      className="data-[state=checked]:bg-primary"
+                    />
+                  </div>
+                </td>
+                <td className="py-3 px-4 align-middle text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => onEdit(it)}>
+                      <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onDelete(it.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(it.id)}>
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </td>
@@ -230,9 +287,11 @@ function MenuItemsTable({
             );
           })}
 
-          {rows.length === 0 && emptyMessage && (
+          {rows.length === 0 && (
             <tr>
-              <td colSpan={10 + (showRestaurant ? 1 : 0)} className="p-8 text-center text-muted-foreground">{emptyMessage}</td>
+              <td colSpan={11 + (showRestaurant ? 1 : 0)} className="py-12 text-center text-muted-foreground">
+                {emptyMessage || "No items found."}
+              </td>
             </tr>
           )}
         </tbody>
@@ -282,6 +341,9 @@ export default function Menu() {
     Record<string, { count: number; restaurantNames: string[] }>
   >({});
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilterId, setCategoryFilterId] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const load = useCallback(async () => {
     if (!restaurantId) return;
@@ -362,19 +424,67 @@ export default function Menu() {
     ? addons.filter((a) => restaurantFilterId === 'all' || String(a.restaurant_id) === String(restaurantFilterId))
     : addons;
 
-  const addonSummary = useMemo(() => {
+  const filteredItems = useMemo(() => {
+    let list = displayedItems;
+
+    if (categoryFilterId !== 'all') {
+      list = list.filter((it) => String(it.category_id) === String(categoryFilterId));
+    }
+
+    if (statusFilter === 'available') {
+      list = list.filter((it) => Boolean(it.is_available));
+    } else if (statusFilter === 'unavailable') {
+      list = list.filter((it) => !it.is_available);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((it) =>
+        it.name.toLowerCase().includes(q) ||
+        (it.description && it.description.toLowerCase().includes(q))
+      );
+    }
+
+    return list;
+  }, [displayedItems, categoryFilterId, statusFilter, searchQuery]);
+
+  const hasActiveFilters = searchQuery !== "" || categoryFilterId !== "all" || statusFilter !== "all" || (isSuperAdmin && restaurantFilterId !== "all");
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setCategoryFilterId("all");
+    setStatusFilter("all");
+    if (isSuperAdmin) setRestaurantFilterId("all");
+  };
+
+  const { addonSummary, itemAddonCount } = useMemo(() => {
     const namesByItem: Record<string, string[]> = {};
+    const countByItem: Record<string, number> = {};
     for (const row of itemAddonLinks) {
       if (!namesByItem[row.menu_item_id]) namesByItem[row.menu_item_id] = [];
       const ad = addons.find((a) => a.id === row.menu_addon_id);
       if (ad) namesByItem[row.menu_item_id].push(ad.name);
+      countByItem[row.menu_item_id] = (countByItem[row.menu_item_id] || 0) + 1;
     }
     const out: Record<string, string> = {};
     for (const [id, names] of Object.entries(namesByItem)) {
       out[id] = names.join(", ");
     }
-    return out;
+    return { addonSummary: out, itemAddonCount: countByItem };
   }, [itemAddonLinks, addons]);
+
+  const toggleItemAvailability = async (item: MenuItem) => {
+    const nextAvailable = !item.is_available;
+    setItems((prev) => prev.map((row) => (row.id === item.id ? { ...row, is_available: nextAvailable } : row)));
+    const { error } = await supabase.from("menu_items").update({ is_available: nextAvailable }).eq("id", item.id);
+    if (error) {
+      toast({ variant: "destructive", title: "Failed to update status", description: error.message });
+      setItems((prev) => prev.map((row) => (row.id === item.id ? { ...row, is_available: item.is_available } : row)));
+    } else {
+      toast({ title: nextAvailable ? `"${item.name}" marked as available` : `"${item.name}" marked as unavailable` });
+      void triggerMenuSync();
+    }
+  };
 
   // Load items for all restaurants when role is super_admin
   useEffect(() => {
@@ -1231,59 +1341,111 @@ export default function Menu() {
           </Card>
         </div>
       ) : (
-        <div className="space-y-6">
-          {categories.length === 0 && (
-            <Card><CardContent className="py-10 text-center text-muted-foreground">No categories yet. Create one to get started.</CardContent></Card>
-          )}
-          {displayedCategories.map((cat) => {
-            const catItems = displayedItems.filter((i) => i.category_id === cat.id);
-            if (catItems.length === 0) return null;
-            return (
-              <Card key={cat.id}>
-                <CardHeader className="flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">{cat.name}{!cat.is_active && <Badge variant="secondary">Hidden</Badge>}</CardTitle>
-                    {cat.description && <p className="text-sm text-muted-foreground">{cat.description}</p>}
-                  </div>
-                  {/* <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => { setEditCat(cat); setCatDialog(true); }}><Pencil className="h-4 w-4" /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => deleteCategory(cat.id)}><Trash2 className="h-4 w-4" /></Button>
-                  </div> */}
-                </CardHeader>
-                <CardContent className="p-0">
-                  <MenuItemsTable
-                    items={catItems}
-                    onEdit={beginEditItem}
-                    onDelete={deleteItem}
-                    emptyMessage="No items in this category"
-                    addonSummary={addonSummary}
-                    subCategories={subCategories}
-                    itemVariants={itemVariants}
-                    showRestaurant={isSuperAdmin}
-                    restaurantMap={restaurantMap}
-                  />
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {items.filter((i) => !i.category_id).length > 0 && (
-            <Card>
-              <CardHeader><CardTitle>Uncategorized</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                <MenuItemsTable
-                  items={items.filter((i) => !i.category_id)}
-                  onEdit={beginEditItem}
-                  onDelete={deleteItem}
-                  addonSummary={addonSummary}
-                  subCategories={subCategories}
-                  itemVariants={itemVariants}
-                  emptyMessage="No menu items yet."
+        <Card className="border shadow-sm">
+          <CardHeader className="p-4 pb-3 border-b bg-card">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              {/* Search by name */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by product name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-9 text-sm bg-background"
                 />
-              </CardContent>
-            </Card>
-          )}
-        </div>
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Status filter */}
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[130px] h-9 text-sm">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Status: All</SelectItem>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="unavailable">Unavailable</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Category filter */}
+                <Select value={categoryFilterId} onValueChange={setCategoryFilterId}>
+                  <SelectTrigger className="w-[160px] h-9 text-sm">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Restaurants filter for Super Admin */}
+                {isSuperAdmin && (
+                  <Select value={restaurantFilterId} onValueChange={setRestaurantFilterId}>
+                    <SelectTrigger className="w-[160px] h-9 text-sm">
+                      <SelectValue placeholder="Restaurants" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Restaurants</SelectItem>
+                      {allRestaurants.map((r) => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Clear filters button */}
+                {hasActiveFilters && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <FilterX className="h-3.5 w-3.5 mr-1" />
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <MenuItemsTable
+              items={filteredItems}
+              categories={categories}
+              subCategories={subCategories}
+              itemVariants={itemVariants}
+              onEdit={beginEditItem}
+              onDelete={deleteItem}
+              onToggleAvailability={toggleItemAvailability}
+              addonSummary={addonSummary}
+              itemAddonCount={itemAddonCount}
+              showRestaurant={isSuperAdmin || restaurantFilterId === 'all'}
+              restaurantMap={restaurantMap}
+              emptyMessage={
+                hasActiveFilters
+                  ? "No menu items match your current search and filter criteria."
+                  : "No menu items found. Click 'Add Item' to create your first item."
+              }
+            />
+          </CardContent>
+        </Card>
       )}
     </div>
   );

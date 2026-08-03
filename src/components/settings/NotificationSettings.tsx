@@ -135,16 +135,16 @@ export function NotificationSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
+            <Bell className="h-5 w-5 text-primary" />
             New Order Alerts
           </CardTitle>
           <CardDescription>
             The bell rings continuously when a new order arrives until you acknowledge it.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
+        <CardContent className="space-y-4">
+          <div className="setting-row">
+            <div className="space-y-0.5 min-w-0">
               <Label>Enable order ringtone</Label>
               <p className="text-sm text-muted-foreground">Play a sound on every new order</p>
             </div>
@@ -159,7 +159,7 @@ export function NotificationSettings() {
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="form-field">
             <Label>Ringtone</Label>
             <div className="flex gap-2">
               <Select
@@ -189,7 +189,7 @@ export function NotificationSettings() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="form-field">
             <div className="flex items-center justify-between">
               <Label>Volume</Label>
               <span className="text-sm text-muted-foreground">
@@ -218,14 +218,14 @@ export function NotificationSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
+            <Bell className="h-5 w-5 text-primary" />
             Other Notifications
           </CardTitle>
           <CardDescription>General notification preferences</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
+        <CardContent className="space-y-3">
+          <div className="setting-row">
+            <div className="space-y-0.5 min-w-0">
               <Label>Email Notifications</Label>
               <p className="text-sm text-muted-foreground">Receive email updates for important events</p>
             </div>
@@ -237,8 +237,8 @@ export function NotificationSettings() {
               }}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
+          <div className="setting-row">
+            <div className="space-y-0.5 min-w-0">
               <Label>Desktop Notifications</Label>
               <p className="text-sm text-muted-foreground">Show browser notifications</p>
             </div>
@@ -250,8 +250,8 @@ export function NotificationSettings() {
               }}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
+          <div className="setting-row">
+            <div className="space-y-0.5 min-w-0">
               <Label>Missed Call Alerts</Label>
               <p className="text-sm text-muted-foreground">Get notified about missed calls</p>
             </div>
@@ -266,7 +266,7 @@ export function NotificationSettings() {
         </CardContent>
       </Card>
       {saving && (
-        <div className="fixed bottom-4 right-4 bg-primary text-primary-foreground px-4 py-2 rounded-md shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
+        <div className="fixed bottom-4 right-4 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
           <Loader2 className="h-4 w-4 animate-spin" />
           Saving changes...
         </div>

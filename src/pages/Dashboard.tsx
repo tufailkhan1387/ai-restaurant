@@ -6,18 +6,19 @@ import {
   ChefHat,
   Store,
   Tag,
-  Bike,
-  Car,
-  Phone,
-  MapPin,
-  Hash,
-  CreditCard,
-  Mail,
   LayoutDashboard,
   Calendar,
   ArrowUpRight,
   BarChart2,
   DollarSign,
+  Filter,
+  Building2,
+  Globe,
+  Package,
+  Smartphone,
+  Ticket,
+  Users,
+  Settings,
 } from "lucide-react";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { Button } from "@/components/ui/button";
@@ -27,13 +28,11 @@ import { getToken } from "@/lib/authStorage";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS, OrderStatus, formatCurrency } from "@/lib/restaurant";
+import { ORDER_STATUS_LABELS, OrderStatus, formatCurrency } from "@/lib/restaurant";
 import { getApiBase } from "@/lib/apiBase";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type GlobalStats = {
   totalRestaurants: number;
@@ -63,20 +62,35 @@ type RecentOrderRow = {
   estimated_delivery_at: string | null;
 };
 
+const AVATAR_TONES = [
+  "bg-violet-100 text-violet-700",
+  "bg-sky-100 text-sky-700",
+  "bg-rose-100 text-rose-700",
+  "bg-teal-100 text-teal-700",
+  "bg-amber-100 text-amber-700",
+  "bg-indigo-100 text-indigo-700",
+];
+
 function StatCardSkeleton() {
   return (
-    <Card className="border-border/80">
-      <CardContent className="p-6">
+    <Card className="rounded-xl border-border/50 shadow-sm">
+      <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2 flex-1">
             <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-9 w-16" />
+            <Skeleton className="h-8 w-16" />
           </div>
-          <Skeleton className="h-12 w-12 rounded-xl shrink-0" />
+          <Skeleton className="h-11 w-11 rounded-xl shrink-0" />
         </div>
       </CardContent>
     </Card>
   );
+}
+
+function avatarTone(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash + name.charCodeAt(i) * (i + 1)) % AVATAR_TONES.length;
+  return AVATAR_TONES[hash];
 }
 
 export default function Dashboard() {
@@ -96,21 +110,26 @@ export default function Dashboard() {
     []
   );
 
-  const quickActions = useMemo(() => {
-    const base: { href: string; label: string; icon: LucideIcon }[] = [
-      { href: "/orders", label: "Orders", icon: ShoppingBag },
-      { href: "/menu", label: "Menu", icon: ChefHat },
-      { href: "/deals", label: "Deals & offers", icon: Tag },
-    ];
+  /** Exactly 6 shortcut cards — drivers / vehicles not included */
+  const quickActions = useMemo((): { href: string; label: string; icon: LucideIcon }[] => {
     if (isSuperAdmin) {
       return [
-        ...base,
+        { href: "/orders", label: "Orders", icon: ShoppingBag },
+        { href: "/menu", label: "Menu", icon: ChefHat },
+        { href: "/deals", label: "Deals & offers", icon: Tag },
         { href: "/restaurants", label: "Restaurants", icon: Store },
         { href: "/earnings", label: "Earnings", icon: DollarSign },
         { href: "/reports/restaurant", label: "Reports", icon: BarChart2 },
       ];
     }
-    return base;
+    return [
+      { href: "/orders", label: "Orders", icon: ShoppingBag },
+      { href: "/menu", label: "Menu", icon: ChefHat },
+      { href: "/deals", label: "Deals & offers", icon: Tag },
+      { href: "/coupons", label: "Coupons", icon: Ticket },
+      { href: "/users/customers", label: "Customers", icon: Users },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ];
   }, [isSuperAdmin]);
 
   const { data: globalStats, isPending: statsLoading } = useQuery({
@@ -135,7 +154,7 @@ export default function Dashboard() {
         )
         .eq("restaurant_id", restaurantId!)
         .order("created_at", { ascending: false })
-        .limit(8);
+        .limit(10);
       return (data || []) as RecentOrderRow[];
     },
     refetchInterval: 15000,
@@ -150,414 +169,321 @@ export default function Dashboard() {
     },
   });
 
-  const { data: fleetCounts } = useQuery({
-    queryKey: ["dashboard-fleet-counts", restaurantId],
-    enabled: !!restaurantId && !isSuperAdmin,
-    queryFn: async () => {
-      const rid = restaurantId!;
-      const [{ data: drLinks }, { data: legacyDrivers }, vehRes] = await Promise.all([
-        supabase.from("driver_restaurants").select("driver_id").eq("restaurant_id", rid),
-        supabase.from("drivers").select("id").eq("restaurant_id", rid),
-        supabase.from("vehicles").select("id", { count: "exact", head: true }).eq("restaurant_id", rid),
-      ]);
-      const driverIds = new Set<string>();
-      for (const r of (drLinks as { driver_id: string }[] | null) ?? []) driverIds.add(r.driver_id);
-      for (const r of (legacyDrivers as { id: string }[] | null) ?? []) driverIds.add(r.id);
-      return {
-        drivers: driverIds.size,
-        vehicles: typeof vehRes.count === "number" ? vehRes.count : 0,
-      };
-    },
-    refetchInterval: 60000,
-  });
+  const statusActivity = useMemo(() => {
+    const orders = recentOrders || [];
+    if (!orders.length) return [];
+    const counts: Record<string, number> = {};
+    for (const o of orders) {
+      counts[o.status] = (counts[o.status] || 0) + 1;
+    }
+    const total = orders.length;
+    const palette = [
+      { bar: "bg-teal-500", track: "bg-teal-100" },
+      { bar: "bg-sky-500", track: "bg-sky-100" },
+      { bar: "bg-rose-400", track: "bg-rose-100" },
+      { bar: "bg-violet-500", track: "bg-violet-100" },
+    ];
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([status, count], i) => ({
+        label: ORDER_STATUS_LABELS[status as OrderStatus] ?? status,
+        pct: Math.round((count / total) * 100),
+        ...palette[i % palette.length],
+      }));
+  }, [recentOrders]);
 
-  const statGridClass = cn(
-    "grid grid-cols-1 gap-4",
-    isSuperAdmin ? "sm:grid-cols-2 xl:grid-cols-5" : "md:grid-cols-3"
-  );
+  const sourceBreakdown = useMemo(() => {
+    const orders = recentOrders || [];
+    const sources = {
+      in_house: { label: "In house", icon: Building2, tone: "bg-rose-50 text-rose-500" },
+      online: { label: "Online", icon: Globe, tone: "bg-sky-50 text-sky-500" },
+      takeaway: { label: "Take away", icon: Package, tone: "bg-teal-50 text-teal-500" },
+      app: { label: "App", icon: Smartphone, tone: "bg-emerald-50 text-emerald-500" },
+    };
+    const counts = { in_house: 0, online: 0, takeaway: 0, app: 0 };
+    for (const o of orders) {
+      const s = (o.source || "").toLowerCase();
+      if (s.includes("app")) counts.app += 1;
+      else if (s.includes("take") || s.includes("pickup")) counts.takeaway += 1;
+      else if (s.includes("online") || s.includes("web")) counts.online += 1;
+      else counts.in_house += 1;
+    }
+    const hasAny = Object.values(counts).some((n) => n > 0);
+    if (!hasAny && globalStats) {
+      return [
+        { ...sources.in_house, value: globalStats.totalRestaurants, label: "Restaurants" },
+        { ...sources.online, value: globalStats.totalMenuItems, label: "Menu items" },
+        { ...sources.takeaway, value: globalStats.totalDeals, label: "Active offers" },
+        { ...sources.app, value: recentOrders?.length ?? 0, label: "Recent orders" },
+      ];
+    }
+    return (Object.keys(counts) as (keyof typeof counts)[]).map((key) => ({
+      ...sources[key],
+      value: counts[key],
+    }));
+  }, [recentOrders, globalStats]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8 animate-fade-in pb-4">
-      {/* Hero */}
-      <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm">
-        <div
-          className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-primary/[0.08] blur-3xl"
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-accent/[0.06] blur-3xl"
-          aria-hidden
-        />
-        <div className="relative flex flex-col gap-6 p-6 sm:p-8 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-4 min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="rounded-full px-3 font-normal text-muted-foreground">
-                <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-                Dashboard
-              </Badge>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "rounded-full border font-normal",
-                  isSuperAdmin
-                    ? "border-primary/25 bg-primary/5 text-primary"
-                    : "border-status-available/30 bg-status-available/5 text-status-available"
-                )}
-              >
-                {isSuperAdmin ? "Platform admin" : "Restaurant"}
-              </Badge>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                Welcome back, {firstName}
-              </h1>
-              <p className="mt-2 max-w-2xl text-muted-foreground leading-relaxed">
-                {isSuperAdmin
-                  ? "Snapshot of restaurants, catalog, promos, and fleet. Jump into orders or reports anytime."
-                  : `Here’s what’s happening at ${restaurantInfo?.name || "your restaurant"} today.`}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-2">
-                <Calendar className="h-4 w-4 shrink-0 text-primary/80" aria-hidden />
-                {todayLabel}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Quick actions */}
-      <section>
-        <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">Shortcuts</h2>
-            <p className="text-sm text-muted-foreground">Open the tools you use most</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {quickActions.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              to={href}
+    <div className="mx-auto max-w-[1400px] space-y-6 animate-fade-in pb-4">
+      {/* Header */}
+      <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="secondary"
+              className="rounded-full px-3 font-normal text-muted-foreground bg-primary/10 text-primary border-0"
+            >
+              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+              Dashboard
+            </Badge>
+            <Badge
+              variant="outline"
               className={cn(
-                "group flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4 shadow-sm",
-                "transition-all duration-200 hover:border-primary/25 hover:shadow-md hover:bg-primary/[0.02]"
+                "rounded-full border font-normal",
+                isSuperAdmin
+                  ? "border-primary/25 bg-primary/5 text-primary"
+                  : "border-status-available/30 bg-status-available/5 text-status-available"
               )}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="rounded-lg bg-primary/10 p-2 text-primary">
-                  <Icon className="h-5 w-5" aria-hidden />
-                </div>
-                <ArrowUpRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
-              </div>
-              <span className="mt-3 text-sm font-medium leading-snug text-foreground">{label}</span>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {!isSuperAdmin && (
-        <Card className="overflow-hidden border-primary/15 bg-gradient-to-br from-primary/[0.07] via-card to-card shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0 space-y-3">
-                <div>
-                  <h3 className="text-lg font-semibold tracking-tight">{restaurantInfo?.name || "Restaurant"}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {restaurantInfo?.is_active ? "Accepting orders" : "Currently closed"}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Bike className="h-4 w-4 shrink-0 text-foreground/70" aria-hidden />
-                    <span>
-                      <span className="font-semibold tabular-nums text-foreground">{fleetCounts?.drivers ?? "—"}</span>{" "}
-                      drivers
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Car className="h-4 w-4 shrink-0 text-foreground/70" aria-hidden />
-                    <span>
-                      <span className="font-semibold tabular-nums text-foreground">{fleetCounts?.vehicles ?? "—"}</span>{" "}
-                      vehicles
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <Badge
-                variant="default"
-                className="shrink-0 bg-status-available/12 text-status-available border border-status-available/25"
-              >
-                ● Live
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* KPIs */}
-      <section>
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold tracking-tight">At a glance</h2>
-          <p className="text-sm text-muted-foreground">Counts across the platform</p>
-        </div>
-        <div className={statGridClass}>
-          {statsLoading ? (
-            <>
-              <StatCardSkeleton />
-              <StatCardSkeleton />
-              <StatCardSkeleton />
-              {isSuperAdmin && (
-                <>
-                  <StatCardSkeleton />
-                  <StatCardSkeleton />
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <StatsCard
-                title="Total restaurants"
-                value={globalStats?.totalRestaurants ?? 0}
-                icon={Store}
-                iconClassName="bg-blue-500/10 text-blue-600 dark:text-blue-400"
-              />
-              <StatsCard
-                title="Menu items"
-                value={globalStats?.totalMenuItems ?? 0}
-                icon={ChefHat}
-                iconClassName="bg-violet-500/10 text-violet-600 dark:text-violet-400"
-              />
-              <StatsCard
-                title="Active offers"
-                value={globalStats?.totalDeals ?? 0}
-                icon={Tag}
-                iconClassName="bg-pink-500/10 text-pink-600 dark:text-pink-400"
-              />
-              {isSuperAdmin && (
-                <>
-                  <StatsCard
-                    title="Drivers"
-                    value={globalStats?.totalDrivers ?? 0}
-                    icon={Bike}
-                    iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                  />
-                  <StatsCard
-                    title="Vehicles"
-                    value={globalStats?.totalVehicles ?? 0}
-                    icon={Car}
-                    iconClassName="bg-slate-500/10 text-slate-600 dark:text-slate-400"
-                  />
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </section>
-
-      {/* Recent orders */}
-      <Card className="border-border/80 shadow-sm">
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-2">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <ShoppingBag className="h-5 w-5" aria-hidden />
-              </span>
-              Recent orders
-            </CardTitle>
-            <CardDescription>Latest activity for the active restaurant — refreshes every 15 seconds</CardDescription>
+              {isSuperAdmin ? "Platform admin" : "Restaurant"}
+            </Badge>
           </div>
-          {restaurantId ? (
-            <Button asChild variant="outline" size="sm" className="shrink-0 gap-1">
-              <Link to="/orders">
-                View all
-                <ArrowUpRight className="h-4 w-4" aria-hidden />
-              </Link>
-            </Button>
-          ) : null}
-        </CardHeader>
-        <Separator />
-        <CardContent className="pt-6">
-          {ordersLoading && restaurantId ? (
-            <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-lg" />
-              ))}
-            </div>
-          ) : recentOrders && recentOrders.length > 0 ? (
-            <>
-              <div className="hidden md:block rounded-lg border border-border/60">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead>Order</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Placed</TableHead>
-                      <TableHead className="w-[100px] text-right"> </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recentOrders.map((o) => (
-                      <TableRow key={o.id}>
-                        <TableCell className="font-medium">{o.order_number}</TableCell>
-                        <TableCell>
-                          <div className="max-w-[200px] truncate font-medium">{o.customer_name}</div>
-                          <div className="truncate text-xs text-muted-foreground">{o.customer_phone}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={ORDER_STATUS_COLORS[o.status as OrderStatus] ?? ""}>
-                            {ORDER_STATUS_LABELS[o.status as OrderStatus] ?? o.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums">
-                          {formatCurrency(Number(o.total_amount))}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
-                          {new Date(o.created_at).toLocaleString(undefined, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button asChild size="sm" variant="ghost" className="gap-1">
-                            <Link to={`/orders/${o.id}`}>
-                              Details
-                              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-                            </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Welcome back, {firstName}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {isSuperAdmin
+              ? "Snapshot of restaurants, catalog, and orders."
+              : `What’s happening at ${restaurantInfo?.name || "your restaurant"} today.`}
+          </p>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar className="h-4 w-4 shrink-0 text-primary/80" aria-hidden />
+            {todayLabel}
+          </p>
+        </div>
+      </section>
 
-              <div className="space-y-3 md:hidden">
-                {recentOrders.map((o) => (
-                  <div
-                    key={o.id}
-                    className="rounded-xl border border-border/80 bg-card text-card-foreground shadow-sm overflow-hidden"
-                  >
-                    <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 space-y-2 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 gap-y-1">
-                          <span className="font-semibold">{o.order_number}</span>
-                          <span className="text-muted-foreground">·</span>
-                          <span className="font-medium truncate">{o.customer_name}</span>
-                          <Badge variant="outline" className={ORDER_STATUS_COLORS[o.status as OrderStatus] ?? ""}>
-                            {ORDER_STATUS_LABELS[o.status as OrderStatus] ?? o.status}
-                          </Badge>
-                        </div>
-                        <div className="grid gap-x-6 gap-y-1 text-sm text-muted-foreground sm:grid-cols-2">
-                          <p className="flex items-start gap-2 min-w-0">
-                            <Phone className="h-4 w-4 shrink-0 mt-0.5 text-foreground/60" aria-hidden />
-                            <span className="truncate">{o.customer_phone}</span>
-                          </p>
-                          {o.customer_email && (
-                            <p className="flex items-start gap-2 min-w-0 truncate" title={o.customer_email}>
-                              <Mail className="h-4 w-4 shrink-0 mt-0.5 text-foreground/60" aria-hidden />
-                              <span className="truncate">{o.customer_email}</span>
-                            </p>
-                          )}
-                          <p className="flex items-start gap-2 min-w-0 sm:col-span-2">
-                            <MapPin className="h-4 w-4 shrink-0 mt-0.5 text-foreground/60" aria-hidden />
-                            <span className="line-clamp-2">{o.delivery_address}</span>
-                          </p>
-                          <p className="flex items-center gap-2">
-                            <Hash className="h-4 w-4 shrink-0 text-foreground/60" aria-hidden />
-                            <span className="font-mono text-xs">{o.tracking_code}</span>
-                          </p>
-                          <p className="flex items-center gap-2">
-                            <CreditCard className="h-4 w-4 shrink-0 text-foreground/60" aria-hidden />
-                            <span className="capitalize">
-                              {o.payment_method}
-                              {o.payment_status ? (
-                                <span className="text-muted-foreground normal-case"> · {o.payment_status}</span>
-                              ) : null}
-                            </span>
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground border-t border-border/60 pt-2 mt-1">
-                          <span>
-                            Placed{" "}
-                            <span className="text-foreground font-medium">
-                              {new Date(o.created_at).toLocaleString(undefined, {
-                                dateStyle: "medium",
-                                timeStyle: "short",
-                              })}
-                            </span>
-                          </span>
-                          <span>
-                            Source: <span className="text-foreground capitalize">{o.source || "—"}</span>
-                          </span>
-                          {o.estimated_delivery_at && (
-                            <span>
-                              Est. delivery:{" "}
-                              <span className="text-foreground">
-                                {new Date(o.estimated_delivery_at).toLocaleString(undefined, {
-                                  dateStyle: "medium",
-                                  timeStyle: "short",
-                                })}
-                              </span>
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-                          <span>
-                            Subtotal{" "}
-                            <span className="text-foreground tabular-nums">{formatCurrency(Number(o.subtotal))}</span>
-                          </span>
-                          <span>
-                            Tax <span className="text-foreground tabular-nums">{formatCurrency(Number(o.tax_amount))}</span>
-                          </span>
-                          <span>
-                            Delivery{" "}
-                            <span className="text-foreground tabular-nums">{formatCurrency(Number(o.delivery_fee))}</span>
-                          </span>
-                          <span className="font-medium text-foreground">
-                            Total <span className="tabular-nums">{formatCurrency(Number(o.total_amount))}</span>
-                          </span>
-                        </div>
+      {/* Exactly 6 shortcut cards */}
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {quickActions.map(({ href, label, icon: Icon }) => (
+          <Link
+            key={href}
+            to={href}
+            className={cn(
+              "group flex flex-col justify-between rounded-xl border border-border/50 bg-card p-4",
+              "shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)]",
+              "transition-all duration-200 hover:border-primary/20 hover:shadow-md"
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                <Icon className="h-5 w-5" aria-hidden />
+              </div>
+              <ArrowUpRight
+                className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                aria-hidden
+              />
+            </div>
+            <span className="mt-3 text-sm font-medium leading-snug text-foreground">{label}</span>
+          </Link>
+        ))}
+      </section>
+
+      {/* Main grid: content + order history (same layout as before) */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+        <div className="xl:col-span-8 space-y-5">
+          {!isSuperAdmin && (
+            <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)] overflow-hidden">
+              <CardContent className="p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 space-y-2">
+                    <h3 className="text-lg font-semibold tracking-tight">{restaurantInfo?.name || "Restaurant"}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {restaurantInfo?.is_active ? "Accepting orders" : "Currently closed"}
+                    </p>
+                  </div>
+                  <Badge className="shrink-0 bg-status-available/12 text-status-available border border-status-available/25 hover:bg-status-available/12">
+                    ● Live
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* At a glance — no Drivers / Vehicles */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {statsLoading ? (
+              <>
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+              </>
+            ) : (
+              <>
+                <StatsCard
+                  title="Total restaurants"
+                  value={globalStats?.totalRestaurants ?? 0}
+                  icon={Store}
+                  iconClassName="bg-sky-50 text-sky-600"
+                />
+                <StatsCard
+                  title="Menu items"
+                  value={globalStats?.totalMenuItems ?? 0}
+                  icon={ChefHat}
+                  iconClassName="bg-violet-50 text-violet-600"
+                />
+                <StatsCard
+                  title="Active offers"
+                  value={globalStats?.totalDeals ?? 0}
+                  icon={Tag}
+                  iconClassName="bg-rose-50 text-rose-500"
+                />
+              </>
+            )}
+          </div>
+
+          {/* Total overview */}
+          <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)]">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base font-semibold">Total overview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {sourceBreakdown.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={item.label}
+                      className="flex items-center gap-4 rounded-xl border border-border/40 bg-muted/30 p-4"
+                    >
+                      <div className={cn("rounded-xl p-3", item.tone)}>
+                        <Icon className="h-5 w-5" aria-hidden />
                       </div>
-                      <div className="flex shrink-0 flex-row sm:flex-col gap-2 sm:items-end">
-                        <Button asChild size="sm" variant="outline">
-                          <Link to={`/orders/${o.id}`}>Details</Link>
-                        </Button>
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">{item.label}</p>
+                        <p className="text-xl font-bold tabular-nums tracking-tight">
+                          {Number(item.value).toLocaleString()}
+                        </p>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Activity */}
+          <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-semibold">Activity</CardTitle>
+              <p className="text-sm text-muted-foreground">Status mix from recent orders</p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {statusActivity.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  {restaurantId ? "No recent orders to summarize yet." : "Select a restaurant to see activity."}
+                </p>
+              ) : (
+                statusActivity.map((row) => (
+                  <div key={row.label} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-foreground">{row.label}</span>
+                      <span className="tabular-nums text-muted-foreground">{row.pct}%</span>
+                    </div>
+                    <div className={cn("h-2.5 rounded-full overflow-hidden", row.track)}>
+                      <div className={cn("h-full rounded-full transition-all", row.bar)} style={{ width: `${row.pct}%` }} />
+                    </div>
                   </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-6 py-14 text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <ShoppingBag className="h-6 w-6 text-muted-foreground" aria-hidden />
-              </div>
-              <p className="font-medium text-foreground">
-                {restaurantId ? "No recent orders yet" : "Pick a restaurant context"}
-              </p>
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                {restaurantId
-                  ? "New orders will appear here as customers check out. You can monitor everything from the orders page."
-                  : "We could not resolve an active restaurant. Check memberships or add a restaurant to get started."}
-              </p>
-              {restaurantId ? (
-                <Button asChild className="mt-6" variant="default">
-                  <Link to="/orders">Go to orders</Link>
-                </Button>
-              ) : isSuperAdmin ? (
-                <Button asChild className="mt-6" variant="outline">
-                  <Link to="/restaurants">Manage restaurants</Link>
-                </Button>
-              ) : null}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Order History — right column */}
+        <div className="xl:col-span-4">
+          <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)] h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-base font-semibold">Order History</CardTitle>
+              <Button asChild variant="outline" size="sm" className="h-8 rounded-lg gap-1.5 border-border/60">
+                <Link to="/orders">
+                  <Filter className="h-3.5 w-3.5" aria-hidden />
+                  Filter
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {ordersLoading && restaurantId ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : recentOrders && recentOrders.length > 0 ? (
+                <ul className="space-y-1 max-h-[640px] overflow-y-auto custom-scrollbar -mx-1 px-1">
+                  {recentOrders.map((o) => (
+                    <li key={o.id}>
+                      <Link
+                        to={`/orders/${o.id}`}
+                        className="flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-muted/60"
+                      >
+                        <div
+                          className={cn(
+                            "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+                            avatarTone(o.customer_name || o.order_number)
+                          )}
+                        >
+                          {(o.customer_name || "?").charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-foreground truncate">{o.customer_name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{o.order_number}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-bold tabular-nums text-foreground">
+                            {formatCurrency(Number(o.total_amount))}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground whitespace-nowrap">
+                            {new Date(o.created_at).toLocaleString(undefined, {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-4 py-12 text-center">
+                  <ShoppingBag className="h-8 w-8 text-muted-foreground mb-3" aria-hidden />
+                  <p className="font-medium text-foreground text-sm">
+                    {restaurantId ? "No recent orders yet" : "Pick a restaurant context"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-[220px]">
+                    {restaurantId
+                      ? "New orders will show up here as customers check out."
+                      : "Resolve an active restaurant to load order history."}
+                  </p>
+                  {restaurantId ? (
+                    <Button asChild className="mt-4 rounded-full" size="sm">
+                      <Link to="/orders">Go to orders</Link>
+                    </Button>
+                  ) : isSuperAdmin ? (
+                    <Button asChild className="mt-4 rounded-full" size="sm" variant="outline">
+                      <Link to="/restaurants">Manage restaurants</Link>
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

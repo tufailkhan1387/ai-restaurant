@@ -2064,22 +2064,26 @@ function ItemForm({
   };
 
   return (
-    <DialogContent className="flex h-full min-h-[60vh] flex-col overflow-hidden">
-      <DialogHeader>
+    <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden gap-0 p-0 sm:p-0">
+      <DialogHeader className="mx-0 px-6 sm:px-7 pt-6 sm:pt-7 shrink-0">
         <DialogTitle>{initial ? "Edit item" : "New item"}</DialogTitle>
+        <p className="text-sm text-zinc-500 pt-1">Fill in the details below, then save to update the menu.</p>
       </DialogHeader>
-      <div className="space-y-3 flex-1 min-h-0 overflow-y-auto py-4 pr-1 custom-scrollbar">
-        <div><Label>Name</Label><Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-        <div>
+      <div className="space-y-4 flex-1 min-h-0 overflow-y-auto px-6 sm:px-7 py-5 custom-scrollbar">
+        <div className="form-field">
+          <Label>Name</Label>
+          <Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Margherita Pizza" />
+        </div>
+        <div className="form-field">
           <Label>Category</Label>
           <Select value={form.category_id || ""} onValueChange={(v) => setForm({ ...form, category_id: v })}>
             <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
             <SelectContent>{filteredCategories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <div>
+        <div className="form-row">
           {isSuperAdmin && (
-            <div>
+            <div className="form-field">
               <Label>Restaurant</Label>
               <Select value={selectedRestaurantId} onValueChange={setSelectedRestaurantId}>
                 <SelectTrigger><SelectValue placeholder="Select restaurant" /></SelectTrigger>
@@ -2091,29 +2095,40 @@ function ItemForm({
               </Select>
             </div>
           )}
-          <Label>Sub-category</Label>
-          <Select
-            value={form.sub_category_id || "none"}
-            onValueChange={(v) => setForm({ ...form, sub_category_id: v === "none" ? null : v })}
-          >
-            <SelectTrigger><SelectValue placeholder="Select sub-category" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              {filteredSubCategories.map((sc) => (
-                <SelectItem key={sc.id} value={String(sc.id)}>{sc.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="form-field">
+            <Label>Sub-category</Label>
+            <Select
+              value={form.sub_category_id || "none"}
+              onValueChange={(v) => setForm({ ...form, sub_category_id: v === "none" ? null : v })}
+            >
+              <SelectTrigger><SelectValue placeholder="Select sub-category" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {filteredSubCategories.map((sc) => (
+                  <SelectItem key={sc.id} value={String(sc.id)}>{sc.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div><Label>Description</Label><Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-        <div className="grid grid-cols-2 gap-3">
-          <div><Label>Price</Label><Input type="number" step="0.01" value={form.price || 0} onChange={(e) => setForm({ ...form, price: parseFloat(e.target.value) || 0 })} /></div>
-          <div><Label>Prep time (min)</Label><Input type="number" value={form.prep_time_minutes || 15} onChange={(e) => setForm({ ...form, prep_time_minutes: parseInt(e.target.value) || 15 })} /></div>
+        <div className="form-field">
+          <Label>Description</Label>
+          <Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Short description for customers" />
         </div>
-        <div className="space-y-2">
+        <div className="form-row">
+          <div className="form-field">
+            <Label>Price</Label>
+            <Input type="number" step="0.01" value={form.price || 0} onChange={(e) => setForm({ ...form, price: parseFloat(e.target.value) || 0 })} />
+          </div>
+          <div className="form-field">
+            <Label>Prep time (min)</Label>
+            <Input type="number" value={form.prep_time_minutes || 15} onChange={(e) => setForm({ ...form, prep_time_minutes: parseInt(e.target.value) || 15 })} />
+          </div>
+        </div>
+        <div className="form-field">
           <Label>Item image</Label>
           {displayImageSrc && (
-            <img src={displayImageSrc} alt="" className="w-full max-h-40 object-cover rounded-md border" />
+            <img src={displayImageSrc} alt="" className="w-full max-h-40 object-cover rounded-lg border border-zinc-200" />
           )}
           <Input
             type="file"
@@ -2134,14 +2149,23 @@ function ItemForm({
               Remove image
             </Button>
           )}
-          <p className="text-xs text-muted-foreground">JPEG, PNG, GIF, or WebP — up to 5MB.</p>
+          <p className="text-xs text-zinc-500">JPEG, PNG, GIF, or WebP — up to 5MB.</p>
         </div>
-        <div><Label>Dietary tags (comma separated)</Label><Input value={tagsText} onChange={(e) => { setTagsText(e.target.value); setForm({ ...form, dietary_tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }); }} placeholder="vegan, gluten-free" /></div>
-        <div><Label>Spice level (0-5)</Label><Input type="number" min={0} max={5} value={form.spice_level || 0} onChange={(e) => setForm({ ...form, spice_level: parseInt(e.target.value) || 0 })} /></div>
+        <div className="form-field">
+          <Label>Dietary tags (comma separated)</Label>
+          <Input value={tagsText} onChange={(e) => { setTagsText(e.target.value); setForm({ ...form, dietary_tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }); }} placeholder="vegan, gluten-free" />
+        </div>
+        <div className="form-field">
+          <Label>Spice level (0-5)</Label>
+          <Input type="number" min={0} max={5} value={form.spice_level || 0} onChange={(e) => setForm({ ...form, spice_level: parseInt(e.target.value) || 0 })} />
+        </div>
 
-        <div className="space-y-3 border-t pt-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-base font-semibold">Variants (Sizes/Options)</Label>
+        <div className="space-y-3 border-t border-zinc-200 pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <Label className="text-sm font-semibold text-zinc-900">Variants (Sizes/Options)</Label>
+              <p className="text-xs text-zinc-500 mt-1">Add variants like Small, Large, or 2kg — each with its own price.</p>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -2151,13 +2175,12 @@ function ItemForm({
               <Plus className="h-4 w-4 mr-1" />Add Variant
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">Add variants like "Small", "Large", or "2kg". Each can have its own price.</p>
           {variants.length > 0 && (
-            <div className="space-y-3 rounded-md border p-3 bg-muted/20">
+            <div className="space-y-3 rounded-lg border border-zinc-200 p-3 bg-zinc-50">
               {variants.map((v, idx) => (
                 <div key={idx} className="flex gap-3 items-end group">
-                  <div className="flex-1 space-y-1">
-                    <Label className="text-[10px] uppercase text-muted-foreground">Name</Label>
+                  <div className="flex-1 form-field">
+                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Name</Label>
                     <Input
                       placeholder="e.g. Small"
                       value={v.name || ""}
@@ -2168,8 +2191,8 @@ function ItemForm({
                       }}
                     />
                   </div>
-                  <div className="w-24 space-y-1">
-                    <Label className="text-[10px] uppercase text-muted-foreground">Price</Label>
+                  <div className="w-28 form-field">
+                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Price</Label>
                     <Input
                       type="number"
                       step="0.01"
@@ -2185,7 +2208,7 @@ function ItemForm({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-10 w-10 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => setVariants(variants.filter((_, i) => i !== idx))}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -2195,20 +2218,20 @@ function ItemForm({
             </div>
           )}
         </div>
-        <div className="space-y-2 border-t pt-3">
+        <div className="space-y-2 border-t border-zinc-200 pt-4">
           <Label>Linked add-ons</Label>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-zinc-500">
             {addons.length === 0
               ? "Create add-ons for this restaurant under Menu → Add-ons, then link them here."
               : "Optional extras for this item (only add-ons defined for this restaurant)."}
           </p>
           {addons.length > 0 && (
-            <div className="flex flex-col gap-2 max-h-44 overflow-y-auto rounded-md border p-2 bg-muted/30">
+            <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto rounded-lg border border-zinc-200 p-2 bg-zinc-50">
               {filteredAddons.map((a) => (
                 <label
                   key={a.id}
                   className={cn(
-                    "flex items-center gap-2 text-sm cursor-pointer rounded px-1 py-0.5 hover:bg-muted/80",
+                    "flex items-center gap-2 text-sm cursor-pointer rounded-md px-2 py-1.5 hover:bg-white",
                     !a.is_active && "opacity-70",
                   )}
                 >
@@ -2217,16 +2240,22 @@ function ItemForm({
                     onCheckedChange={() => toggleAddon(a.id)}
                   />
                   <span className="flex-1">{a.name}</span>
-                  <span className="text-muted-foreground text-xs tabular-nums">{formatCurrency(a.price)}</span>
+                  <span className="text-zinc-500 text-xs tabular-nums">{formatCurrency(a.price)}</span>
                   {!a.is_active && <Badge variant="secondary" className="text-[10px] px-1 py-0">Inactive</Badge>}
                 </label>
               ))}
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2"><Switch checked={form.is_available ?? true} onCheckedChange={(v) => setForm({ ...form, is_available: v })} /><Label>Available</Label></div>
+        <div className="setting-row !bg-white">
+          <div className="space-y-0.5">
+            <Label>Available</Label>
+            <p className="text-xs text-zinc-500">Show this item on the menu</p>
+          </div>
+          <Switch checked={form.is_available ?? true} onCheckedChange={(v) => setForm({ ...form, is_available: v })} />
+        </div>
       </div>
-      <DialogFooter className="sticky bottom-0 z-10 border-t bg-background/95 px-0 py-4 backdrop-blur-sm">
+      <DialogFooter className="mx-0 mb-0 shrink-0">
         <Button onClick={() => void handleSave()} disabled={uploading || isSaving}>
           {(uploading || isSaving) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {uploading || isSaving ? "Saving…" : "Save"}

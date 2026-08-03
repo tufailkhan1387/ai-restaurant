@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, LogOut, User } from "lucide-react";
+import { Search, LogOut, User, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,14 +56,18 @@ export function TopBar() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  const displayName = profile?.full_name || "User";
+
   return (
-    <header className="h-16 bg-card border-b border-border flex items-center justify-between px-6 relative z-30">
-      <div className="flex items-center gap-4 flex-1 max-w-md">
-        <div ref={containerRef} className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-[1]" />
+    <header className="h-16 bg-transparent grid grid-cols-[1fr_minmax(0,36rem)_1fr] items-center gap-4 px-6 relative z-30">
+      <div aria-hidden className="hidden sm:block" />
+
+      <div className="w-full col-span-2 sm:col-span-1 sm:col-start-2">
+        <div ref={containerRef} className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none z-[1]" />
           <Input
-            placeholder="Search sidebar pages…"
-            className="pl-10 bg-background"
+            placeholder="Search"
+            className="pl-11 h-11 rounded-full border-0 bg-muted/80 shadow-none focus-visible:ring-2 focus-visible:ring-primary/30"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -86,18 +90,18 @@ export function TopBar() {
             <div
               id={listId}
               role="listbox"
-              className="absolute left-0 right-0 top-full mt-1 max-h-72 overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md z-[70]"
+              className="absolute left-0 right-0 top-full mt-2 max-h-72 overflow-auto rounded-2xl border border-border/60 bg-popover text-popover-foreground shadow-lg z-[70]"
             >
               {results.length === 0 ? (
                 <p className="px-3 py-6 text-sm text-center text-muted-foreground">No pages match your search.</p>
               ) : (
-                <ul className="p-1">
+                <ul className="p-1.5">
                   {results.map((item) => (
                     <li key={`${item.href}-${item.label}`} role="option">
                       <button
                         type="button"
                         className={cn(
-                          "w-full text-left rounded-sm px-2 py-2 text-sm outline-none",
+                          "w-full text-left rounded-xl px-3 py-2.5 text-sm outline-none",
                           "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
                         )}
                         onMouseDown={(e) => e.preventDefault()}
@@ -115,25 +119,28 @@ export function TopBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <OrderNotificationBell />
+      <div className="flex items-center justify-end gap-3 shrink-0 col-start-3 row-start-1">
+        <div className="[&_button]:rounded-full [&_button]:bg-primary/10 [&_button]:text-primary [&_button]:hover:bg-primary/15">
+          <OrderNotificationBell />
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="flex items-center gap-2 px-2">
-              <Avatar className="h-8 w-8">
+            <Button
+              variant="ghost"
+              className="flex items-center gap-2.5 h-11 rounded-full pl-1.5 pr-3 hover:bg-muted/80"
+            >
+              <Avatar className="h-9 w-9 ring-2 ring-rose-100">
                 <AvatarImage key={profile?.avatar_url || "default"} src={profile?.avatar_url || undefined} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                  {profile?.full_name?.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || "U"}
+                <AvatarFallback className="bg-rose-100 text-rose-600 text-sm font-semibold">
+                  {displayName.charAt(0) || user?.email?.charAt(0)?.toUpperCase() || "U"}
                 </AvatarFallback>
               </Avatar>
-              <div className="hidden md:block text-left">
-                <p className="text-sm font-medium">{profile?.full_name || "User"}</p>
-                <p className="text-xs text-primary capitalize">Online</p>
-              </div>
+              <span className="hidden md:inline text-sm font-medium text-foreground">{displayName}</span>
+              <ChevronDown className="hidden md:block h-4 w-4 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-56 rounded-xl">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <Link to="/profile">

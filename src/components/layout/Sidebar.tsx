@@ -35,6 +35,7 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { supabase } from "@/integrations/supabase/client";
@@ -88,7 +89,7 @@ const managementItems = [
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation();
-  const { role } = useAuth();
+  const { role, profile, user } = useAuth();
   const { restaurantId } = useActiveRestaurant();
   const [restaurantName, setRestaurantName] = useState("Royal Restaurant");
   const [ordersOpen, setOrdersOpen] = useState(
@@ -135,7 +136,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       ? [
           { icon: Store, label: "Restaurants", href: "/restaurants" },
           { icon: Wallet, label: "Earnings", href: "/earnings" },
-          ...managementForRole
+          ...managementForRole,
         ]
       : managementItems;
 
@@ -173,17 +174,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <Link
         to={href}
         className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-          "hover:bg-sidebar-accent",
-          isActive && "bg-sidebar-accent text-sidebar-primary",
+          "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200",
+          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          isActive && "bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:bg-primary hover:text-primary-foreground",
           indent && !collapsed && "pl-9 py-2"
         )}
       >
-        <Icon className={cn("h-5 w-5 flex-shrink-0", isActive && "text-sidebar-primary")} />
+        <Icon className={cn("h-5 w-5 flex-shrink-0", isActive ? "text-primary-foreground" : "text-muted-foreground")} />
         {!collapsed && (
-          <span className={cn("text-sm font-medium", isActive && "text-sidebar-primary")}>
-            {label}
-          </span>
+          <span className={cn("text-sm font-medium", isActive && "text-primary-foreground")}>{label}</span>
         )}
       </Link>
     );
@@ -200,32 +199,62 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     return content;
   };
 
+  const GroupButton = ({
+    open,
+    onToggleOpen,
+    active,
+    icon: Icon,
+    label,
+  }: {
+    open: boolean;
+    onToggleOpen: () => void;
+    active: boolean;
+    icon: any;
+    label: string;
+  }) => (
+    <button
+      type="button"
+      onClick={onToggleOpen}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-sidebar-accent",
+        active && !open && "bg-sidebar-accent text-sidebar-accent-foreground"
+      )}
+    >
+      <Icon className={cn("h-5 w-5 flex-shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+      <span className="text-sm font-medium flex-1 text-left">{label}</span>
+      <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+    </button>
+  );
+
   const ordersGroupActive =
     location.pathname === "/orders" || location.pathname.startsWith("/orders/");
-
   const reportsGroupActive = location.pathname.startsWith("/reports");
-
   const usersGroupActive = location.pathname.startsWith("/users");
+
+  const displayName = profile?.full_name || user?.email || "User";
+  const roleLabel =
+    role === "super_admin" ? "Admin" : role ? role.replace("_", " ") : "User";
+  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <aside
       className={cn(
         "fixed left-0 top-0 h-screen bg-sidebar text-sidebar-foreground flex flex-col transition-all duration-300 z-40",
+        "border-r border-sidebar-border shadow-[4px_0_24px_-12px_rgba(15,23,42,0.08)]",
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Header with Toggle at Top */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
+      <div className="h-16 flex items-center justify-between px-4">
         {!collapsed && (
-          <div className="flex items-center gap-2 overflow-hidden">
-            <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0 shadow-md shadow-primary/30">
               <LogoIcon className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-lg truncate">{restaurantName}</span>
+            <span className="font-semibold text-lg tracking-tight text-foreground truncate">{restaurantName}</span>
           </div>
         )}
         {collapsed && (
-          <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center mx-auto">
+          <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center mx-auto shadow-md shadow-primary/30">
             <LogoIcon className="h-5 w-5 text-primary-foreground" />
           </div>
         )}
@@ -233,41 +262,42 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           variant="ghost"
           size="icon"
           onClick={onToggle}
-          className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent flex-shrink-0"
+          className={cn(
+            "h-8 w-8 text-muted-foreground hover:bg-sidebar-accent flex-shrink-0",
+            collapsed && "hidden"
+          )}
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
+      {collapsed && (
+        <div className="px-2 pb-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className="h-8 w-8 w-full text-muted-foreground hover:bg-sidebar-accent"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
-      {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto custom-scrollbar">
         <div className="space-y-1">
           <NavItem icon={LayoutDashboard} label="Dashboard" href="/" />
 
           {collapsed ? (
-            <>
-              {usersChildren.map((item) => (
-                <NavItem key={item.href} {...item} />
-              ))}
-            </>
+            usersChildren.map((item) => <NavItem key={item.href} {...item} />)
           ) : (
             <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => setUsersOpen((v) => !v)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 hover:bg-sidebar-accent",
-                  usersGroupActive && "bg-sidebar-accent/50 text-sidebar-primary"
-                )}
-              >
-                <Users
-                  className={cn("h-5 w-5 flex-shrink-0", usersGroupActive && "text-sidebar-primary")}
-                />
-                <span className="text-sm font-medium flex-1 text-left">Users</span>
-                <ChevronDown
-                  className={cn("h-4 w-4 transition-transform", usersOpen && "rotate-180")}
-                />
-              </button>
+              <GroupButton
+                open={usersOpen}
+                onToggleOpen={() => setUsersOpen((v) => !v)}
+                active={usersGroupActive}
+                icon={Users}
+                label="Users"
+              />
               {usersOpen && (
                 <div className="space-y-1">
                   {usersChildren.map((item) => (
@@ -278,29 +308,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           )}
 
-          {/* Orders group */}
           {collapsed ? (
             <NavItem icon={ClipboardList} label="Orders" href="/orders" />
           ) : (
             <>
-              <button
-                onClick={() => setOrdersOpen((v) => !v)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 hover:bg-sidebar-accent",
-                  ordersGroupActive && "bg-sidebar-accent/50 text-sidebar-primary"
-                )}
-              >
-                <ClipboardList
-                  className={cn(
-                    "h-5 w-5 flex-shrink-0",
-                    ordersGroupActive && "text-sidebar-primary"
-                  )}
-                />
-                <span className="text-sm font-medium flex-1 text-left">Orders</span>
-                <ChevronDown
-                  className={cn("h-4 w-4 transition-transform", ordersOpen && "rotate-180")}
-                />
-              </button>
+              <GroupButton
+                open={ordersOpen}
+                onToggleOpen={() => setOrdersOpen((v) => !v)}
+                active={ordersGroupActive}
+                icon={ClipboardList}
+                label="Orders"
+              />
               {ordersOpen && (
                 <div className="space-y-1">
                   <NavItem icon={ClipboardList} label="All orders" href="/orders" indent />
@@ -313,29 +331,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
 
           {collapsed ? (
-            <>
-              {menuChildren.map((item) => (
-                <NavItem key={item.href} {...item} />
-              ))}
-            </>
+            menuChildren.map((item) => <NavItem key={item.href} {...item} />)
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 hover:bg-sidebar-accent",
-                  menuGroupActive && "bg-sidebar-accent/50 text-sidebar-primary",
-                )}
-              >
-                <UtensilsCrossed
-                  className={cn("h-5 w-5 flex-shrink-0", menuGroupActive && "text-sidebar-primary")}
-                />
-                <span className="text-sm font-medium flex-1 text-left">Menu</span>
-                <ChevronDown
-                  className={cn("h-4 w-4 transition-transform", menuOpen && "rotate-180")}
-                />
-              </button>
+              <GroupButton
+                open={menuOpen}
+                onToggleOpen={() => setMenuOpen((v) => !v)}
+                active={menuGroupActive}
+                icon={UtensilsCrossed}
+                label="Menu"
+              />
               {menuOpen && (
                 <div className="space-y-1">
                   {menuChildren.map((item) => (
@@ -354,31 +359,18 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
 
         {collapsed ? (
-          <>
-            {reportsChildren.map((item) => (
-              <NavItem key={item.href} {...item} />
-            ))}
-          </>
+          reportsChildren.map((item) => <NavItem key={item.href} {...item} />)
         ) : (
-          <div className="pt-4 mt-4 border-t border-sidebar-border">
-            <button
-              type="button"
-              onClick={() => setReportsOpen((v) => !v)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 hover:bg-sidebar-accent",
-                reportsGroupActive && "bg-sidebar-accent/50 text-sidebar-primary"
-              )}
-            >
-              <FileBarChart
-                className={cn("h-5 w-5 flex-shrink-0", reportsGroupActive && "text-sidebar-primary")}
-              />
-              <span className="text-sm font-medium flex-1 text-left">Reports</span>
-              <ChevronDown
-                className={cn("h-4 w-4 transition-transform", reportsOpen && "rotate-180")}
-              />
-            </button>
+          <div className="pt-4 mt-3 border-t border-sidebar-border">
+            <GroupButton
+              open={reportsOpen}
+              onToggleOpen={() => setReportsOpen((v) => !v)}
+              active={reportsGroupActive}
+              icon={FileBarChart}
+              label="Reports"
+            />
             {reportsOpen && (
-              <div className="space-y-1">
+              <div className="space-y-1 mt-1">
                 {reportsChildren.map((item) => (
                   <NavItem key={item.href} {...item} indent />
                 ))}
@@ -388,8 +380,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
 
         {!collapsed && (
-          <div className="pt-4 mt-4 border-t border-sidebar-border">
-            <p className="px-3 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2">
+          <div className="pt-4 mt-3 border-t border-sidebar-border space-y-1">
+            <p className="px-3 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider mb-2">
               Management
             </p>
             {finalManagement.map((item) => (
@@ -398,6 +390,33 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         )}
       </nav>
+
+      {!collapsed && (
+        <div className="p-3 border-t border-sidebar-border">
+          <div className="rounded-2xl bg-muted/60 border border-border/50 p-3">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10 ring-2 ring-white shadow-sm">
+                <AvatarImage src={profile?.avatar_url || undefined} />
+                <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                  {initial}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground truncate leading-tight">{displayName}</p>
+                <p className="text-xs text-muted-foreground capitalize">({roleLabel})</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {collapsed && (
+        <div className="p-2 border-t border-sidebar-border flex justify-center">
+          <Avatar className="h-9 w-9">
+            <AvatarImage src={profile?.avatar_url || undefined} />
+            <AvatarFallback className="bg-primary text-primary-foreground text-xs">{initial}</AvatarFallback>
+          </Avatar>
+        </div>
+      )}
     </aside>
   );
 }

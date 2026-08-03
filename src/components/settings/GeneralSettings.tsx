@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
+import { Save } from "lucide-react";
 
 export function GeneralSettings() {
   const { profile, role } = useAuth();
@@ -13,26 +14,31 @@ export function GeneralSettings() {
         <CardTitle>Profile Settings</CardTitle>
         <CardDescription>Update your personal information</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
+      <CardContent className="form-section">
+        <div className="form-row">
+          <div className="form-field">
             <Label htmlFor="fullName">Full Name</Label>
-            <Input id="fullName" defaultValue={profile?.full_name || ""} />
+            <Input id="fullName" defaultValue={profile?.full_name || ""} placeholder="Your name" />
           </div>
-          <div className="space-y-2">
+          <div className="form-field">
             <Label htmlFor="email">Email</Label>
             <Input id="email" type="email" defaultValue={profile?.email || ""} disabled />
           </div>
-          <div className="space-y-2">
+          <div className="form-field">
             <Label htmlFor="extension">Phone Extension</Label>
-            <Input id="extension" defaultValue={profile?.phone_extension || ""} />
+            <Input id="extension" defaultValue={profile?.phone_extension || ""} placeholder="e.g. 101" />
           </div>
-          <div className="space-y-2">
+          <div className="form-field">
             <Label htmlFor="role">Role</Label>
             <Input id="role" value={role?.replace("_", " ").toUpperCase() || "AGENT"} disabled />
           </div>
         </div>
-        <Button className="gradient-primary text-primary-foreground">Save Changes</Button>
+        <div className="form-actions">
+          <Button className="gap-2 min-w-[140px]">
+            <Save className="h-4 w-4" aria-hidden />
+            Save Changes
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

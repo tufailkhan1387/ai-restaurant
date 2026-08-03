@@ -11,15 +11,14 @@ export default function Settings() {
   const { isManagement } = useAuth();
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
+    <div className="space-y-6 animate-fade-in max-w-5xl">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground">Manage your preferences and integrations</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
+        <p className="text-muted-foreground mt-1">Manage your preferences and integrations</p>
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start gap-1 w-full sm:w-auto">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           {isManagement && <TabsTrigger value="users">Users</TabsTrigger>}

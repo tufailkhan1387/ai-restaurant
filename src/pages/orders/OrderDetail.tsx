@@ -20,26 +20,28 @@ import {
   ArrowLeft,
   ChevronDown,
   Clock,
+  Copy,
   ExternalLink,
   FileText,
-  GitBranch,
   Loader2,
+  Mail,
   MapPin,
   Mic,
   Package,
   Phone,
+  Store,
   Truck,
   User,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ORDER_STATUSES,
   ORDER_STATUS_COLORS,
   ORDER_STATUS_LABELS,
+  ORDER_STATUSES,
   formatCurrency,
   OrderStatus,
 } from "@/lib/restaurant";
-import { OrderTimelineDialog } from "@/components/orders/OrderTimelineDialog";
+import { OrderFulfillmentTimeline } from "@/components/orders/OrderFulfillmentTimeline";
 import { cn } from "@/lib/utils";
 
 function asOrderStatus(s: string): OrderStatus {
@@ -101,14 +103,32 @@ type HistoryRow = {
 type DriverRow = { id: string; full_name: string; phone: string; status: string };
 type CallRow = { id: string; recording_url: string | null; transcript: string | null; duration_seconds: number | null };
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] uppercase text-muted-foreground tracking-wide font-medium mb-1">{children}</p>;
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-w-0", className)}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">{label}</p>
+      <div className="text-sm text-zinc-900 leading-relaxed">{children}</div>
+    </div>
+  );
 }
 
 function fmtWhen(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
 }
 
 function getUnmatchedFromAi(ai: unknown): string[] {
@@ -116,15 +136,6 @@ function getUnmatchedFromAi(ai: unknown): string[] {
   const u = (ai as { unmatched?: unknown }).unmatched;
   if (!Array.isArray(u)) return [];
   return u.filter((x): x is string => typeof x === "string");
-}
-
-function Milestone({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-muted/40 border border-border/60 px-3 py-2.5 min-h-[72px]">
-      <FieldLabel>{label}</FieldLabel>
-      <p className="text-sm font-medium text-foreground leading-snug">{value}</p>
-    </div>
-  );
 }
 
 export default function OrderDetail() {
@@ -143,9 +154,8 @@ export default function OrderDetail() {
   const [driver, setDriver] = useState<DriverRow | null>(null);
   const [restaurantName, setRestaurantName] = useState<string | null>(null);
   const [call, setCall] = useState<CallRow | null>(null);
-  const [timelineOpen, setTimelineOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
 
   const load = useCallback(async () => {
     if (!orderId) return;
@@ -218,10 +228,19 @@ export default function OrderDetail() {
   const assignDriver = (driverId: string) =>
     order && updateStatus("assigned", { driver_id: driverId, assigned_at: new Date().toISOString() });
 
+  const copyText = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast({ title: `${label} copied` });
+    } catch {
+      toast({ variant: "destructive", title: "Copy failed" });
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-muted-foreground gap-2">
-        <Loader2 className="h-6 w-6 animate-spin" />
+      <div className="flex items-center justify-center py-24 text-zinc-500 gap-2">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
         Loading order…
       </div>
     );
@@ -235,9 +254,9 @@ export default function OrderDetail() {
         </Button>
         <Card>
           <CardContent className="py-12 text-center space-y-2">
-            <Package className="h-10 w-10 mx-auto text-muted-foreground" />
+            <Package className="h-10 w-10 mx-auto text-zinc-400" />
             <h2 className="text-lg font-semibold">Order not found</h2>
-            <p className="text-sm text-muted-foreground">This order does not exist or you do not have access.</p>
+            <p className="text-sm text-zinc-500">This order does not exist or you do not have access.</p>
             <Button asChild variant="outline" className="mt-2">
               <Link to="/orders">View all orders</Link>
             </Button>
@@ -258,427 +277,480 @@ export default function OrderDetail() {
   const unmatchedAi = getUnmatchedFromAi(order.ai_extracted_data);
   const unmatchedLineItems = items.filter((it) => it.menu_item_id == null);
   const showUnmatchedWarning = unmatchedAi.length > 0 || unmatchedLineItems.length > 0;
-
   const placedAgo = formatDistanceToNow(new Date(order.created_at), { addSuffix: true });
 
-  const actionButtons = (
-    <>
-      <Button size="sm" variant="secondary" className="gap-1.5 shadow-sm" onClick={() => setTimelineOpen(true)}>
-        <GitBranch className="h-4 w-4" />
-        Status timeline
-      </Button>
-      {st === "pending" && (
-        <Button size="sm" onClick={confirmOrder}>
-          Confirm order
-        </Button>
-      )}
-      {(st === "preparing" || st === "ready") && (
-        <Select onValueChange={(v) => assignDriver(v)}>
-          <SelectTrigger className="h-9 w-[200px]">
-            <SelectValue placeholder="Assign driver" />
-          </SelectTrigger>
-          <SelectContent>
-            {driversForOrder.map((d) => (
-              <SelectItem key={d.id} value={d.id}>
-                {d.full_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-      {st === "confirmed" && (
-        <Button size="sm" onClick={() => updateStatus("preparing")}>
-          Start preparing
-        </Button>
-      )}
-      {st === "preparing" && (
-        <Button size="sm" variant="outline" onClick={() => updateStatus("ready")}>
-          Mark ready
-        </Button>
-      )}
-      {st === "assigned" && (
-        <Button size="sm" onClick={() => updateStatus("out_for_delivery")}>
-          Out for delivery
-        </Button>
-      )}
-      {st === "out_for_delivery" && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => updateStatus("delivered", { delivered_at: new Date().toISOString() })}
-        >
-          Mark delivered
-        </Button>
-      )}
-      {st !== "cancelled" && st !== "delivered" && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="text-destructive border-destructive/30 hover:bg-destructive/10"
-          onClick={() => {
-            if (confirm("Cancel order?")) void updateStatus("cancelled");
-          }}
-        >
-          Cancel
-        </Button>
-      )}
-    </>
-  );
-
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-16">
-      <OrderTimelineDialog orderId={order.id} open={timelineOpen} onOpenChange={setTimelineOpen} />
-
-      {/* Wayfinding */}
+    <div className="mx-auto max-w-6xl space-y-5 pb-16 animate-fade-in">
+      {/* Breadcrumb */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Button variant="ghost" size="sm" className="gap-1 h-8 -ml-2" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
-        <span className="text-muted-foreground">/</span>
-        <Button variant="link" className="h-auto p-0 text-muted-foreground" asChild>
-          <Link to="/orders">Orders</Link>
-        </Button>
+        <span className="text-zinc-300">/</span>
+        <Link to="/orders" className="text-zinc-500 hover:text-primary transition-colors">
+          Orders
+        </Link>
+        <span className="text-zinc-300">/</span>
+        <span className="font-mono text-zinc-800 font-medium truncate">{order.order_number}</span>
       </div>
 
-      {/* Summary hero */}
-      <Card className="overflow-hidden border-2 shadow-sm">
+      {/* Header */}
+      <Card className="overflow-hidden">
         <CardContent className="p-0">
-          <div className="bg-gradient-to-br from-muted/80 via-background to-background p-6 sm:p-8">
-            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
-              <div className="space-y-4 min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-background/80 border px-2 py-0.5">
-                    <Clock className="h-3 w-3" />
+          <div className="p-5 sm:p-6 border-b border-zinc-200 bg-white">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
+                    <Clock className="h-3.5 w-3.5" />
                     Placed {placedAgo}
                   </span>
                   {restaurantName && (
-                    <span className="inline-flex items-center rounded-full bg-background/80 border px-2 py-0.5">
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
+                      <Store className="h-3.5 w-3.5" />
                       {restaurantName}
                     </span>
                   )}
+                  <span className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 capitalize">
+                    Source · {order.source}
+                  </span>
                 </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight text-foreground break-all">
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight text-zinc-900 break-all">
                     {order.order_number}
                   </h1>
-                  <div className="flex flex-wrap items-center gap-2 mt-3">
-                    <Badge className={cn("text-sm px-2.5 py-0.5 font-semibold", ORDER_STATUS_COLORS[st])} variant="outline">
-                      {ORDER_STATUS_LABELS[st]}
-                    </Badge>
-                    <Badge variant="secondary" className="capitalize text-sm">
-                      {order.source}
-                    </Badge>
-                    {order.call_id && (
-                      <Badge variant="outline" className="text-sm">
-                        <Phone className="h-3 w-3 mr-1" />
-                        Phone order
-                      </Badge>
-                    )}
-                  </div>
+                  <Badge className={cn("text-sm px-2.5 py-1 font-semibold", ORDER_STATUS_COLORS[st])} variant="outline">
+                    {ORDER_STATUS_LABELS[st]}
+                  </Badge>
                 </div>
-                <Button variant="outline" size="sm" className="gap-1.5" asChild>
-                  <Link to={`/track/${order.tracking_code}`} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Customer tracking page
-                  </Link>
-                </Button>
+
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-zinc-500">Tracking</span>
+                  <code className="rounded-md bg-zinc-100 border border-zinc-200 px-2 py-0.5 font-mono text-xs text-zinc-800">
+                    {order.tracking_code}
+                  </code>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-zinc-500"
+                    onClick={() => void copyText("Tracking code", order.tracking_code)}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5" asChild>
+                    <Link to={`/track/${order.tracking_code}`} target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Customer track page
+                    </Link>
+                  </Button>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-3 xl:items-end shrink-0">
-                <div className="flex flex-wrap gap-2 justify-start xl:justify-end">{actionButtons}</div>
-                <p className="text-xs text-muted-foreground max-w-sm xl:text-right">
-                  Use the timeline for a step-by-step view. Advance the order with the buttons above when each stage is
-                  complete.
-                </p>
+              {/* Actions */}
+              <div className="flex flex-wrap gap-2 shrink-0 lg:justify-end lg:max-w-md">
+                {st === "pending" && (
+                  <Button size="sm" onClick={confirmOrder}>
+                    Confirm order
+                  </Button>
+                )}
+                {st === "confirmed" && (
+                  <Button size="sm" onClick={() => updateStatus("preparing")}>
+                    Start preparing
+                  </Button>
+                )}
+                {st === "preparing" && (
+                  <Button size="sm" variant="outline" onClick={() => updateStatus("ready")}>
+                    Mark ready
+                  </Button>
+                )}
+                {(st === "preparing" || st === "ready") && (
+                  <Select onValueChange={(v) => assignDriver(v)}>
+                    <SelectTrigger className="h-9 w-[200px]">
+                      <SelectValue placeholder="Assign driver" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {driversForOrder.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {st === "assigned" && (
+                  <Button size="sm" onClick={() => updateStatus("out_for_delivery")}>
+                    Out for delivery
+                  </Button>
+                )}
+                {st === "out_for_delivery" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => updateStatus("delivered", { delivered_at: new Date().toISOString() })}
+                  >
+                    Mark delivered
+                  </Button>
+                )}
+                {st !== "cancelled" && st !== "delivered" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                    onClick={() => {
+                      if (confirm("Cancel order?")) void updateStatus("cancelled");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                )}
               </div>
             </div>
+
+            {st === "confirmed" && (
+              <p className="mt-4 text-sm text-zinc-600 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                <strong className="font-medium text-blue-900">Kitchen next:</strong> start preparing before assigning a
+                driver. Driver assignment unlocks during Preparing / Ready.
+              </p>
+            )}
           </div>
-
-          {st === "confirmed" && (
-            <div className="border-t px-6 sm:px-8 py-3 bg-muted/30 text-sm text-muted-foreground">
-              <strong className="text-foreground font-medium">Kitchen next:</strong> start preparing before assigning a
-              driver (driver assignment unlocks during Preparing / Ready).
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="shadow-sm">
-          <CardHeader className="pb-3 border-b bg-muted/20">
-            <CardTitle className="text-lg font-semibold tracking-tight">Customer & delivery</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm pt-6">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>Name</FieldLabel>
-                <p className="flex items-center gap-2 text-foreground">
-                  <User className="h-4 w-4 text-muted-foreground shrink-0" />
-                  {order.customer_name}
-                </p>
-              </div>
-              <div>
-                <FieldLabel>Phone</FieldLabel>
-                <p className="flex items-center gap-2 text-foreground">
-                  <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <a className="text-primary hover:underline" href={`tel:${order.customer_phone}`}>
-                    {order.customer_phone}
-                  </a>
-                </p>
-              </div>
-              {order.customer_email && (
-                <div className="sm:col-span-2">
-                  <FieldLabel>Email</FieldLabel>
-                  <p>{order.customer_email}</p>
-                </div>
-              )}
-            </div>
-            <Separator />
-            <div>
-              <FieldLabel>Delivery address</FieldLabel>
-              <p className="flex items-start gap-2 text-foreground mt-1">
-                <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                {order.delivery_address}
-              </p>
-            </div>
-            {order.delivery_notes && (
-              <div>
-                <FieldLabel>Delivery notes</FieldLabel>
-                <p className="text-foreground">{order.delivery_notes}</p>
-              </div>
-            )}
-            {order.notes && (
-              <div>
-                <FieldLabel>Internal notes</FieldLabel>
-                <p className="text-foreground">{order.notes}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardHeader className="pb-3 border-b bg-muted/20">
-            <CardTitle className="text-lg font-semibold tracking-tight">Payment</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm pt-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>Method</FieldLabel>
-                <p className="capitalize font-medium text-foreground">{order.payment_method}</p>
-              </div>
-              <div>
-                <FieldLabel>Status</FieldLabel>
-                <p className="capitalize font-medium text-foreground">{order.payment_status}</p>
-              </div>
-            </div>
-            {order.discount_code && (
-              <div>
-                <FieldLabel>Discount code</FieldLabel>
-                <p className="font-mono">{order.discount_code}</p>
-              </div>
-            )}
-            <Separator />
-            <div className="space-y-2">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal</span>
-                <span className="tabular-nums">{formatCurrency(order.subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Tax</span>
-                <span className="tabular-nums">{formatCurrency(order.tax_amount)}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Delivery</span>
-                <span className="tabular-nums">{formatCurrency(order.delivery_fee)}</span>
-              </div>
-              {Number(order.discount_amount) > 0 && (
-                <div className="flex justify-between text-primary">
-                  <span>Discount</span>
-                  <span className="tabular-nums">-{formatCurrency(order.discount_amount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-bold text-lg pt-3 border-t">
-                <span>Total due</span>
-                <span className="tabular-nums">{formatCurrency(order.total_amount)}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="shadow-sm">
-        <CardHeader className="pb-3 border-b bg-muted/20">
-          <CardTitle className="text-lg font-semibold tracking-tight">Tracking & milestones</CardTitle>
-          <p className="text-sm text-muted-foreground font-normal mt-1">
-            Tracking code <span className="font-mono font-medium text-foreground">{order.tracking_code}</span>
+      {/* Timeline — always visible */}
+      <Card>
+        <CardHeader className="pb-3 border-b border-zinc-200">
+          <CardTitle className="text-base font-semibold">Order timeline</CardTitle>
+          <p className="text-sm text-zinc-500 font-normal mt-1">
+            Live fulfillment progress with timestamps from status history.
           </p>
         </CardHeader>
-        <CardContent className="space-y-5 pt-6">
-          <div className="rounded-lg border bg-muted/20 px-4 py-2 text-xs font-mono text-muted-foreground break-all">
-            Order ID · {order.id}
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Milestone label="Placed" value={fmtWhen(order.created_at)} />
-            <Milestone label="Verified" value={fmtWhen(order.verified_at)} />
-            <Milestone label="Assigned driver" value={fmtWhen(order.assigned_at)} />
-            <Milestone label="Last update" value={fmtWhen(order.updated_at)} />
-            <Milestone label="Est. delivery" value={fmtWhen(order.estimated_delivery_at)} />
-            <Milestone label="Delivered" value={fmtWhen(order.delivered_at)} />
-          </div>
-          {driver && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15">
-                <Truck className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Assigned driver</p>
-                <p className="font-semibold text-foreground">{driver.full_name}</p>
-                <a href={`tel:${driver.phone}`} className="text-sm text-primary hover:underline">
-                  {driver.phone}
-                </a>
-              </div>
-            </div>
-          )}
+        <CardContent className="pt-6 pb-6">
+          <OrderFulfillmentTimeline order={order} history={history} />
         </CardContent>
       </Card>
 
-      {history.length > 0 && (
-        <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
-          <Card className="shadow-sm">
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between px-6 py-4 text-left hover:bg-muted/30 transition-colors rounded-t-xl"
-              >
+      {/* Key timestamps strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { label: "Placed", value: fmtWhen(order.created_at) },
+          { label: "Verified", value: fmtWhen(order.verified_at) },
+          { label: "Driver assigned", value: fmtWhen(order.assigned_at) },
+          { label: "Est. delivery", value: fmtWhen(order.estimated_delivery_at) },
+          { label: "Delivered", value: fmtWhen(order.delivered_at) },
+          { label: "Last update", value: fmtWhen(order.updated_at) },
+        ].map((m) => (
+          <div key={m.label} className="rounded-lg border border-zinc-200 bg-white px-3 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{m.label}</p>
+            <p className="mt-1.5 text-sm font-medium text-zinc-900 leading-snug">{m.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-12">
+        {/* Left column */}
+        <div className="lg:col-span-7 space-y-5">
+          <Card>
+            <CardHeader className="pb-3 border-b border-zinc-200">
+              <CardTitle className="text-base font-semibold">Customer & delivery</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-5">
+              <div className="grid sm:grid-cols-2 gap-5">
+                <Field label="Customer">
+                  <p className="flex items-center gap-2 font-medium">
+                    <User className="h-4 w-4 text-zinc-400 shrink-0" />
+                    {order.customer_name}
+                  </p>
+                </Field>
+                <Field label="Phone">
+                  <a className="flex items-center gap-2 font-medium text-primary hover:underline" href={`tel:${order.customer_phone}`}>
+                    <Phone className="h-4 w-4 shrink-0" />
+                    {order.customer_phone}
+                  </a>
+                </Field>
+                {order.customer_email && (
+                  <Field label="Email" className="sm:col-span-2">
+                    <a className="flex items-center gap-2 text-primary hover:underline break-all" href={`mailto:${order.customer_email}`}>
+                      <Mail className="h-4 w-4 shrink-0" />
+                      {order.customer_email}
+                    </a>
+                  </Field>
+                )}
+              </div>
+              <Separator />
+              <Field label="Delivery address">
+                <p className="flex items-start gap-2 font-medium">
+                  <MapPin className="h-4 w-4 text-zinc-400 shrink-0 mt-0.5" />
+                  <span>{order.delivery_address}</span>
+                </p>
+              </Field>
+              {order.delivery_notes && (
+                <Field label="Delivery notes">
+                  <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">{order.delivery_notes}</p>
+                </Field>
+              )}
+              {order.notes && (
+                <Field label="Internal notes">
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-amber-950">{order.notes}</p>
+                </Field>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Line items */}
+          <Card className="overflow-hidden">
+            <CardHeader className="pb-3 border-b border-zinc-200">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <CardTitle className="text-base font-semibold">Status history</CardTitle>
-                  <p className="text-sm text-muted-foreground font-normal mt-0.5">{history.length} events recorded</p>
+                  <CardTitle className="text-base font-semibold">Line items</CardTitle>
+                  <p className="text-sm text-zinc-500 font-normal mt-1">
+                    {items.length} item{items.length === 1 ? "" : "s"} on this order
+                  </p>
                 </div>
-                <ChevronDown className={cn("h-5 w-5 text-muted-foreground transition-transform shrink-0", historyOpen && "rotate-180")} />
-              </button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent className="p-0 pt-0 border-t overflow-x-auto">
-                <table className="w-full text-sm min-w-[480px]">
-                  <thead className="text-left bg-muted/40">
-                    <tr>
-                      <th className="p-3 font-medium">When</th>
-                      <th className="p-3 font-medium">Status</th>
-                      <th className="p-3 font-medium">Notes</th>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {showUnmatchedWarning && (
+                <Alert className="m-4 mb-0 border-amber-300 bg-amber-50">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-900">Menu matching</AlertTitle>
+                  <AlertDescription className="text-amber-900/90">
+                    {unmatchedAi.length > 0 && (
+                      <p>
+                        AI could not match: <strong>{unmatchedAi.join(", ")}</strong>
+                      </p>
+                    )}
+                    {!unmatchedAi.length && unmatchedLineItems.length > 0 && (
+                      <p>
+                        Some rows are not linked to the menu (
+                        {unmatchedLineItems.map((x) => x.item_name).join(", ")}) — totals may be incomplete.
+                      </p>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                      <th className="px-4 py-3 font-semibold">Item</th>
+                      <th className="px-4 py-3 font-semibold text-right w-20">Qty</th>
+                      <th className="px-4 py-3 font-semibold text-right w-28">Unit</th>
+                      <th className="px-4 py-3 font-semibold text-right w-28">Line total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {history.map((h) => (
-                      <tr key={h.id} className="border-t border-border/80">
-                        <td className="p-3 whitespace-nowrap text-muted-foreground">{fmtWhen(h.created_at)}</td>
-                        <td className="p-3">
+                    {items.map((it) => {
+                      const unlinked = it.menu_item_id == null;
+                      return (
+                        <tr
+                          key={it.id}
+                          className={cn("border-b border-zinc-100 last:border-0", unlinked && "bg-amber-50/60")}
+                        >
+                          <td className="px-4 py-3.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-zinc-900">{it.item_name}</span>
+                              {unlinked && (
+                                <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-800">
+                                  No menu link
+                                </Badge>
+                              )}
+                            </div>
+                            {it.notes && <p className="text-xs text-zinc-500 mt-1">{it.notes}</p>}
+                          </td>
+                          <td className="px-4 py-3.5 text-right tabular-nums font-medium">{it.quantity}</td>
+                          <td className="px-4 py-3.5 text-right tabular-nums text-zinc-600">{formatCurrency(it.unit_price)}</td>
+                          <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-zinc-900">
+                            {formatCurrency(it.line_total)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {items.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-12 text-center text-zinc-500">
+                          No line items
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right column */}
+        <div className="lg:col-span-5 space-y-5">
+          <Card>
+            <CardHeader className="pb-3 border-b border-zinc-200">
+              <CardTitle className="text-base font-semibold">Payment summary</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Method">
+                  <p className="capitalize font-medium">{order.payment_method}</p>
+                </Field>
+                <Field label="Status">
+                  <p className="capitalize font-medium">{order.payment_status}</p>
+                </Field>
+              </div>
+              {order.discount_code && (
+                <Field label="Discount code">
+                  <code className="font-mono text-xs bg-zinc-100 border border-zinc-200 rounded px-1.5 py-0.5">
+                    {order.discount_code}
+                  </code>
+                </Field>
+              )}
+              <Separator />
+              <div className="space-y-2.5 text-sm">
+                <div className="flex justify-between text-zinc-600">
+                  <span>Subtotal</span>
+                  <span className="tabular-nums font-medium text-zinc-900">{formatCurrency(order.subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-zinc-600">
+                  <span>Tax</span>
+                  <span className="tabular-nums font-medium text-zinc-900">{formatCurrency(order.tax_amount)}</span>
+                </div>
+                <div className="flex justify-between text-zinc-600">
+                  <span>Delivery fee</span>
+                  <span className="tabular-nums font-medium text-zinc-900">{formatCurrency(order.delivery_fee)}</span>
+                </div>
+                {Number(order.discount_amount) > 0 && (
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Discount</span>
+                    <span className="tabular-nums font-medium">-{formatCurrency(order.discount_amount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-baseline pt-3 mt-1 border-t border-zinc-200">
+                  <span className="font-semibold text-zinc-900">Total due</span>
+                  <span className="text-xl font-bold tabular-nums text-zinc-900">{formatCurrency(order.total_amount)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {driver ? (
+            <Card>
+              <CardHeader className="pb-3 border-b border-zinc-200">
+                <CardTitle className="text-base font-semibold">Assigned driver</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Truck className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-zinc-900">{driver.full_name}</p>
+                    <a href={`tel:${driver.phone}`} className="text-sm text-primary hover:underline">
+                      {driver.phone}
+                    </a>
+                    <p className="text-xs text-zinc-500 mt-0.5 capitalize">Status · {driver.status}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="py-6 flex items-center gap-3 text-sm text-zinc-500">
+                <Truck className="h-5 w-5 text-zinc-400" />
+                No driver assigned yet
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader className="pb-3 border-b border-zinc-200">
+              <CardTitle className="text-base font-semibold">Order references</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Order ID</p>
+                  <p className="font-mono text-xs text-zinc-700 break-all mt-1">{order.id}</p>
+                </div>
+                <Button type="button" size="sm" variant="ghost" className="shrink-0 h-8" onClick={() => void copyText("Order ID", order.id)}>
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              {order.call_id && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Call ID</p>
+                  <p className="font-mono text-xs text-zinc-700 break-all mt-1">{order.call_id}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Status history */}
+      {history.length > 0 && (
+        <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+          <Card>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-5 sm:px-6 py-4 text-left hover:bg-zinc-50 transition-colors"
+              >
+                <div>
+                  <CardTitle className="text-base font-semibold">Status history log</CardTitle>
+                  <p className="text-sm text-zinc-500 font-normal mt-0.5">{history.length} recorded events</p>
+                </div>
+                <ChevronDown className={cn("h-5 w-5 text-zinc-400 transition-transform shrink-0", historyOpen && "rotate-180")} />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="border-t border-zinc-200 overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 font-semibold">When</th>
+                      <th className="px-5 py-3 font-semibold">Status</th>
+                      <th className="px-5 py-3 font-semibold">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...history].reverse().map((h) => (
+                      <tr key={h.id} className="border-t border-zinc-100">
+                        <td className="px-5 py-3 whitespace-nowrap text-zinc-600">{fmtWhen(h.created_at)}</td>
+                        <td className="px-5 py-3">
                           <Badge variant="outline" className="capitalize">
                             {(h.status || "").replace(/_/g, " ")}
                           </Badge>
                         </td>
-                        <td className="p-3 text-muted-foreground">{h.notes || "—"}</td>
+                        <td className="px-5 py-3 text-zinc-600">{h.notes || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </CardContent>
+              </div>
             </CollapsibleContent>
           </Card>
         </Collapsible>
       )}
 
-      <Card className="shadow-sm overflow-hidden">
-        <CardHeader className="pb-3 border-b bg-muted/20">
-          <CardTitle className="text-lg font-semibold tracking-tight">Line items</CardTitle>
-          <p className="text-sm text-muted-foreground font-normal mt-1">Kitchen ticket — unmatched menu names show pricing warnings.</p>
-        </CardHeader>
-        <CardContent className="p-0">
-          {showUnmatchedWarning && (
-            <Alert className="m-4 mb-0 border-amber-500/40 bg-amber-500/5">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              <AlertTitle className="text-amber-900 dark:text-amber-200">Menu matching</AlertTitle>
-              <AlertDescription className="text-amber-900/90 dark:text-amber-100/90">
-                {unmatchedAi.length > 0 && (
-                  <p>
-                    AI could not match: <strong>{unmatchedAi.join(", ")}</strong>. Add or rename a menu item to align,
-                    or edit line prices manually elsewhere.
-                  </p>
-                )}
-                {!unmatchedAi.length && unmatchedLineItems.length > 0 && (
-                  <p>Some rows are not linked to the menu ({unmatchedLineItems.map((x) => x.item_name).join(", ")}
-                    ) — totals may be incomplete.</p>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[520px]">
-              <thead className="text-left bg-muted/40">
-                <tr>
-                  <th className="p-4 font-medium">Item</th>
-                  <th className="p-4 text-right font-medium w-24">Qty</th>
-                  <th className="p-4 text-right font-medium w-28">Unit</th>
-                  <th className="p-4 text-right font-medium w-28">Line</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it) => {
-                  const unlinked = it.menu_item_id == null;
-                  return (
-                    <tr
-                      key={it.id}
-                      className={cn("border-t border-border/80", unlinked && "bg-amber-500/[0.04]")}
-                    >
-                      <td className="p-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium">{it.item_name}</span>
-                          {unlinked && (
-                            <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-800 dark:text-amber-400">
-                              No menu price
-                            </Badge>
-                          )}
-                        </div>
-                        {it.notes && <span className="text-xs text-muted-foreground block mt-1">{it.notes}</span>}
-                      </td>
-                      <td className="p-4 text-right tabular-nums">{it.quantity}</td>
-                      <td className="p-4 text-right tabular-nums">{formatCurrency(it.unit_price)}</td>
-                      <td className="p-4 text-right tabular-nums font-medium">{formatCurrency(it.line_total)}</td>
-                    </tr>
-                  );
-                })}
-                {items.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="p-12 text-center text-muted-foreground">
-                      No line items
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
       {call && (
-        <Card className="shadow-sm">
-          <CardHeader className="pb-3 border-b bg-muted/20">
-            <CardTitle className="text-lg font-semibold tracking-tight flex items-center gap-2">
-              <Mic className="h-5 w-5 text-muted-foreground" />
+        <Card>
+          <CardHeader className="pb-3 border-b border-zinc-200">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Mic className="h-4 w-4 text-zinc-500" />
               Call recording
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm pt-6">
+          <CardContent className="pt-5 space-y-3 text-sm">
             {call.duration_seconds != null && (
-              <p className="text-muted-foreground text-xs">Duration: {call.duration_seconds}s</p>
+              <p className="text-zinc-500 text-xs">Duration: {call.duration_seconds}s</p>
             )}
             {call.recording_url && <audio controls src={call.recording_url} className="w-full" />}
             {call.transcript && (
-              <div className="bg-muted/50 p-4 rounded-lg text-xs whitespace-pre-wrap max-h-72 overflow-y-auto leading-relaxed">
+              <div className="bg-zinc-50 border border-zinc-200 p-4 rounded-lg text-xs whitespace-pre-wrap max-h-72 overflow-y-auto leading-relaxed text-zinc-700">
                 {call.transcript}
               </div>
             )}
             {!call.recording_url && !call.transcript && (
-              <p className="text-xs text-muted-foreground">No recording or transcript available</p>
+              <p className="text-xs text-zinc-500">No recording or transcript available</p>
             )}
           </CardContent>
         </Card>
@@ -686,25 +758,25 @@ export default function OrderDetail() {
 
       {order.ai_extracted_data != null && (
         <Collapsible open={aiOpen} onOpenChange={setAiOpen}>
-          <Card className="shadow-sm">
+          <Card>
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                className="flex w-full items-center justify-between px-6 py-4 text-left hover:bg-muted/30 transition-colors"
+                className="flex w-full items-center justify-between px-5 sm:px-6 py-4 text-left hover:bg-zinc-50 transition-colors"
               >
                 <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-muted-foreground" />
+                  <FileText className="h-4 w-4 text-zinc-500" />
                   <div>
                     <CardTitle className="text-base font-semibold">AI raw payload</CardTitle>
-                    <p className="text-sm text-muted-foreground font-normal mt-0.5">Technical JSON from voice / chat ordering</p>
+                    <p className="text-sm text-zinc-500 font-normal mt-0.5">Technical JSON from voice / chat ordering</p>
                   </div>
                 </div>
-                <ChevronDown className={cn("h-5 w-5 text-muted-foreground shrink-0 transition-transform", aiOpen && "rotate-180")} />
+                <ChevronDown className={cn("h-5 w-5 text-zinc-400 shrink-0 transition-transform", aiOpen && "rotate-180")} />
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <CardContent className="pt-0 pb-6">
-                <pre className="text-xs bg-muted/60 p-4 rounded-lg overflow-x-auto max-h-[min(70vh,480px)] overflow-y-auto border">
+              <CardContent className="pt-0 pb-5">
+                <pre className="text-xs bg-zinc-50 border border-zinc-200 p-4 rounded-lg overflow-x-auto max-h-[min(70vh,480px)] overflow-y-auto">
                   {JSON.stringify(order.ai_extracted_data, null, 2)}
                 </pre>
               </CardContent>

@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogBody } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Plus, Ticket, Trash2, Search, Calendar, Hash } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -259,11 +259,11 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
   }, [initial]);
 
   return (
-    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+    <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>{initial ? "Edit Coupon" : "Create Coupon"}</DialogTitle>
       </DialogHeader>
-      <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-1 custom-scrollbar">
+      <DialogBody className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="code" className="flex items-center gap-1.5">
             <Hash className="h-3.5 w-3.5" /> Coupon Code
@@ -287,7 +287,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Discount Type</Label>
             <Select value={form.discount_type || "percentage"} onValueChange={(v) => setForm({ ...form, discount_type: v })}>
@@ -308,7 +308,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Min. Order Amount</Label>
             <Input 
@@ -328,7 +328,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Starts At</Label>
             <Input 
@@ -355,9 +355,9 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
             onCheckedChange={(c) => setForm({ ...form, is_active: c })} 
           />
         </div>
-      </div>
+      </DialogBody>
       <DialogFooter>
-        <Button onClick={() => onSubmit(form)} className="w-full">
+        <Button onClick={() => onSubmit(form)} className="w-full sm:w-auto">
           {initial ? "Save Changes" : "Create Coupon"}
         </Button>
       </DialogFooter>

@@ -8,7 +8,7 @@
  * Override defaults:
  *   ADMIN_EMAIL=you@x.com ADMIN_PASSWORD=secret npm run seed:super-admin --prefix backend
  */
-import "dotenv/config";
+import "../src/loadEnv.js";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import knex from "knex";

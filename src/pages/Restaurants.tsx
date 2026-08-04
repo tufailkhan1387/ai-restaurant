@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogBody } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Store, Plus, Pencil, Trash2, Sparkles, Phone, Bot, Settings, Pause, Play, Eye } from "lucide-react";
@@ -156,6 +156,7 @@ export default function Restaurants() {
   const [form, setForm] = useState(emptyForm);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [cuisinesView, setCuisinesView] = useState<{ name: string; cuisines: string[] } | null>(null);
   /** In create flow: after user edits slug, stop overwriting from name. */
   const slugManualRef = useRef(false);
 
@@ -550,11 +551,11 @@ export default function Restaurants() {
           <DialogTrigger asChild>
             <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" />New restaurant</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{isEdit ? "Edit restaurant" : "Create restaurant"}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+            <DialogBody className="space-y-3">
               <div>
                 <Label>Name *</Label>
                 <Input
@@ -583,7 +584,7 @@ export default function Restaurants() {
                   <p className="text-xs text-muted-foreground mt-1">Updates as you type the name; edit here for a custom URL.</p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
                 <div>
                   <Label>Contact email</Label>
@@ -631,7 +632,7 @@ export default function Restaurants() {
                 <p className="text-[10px] text-muted-foreground mt-1">Percentage of total sales that the platform takes as fee.</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 border-t pt-3 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t pt-3 mt-2">
                 <div className="flex items-center gap-2">
                   <input 
                     type="checkbox" 
@@ -779,7 +780,7 @@ export default function Restaurants() {
                   <Bot className="h-4 w-4" /> AI agent (ElevenLabs)
                 </h3>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label>Language</Label>
                     <Select
@@ -848,10 +849,12 @@ export default function Restaurants() {
                 </label>
               </div>
 
-              <Button onClick={submit} className="w-full" disabled={submitting}>
+            </DialogBody>
+            <DialogFooter>
+              <Button onClick={submit} className="w-full sm:w-auto" disabled={submitting}>
                 {submitting ? "Saving..." : isEdit ? "Save changes" : "Create restaurant"}
               </Button>
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -894,13 +897,16 @@ export default function Restaurants() {
                       <TableCell className="max-w-[140px] truncate text-muted-foreground text-xs" title={r.owner_login_email || undefined}>
                         {r.owner_login_email || "—"}
                       </TableCell>
-                      <TableCell className="max-w-[180px]">
+                      <TableCell>
                         {r.cuisines?.length ? (
-                          <div className="flex flex-wrap gap-1">
-                            {r.cuisines.map((c) => (
-                              <Badge key={`${r.id}-${c}`} variant="secondary">{c}</Badge>
-                            ))}
-                          </div>
+                          <Button
+                            type="button"
+                            variant="link"
+                            className="h-auto p-0 text-xs font-medium text-primary no-underline hover:no-underline"
+                            onClick={() => setCuisinesView({ name: r.name, cuisines: r.cuisines ?? [] })}
+                          >
+                            View Cuisines
+                          </Button>
                         ) : (
                           <span className="text-muted-foreground text-xs">—</span>
                         )}
@@ -948,6 +954,34 @@ export default function Restaurants() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={!!cuisinesView} onOpenChange={(open) => { if (!open) setCuisinesView(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cuisines</DialogTitle>
+            {cuisinesView?.name ? (
+              <p className="text-sm text-muted-foreground pt-1">{cuisinesView.name}</p>
+            ) : null}
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {cuisinesView?.cuisines.length ?? 0} cuisine{(cuisinesView?.cuisines.length ?? 0) === 1 ? "" : "s"} assigned
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(cuisinesView?.cuisines ?? []).map((c) => (
+                <Badge key={c} variant="secondary" className="text-sm font-medium">
+                  {c}
+                </Badge>
+              ))}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCuisinesView(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

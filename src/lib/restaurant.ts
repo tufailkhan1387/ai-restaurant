@@ -11,13 +11,12 @@ export const ORDER_STATUSES = [
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-/** Sequential stages for admin timeline (excludes cancelled). */
+/** Sequential stages for admin timeline (excludes cancelled and assigned-to-driver). */
 export const ORDER_FULFILLMENT_FLOW: readonly OrderStatus[] = [
   "pending",
   "confirmed",
   "preparing",
   "ready",
-  "assigned",
   "out_for_delivery",
   "delivered",
 ] as const;

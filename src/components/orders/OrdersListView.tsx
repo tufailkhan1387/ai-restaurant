@@ -5,9 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Phone, MapPin, Clock, User, Truck, GitBranch } from "lucide-react";
-import { OrderTimelineDialog } from "@/components/orders/OrderTimelineDialog";
+import { Phone, Clock, User, Truck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   ORDER_STATUS_COLORS,
@@ -68,10 +66,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
   const [orders, setOrders] = useState<Order[]>([]);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [driverRestaurantLinks, setDriverRestaurantLinks] = useState<{ driver_id: string; restaurant_id: string }[]>([]);
   const [search, setSearch] = useState("");
-  const [timelineOpen, setTimelineOpen] = useState(false);
-  const [timelineOrderId, setTimelineOrderId] = useState<string | null>(null);
 
   const statuses: OrderStatus[] | null =
     status === "all" ? null : Array.isArray(status) ? status : [status];
@@ -83,16 +78,14 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
       .order("created_at", { ascending: false })
       .limit(200);
     if (statuses) q = q.in("status", statuses);
-    const [o, i, d, drLinks] = await Promise.all([
+    const [o, i, d] = await Promise.all([
       q,
       supabase.from("order_items").select("*"),
       supabase.from("drivers").select("id, full_name, phone, status").eq("is_active", true),
-      supabase.from("driver_restaurants").select("driver_id, restaurant_id"),
     ]);
     if (o.data) setOrders(o.data as any);
     if (i.data) setItems(i.data as any);
     if (d.data) setDrivers(d.data as any);
-    if (drLinks.data) setDriverRestaurantLinks(drLinks.data as any);
   };
 
   useEffect(() => {
@@ -134,32 +127,11 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
 
   const confirmOrder = (o: Order) =>
     updateStatus(o.id, "confirmed", { verified_at: new Date().toISOString() });
-  const assignDriver = async (o: Order, driverId: string) => {
-    await updateStatus(o.id, "assigned", {
-      driver_id: driverId,
-      assigned_at: new Date().toISOString(),
-    });
-  };
 
   const orderItems = (id: string) => items.filter((i) => i.order_id === id);
 
-  const driversForRestaurant = (restaurantId: string | undefined) => {
-    if (!restaurantId) return drivers;
-    return drivers.filter((d) =>
-      driverRestaurantLinks.some((l) => l.driver_id === d.id && l.restaurant_id === restaurantId),
-    );
-  };
-
   return (
     <>
-      <OrderTimelineDialog
-        orderId={timelineOrderId}
-        open={timelineOpen}
-        onOpenChange={(o) => {
-          setTimelineOpen(o);
-          if (!o) setTimelineOrderId(null);
-        }}
-      />
     <div className="space-y-6">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
@@ -210,10 +182,6 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                         <Phone className="h-3.5 w-3.5 text-muted-foreground" />
                         {o.customer_phone}
                       </div>
-                      <div className="flex items-start gap-1.5 sm:col-span-2">
-                        <MapPin className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
-                        <span className="line-clamp-2">{o.delivery_address}</span>
-                      </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {its.length} item{its.length !== 1 ? "s" : ""} •{" "}
@@ -229,9 +197,6 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                         Driver: <span className="font-medium">{driver.full_name}</span>
                       </p>
                     )}
-                    {o.status === "confirmed" && (
-                      <p className="text-xs text-muted-foreground">Assign a driver after you start prep.</p>
-                    )}
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <span className="text-lg font-bold">{formatCurrency(o.total_amount)}</span>
@@ -240,18 +205,6 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                       {new Date(o.created_at).toLocaleString()}
                     </span>
                     <div className="flex flex-wrap gap-2 justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1"
-                        onClick={() => {
-                          setTimelineOrderId(o.id);
-                          setTimelineOpen(true);
-                        }}
-                      >
-                        <GitBranch className="h-3.5 w-3.5" />
-                        Timeline
-                      </Button>
                       <Button size="sm" variant="outline" onClick={() => navigate(`/orders/${o.id}`)}>
                         Details
                       </Button>
@@ -259,20 +212,6 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                         <Button size="sm" onClick={() => confirmOrder(o)}>
                           Confirm
                         </Button>
-                      )}
-                      {(o.status === "preparing" || o.status === "ready") && (
-                        <Select onValueChange={(v) => assignDriver(o, v)}>
-                          <SelectTrigger className="h-8 w-40">
-                            <SelectValue placeholder="Assign driver" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {driversForRestaurant(o.restaurant_id).map((d) => (
-                              <SelectItem key={d.id} value={d.id}>
-                                {d.full_name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
                       )}
                       {o.status === "confirmed" && (
                         <Button size="sm" variant="outline" onClick={() => updateStatus(o.id, "preparing")}>

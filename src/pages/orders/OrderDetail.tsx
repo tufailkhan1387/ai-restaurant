@@ -25,7 +25,6 @@ import {
   FileText,
   Loader2,
   Mail,
-  MapPin,
   Mic,
   Package,
   Phone,
@@ -479,12 +478,6 @@ export default function OrderDetail() {
                 )}
               </div>
               <Separator />
-              <Field label="Delivery address">
-                <p className="flex items-start gap-2 font-medium">
-                  <MapPin className="h-4 w-4 text-zinc-400 shrink-0 mt-0.5" />
-                  <span>{order.delivery_address}</span>
-                </p>
-              </Field>
               {order.delivery_notes && (
                 <Field label="Delivery notes">
                   <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">{order.delivery_notes}</p>

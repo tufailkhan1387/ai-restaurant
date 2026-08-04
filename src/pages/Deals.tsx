@@ -694,7 +694,7 @@ function DealForm({
           <p className="text-sm text-muted-foreground pt-1">Saved for your authenticated restaurant.</p>
         )}
       </DialogHeader>
-      <div className="space-y-3">
+      <div className="space-y-3 pt-4 pb-4">
         {showRestaurantPicker && restaurantPickerOptions.length > 0 ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">

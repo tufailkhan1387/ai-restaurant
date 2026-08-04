@@ -15,12 +15,13 @@ interface StatsCardProps {
 
 export function StatsCard({ title, value, change, icon: Icon, iconClassName }: StatsCardProps) {
   return (
-    <Card className="border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)] rounded-2xl hover:shadow-md transition-all duration-200">
-      <CardContent className="p-5">
+    <Card className="border-border/80 shadow-[0_1px_2px_rgba(31,41,55,0.05),0_10px_28px_-12px_rgba(249,115,22,0.16)] rounded-xl overflow-hidden hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_12px_32px_-12px_rgba(249,115,22,0.28)] transition-all duration-200">
+      <CardContent className="p-5 relative">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-amber-400/80 to-transparent" />
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1.5 min-w-0">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold tracking-tight text-foreground tabular-nums">{value}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
+            <p className="text-2xl font-extrabold tracking-tight text-foreground tabular-nums">{value}</p>
             {change && (
               <p
                 className={cn(
@@ -36,7 +37,7 @@ export function StatsCard({ title, value, change, icon: Icon, iconClassName }: S
           </div>
           <div
             className={cn(
-              "p-3 rounded-2xl shrink-0",
+              "p-2.5 rounded-lg shrink-0",
               iconClassName || "bg-primary/10 text-primary"
             )}
           >

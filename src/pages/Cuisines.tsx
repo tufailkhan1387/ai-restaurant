@@ -233,7 +233,33 @@ export default function Cuisines() {
           <DialogHeader>
             <DialogTitle>Link Restaurants</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+          <div className="max-h-[50vh] overflow-y-auto space-y-2 py-4 pr-1">
+            {restaurants.length > 0 && (
+              <label className="flex items-center gap-2 rounded border border-primary/20 bg-background p-2 cursor-pointer sticky top-0 z-[1] shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={restaurants.length > 0 && selectedRestaurantIds.length === restaurants.length}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate =
+                        selectedRestaurantIds.length > 0 &&
+                        selectedRestaurantIds.length < restaurants.length;
+                    }
+                  }}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedRestaurantIds(restaurants.map((r) => r.id));
+                    } else {
+                      setSelectedRestaurantIds([]);
+                    }
+                  }}
+                />
+                <span className="font-medium text-sm">Select All</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {selectedRestaurantIds.length}/{restaurants.length}
+                </span>
+              </label>
+            )}
             {restaurants.map((r) => {
               const checked = selectedRestaurantIds.includes(r.id);
               return (

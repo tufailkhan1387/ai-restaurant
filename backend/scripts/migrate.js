@@ -4,7 +4,7 @@
  * Usage (from server / CI, with backend/.env or env vars set):
  *   npm run db:migrate --prefix backend
  */
-import "dotenv/config";
+import "../src/loadEnv.js";
 import { runMigrations } from "../src/db/runMigrations.js";
 
 async function main() {

@@ -1,4 +1,4 @@
-import "dotenv/config";
+import { envFilePath } from "./loadEnv.js";
 import express from "express";
 import { runMigrations } from "./db/runMigrations.js";
 import cors from "cors";
@@ -41,7 +41,23 @@ app.options("*", corsMiddleware);
 const jsonParser = express.json({ limit: "2mb" });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, service: "airestaurantorder-api" });
+  const present = (key) => Boolean(String(process.env[key] || "").trim());
+  res.json({
+    ok: true,
+    service: "airestaurantorder-api",
+    env_file: envFilePath || null,
+    cwd: process.cwd(),
+    config: {
+      DATABASE_URL: present("DATABASE_URL"),
+      JWT_SECRET: present("JWT_SECRET"),
+      TELNYX_API_KEY: present("TELNYX_API_KEY"),
+      TELNYX_CONNECTION_ID: present("TELNYX_CONNECTION_ID"),
+      SYNTHFLOW_API_KEY: present("SYNTHFLOW_API_KEY"),
+      SYNTHFLOW_WORKSPACE_ID: present("SYNTHFLOW_WORKSPACE_ID"),
+      SYNTHFLOW_WEBHOOK_SECRET: present("SYNTHFLOW_WEBHOOK_SECRET"),
+      PUBLIC_API_URL: present("PUBLIC_API_URL"),
+    },
+  });
 });
 
 app.use("/api/auth", jsonParser, authRoutes);

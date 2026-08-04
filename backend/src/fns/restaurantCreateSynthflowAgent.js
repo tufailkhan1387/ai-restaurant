@@ -7,6 +7,7 @@ import {
   toSynthflowLanguage,
   postCallWebhookUrl,
   listWorkspaceNumbers,
+  findAssistantByPhone,
 } from "../lib/synthflowClient.js";
 import {
   buildRestaurantVoiceKnowledge,
@@ -15,6 +16,11 @@ import {
   loadRestaurantVoiceCatalog,
 } from "../lib/restaurantVoiceContext.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
+
+function isPhoneAlreadyAttachedError(err) {
+  const msg = String(err?.message || err || "");
+  return /already attached|already assigned|phone number already/i.test(msg);
+}
 
 const ORDER_EXTRACTORS = [
   {
@@ -210,7 +216,12 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       ...(voiceId ? { voice_id: voiceId } : {}),
     };
 
-    let modelId = r.synthflow_agent_id || null;
+    // Optional: link an existing Fine-tuner agent by id from the UI/body
+    let modelId =
+      body.synthflow_agent_id ||
+      body.model_id ||
+      r.synthflow_agent_id ||
+      null;
     let action = "created";
 
     // Create/update agent FIRST (extractors used to run first and often timed out)
@@ -225,14 +236,33 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       await updateAgent(modelId, agentPayload);
       action = "updated";
     } else {
-      const created = await createInboundAgent(agentPayload);
-      modelId =
-        created?.response?.model_id ||
-        created?.model_id ||
-        created?.response?.id ||
-        null;
-      if (!modelId) {
-        throw new Error(`Synthflow did not return model_id: ${JSON.stringify(created)}`);
+      try {
+        const created = await createInboundAgent(agentPayload);
+        modelId =
+          created?.response?.model_id ||
+          created?.model_id ||
+          created?.response?.id ||
+          null;
+        if (!modelId) {
+          throw new Error(`Synthflow did not return model_id: ${JSON.stringify(created)}`);
+        }
+      } catch (createErr) {
+        // Number already owns an inbound agent in Synthflow (common after manual Fine-tuner setup).
+        // Adopt that agent, update webhook/prompt, and save id to our DB so UI shows Agent ready.
+        if (!isPhoneAlreadyAttachedError(createErr) || !phoneInfo.phone) {
+          throw createErr;
+        }
+        const existing = await findAssistantByPhone(phoneInfo.phone);
+        if (!existing?.model_id) {
+          throw new Error(
+            `${createErr.message}. Could not find that agent in Synthflow — open Fine-tuner, copy the agent model_id, and pass synthflow_agent_id when creating.`,
+          );
+        }
+        modelId = existing.model_id;
+        // Update without re-sending phone_number (already attached)
+        const { phone_number: _omitPhone, ...updatePayload } = agentPayload;
+        await updateAgent(modelId, updatePayload);
+        action = "linked_existing";
       }
     }
 

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
-import { Upload, Download } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -20,25 +20,6 @@ export function MenuImportButton({ restaurantId, onImported }: Props) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([
-      {
-        name: "Margherita Pizza",
-        category: "Pizza",
-        price: 12.5,
-        description: "Tomato, mozzarella, basil",
-        prep_time_minutes: 15,
-        image_url: "",
-        dietary_tags: "vegetarian",
-        spice_level: 0,
-        is_available: true,
-      },
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Menu");
-    XLSX.writeFile(wb, "menu-import-template.xlsx");
-  };
 
   const handleFile = async (file: File) => {
     if (!restaurantId) {
@@ -132,10 +113,6 @@ export function MenuImportButton({ restaurantId, onImported }: Props) {
         className="hidden"
         onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
       />
-      <Button variant="outline" size="sm" onClick={downloadTemplate}>
-        <Download className="h-4 w-4 mr-1" />
-        Template
-      </Button>
       <Button
         variant="outline"
         onClick={() => fileRef.current?.click()}

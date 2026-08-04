@@ -1,12 +1,12 @@
--- Telnyx dedicated numbers + Synthflow AI agents (per restaurant)
--- Safe to re-run: only adds missing columns/indexes when tables already exist.
--- Restaurant columns are applied even if public.calls is missing.
+-- Idempotent patch for live DBs where restaurants already exists but Telnyx/Synthflow
+-- columns are missing. Safe to re-run. Deploy this file then:
+--   cd backend && npm run db:migrate
+-- Or run this SQL directly against the LIVE DATABASE_URL (not local 127.0.0.1).
 
 DO $$
 BEGIN
   IF to_regclass('public.restaurants') IS NULL THEN
-    RAISE NOTICE 'public.restaurants does not exist — skip Telnyx/Synthflow restaurant columns';
-    RETURN;
+    RAISE EXCEPTION 'public.restaurants table does not exist';
   END IF;
 
   ALTER TABLE public.restaurants
@@ -17,9 +17,6 @@ BEGIN
     ADD COLUMN IF NOT EXISTS synthflow_action_ids jsonb DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS voice_provider text DEFAULT 'elevenlabs_twilio',
     ADD COLUMN IF NOT EXISTS synthflow_synced_at timestamptz;
-
-  COMMENT ON COLUMN public.restaurants.voice_provider IS
-    'elevenlabs_twilio | synthflow_telnyx — primary phone AI stack for this restaurant';
 
   EXECUTE $i$
     CREATE UNIQUE INDEX IF NOT EXISTS restaurants_telnyx_phone_number_uidx
@@ -37,7 +34,7 @@ END $$;
 DO $$
 BEGIN
   IF to_regclass('public.calls') IS NULL THEN
-    RAISE NOTICE 'public.calls does not exist — skip Synthflow call columns';
+    RAISE NOTICE 'public.calls missing — restaurant columns are enough for Telnyx assign';
     RETURN;
   END IF;
 

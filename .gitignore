@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 .env
 backend/.env
+backend/env*
 backend/uploads
 dist
 dist-ssr

@@ -174,15 +174,23 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <Link
         to={href}
         className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200",
-          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          isActive && "bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:bg-primary hover:text-primary-foreground",
+          "group relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+          "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          isActive &&
+            "bg-sidebar-primary/15 text-sidebar-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--sidebar-primary))]",
           indent && !collapsed && "pl-9 py-2"
         )}
       >
-        <Icon className={cn("h-5 w-5 flex-shrink-0", isActive ? "text-primary-foreground" : "text-muted-foreground")} />
+        <Icon
+          className={cn(
+            "h-[18px] w-[18px] flex-shrink-0 transition-colors",
+            isActive ? "text-sidebar-primary" : "text-sidebar-foreground/55 group-hover:text-sidebar-foreground"
+          )}
+        />
         {!collapsed && (
-          <span className={cn("text-sm font-medium", isActive && "text-primary-foreground")}>{label}</span>
+          <span className={cn("text-sm font-medium tracking-tight", isActive && "text-sidebar-accent-foreground")}>
+            {label}
+          </span>
         )}
       </Link>
     );
@@ -216,13 +224,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       type="button"
       onClick={onToggleOpen}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-sidebar-accent",
+        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+        "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         active && !open && "bg-sidebar-accent text-sidebar-accent-foreground"
       )}
     >
-      <Icon className={cn("h-5 w-5 flex-shrink-0", active ? "text-primary" : "text-muted-foreground")} />
-      <span className="text-sm font-medium flex-1 text-left">{label}</span>
-      <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+      <Icon
+        className={cn(
+          "h-[18px] w-[18px] flex-shrink-0",
+          active ? "text-sidebar-primary" : "text-sidebar-foreground/55"
+        )}
+      />
+      <span className="text-sm font-medium tracking-tight flex-1 text-left">{label}</span>
+      <ChevronDown
+        className={cn(
+          "h-4 w-4 text-sidebar-foreground/40 transition-transform duration-200",
+          open && "rotate-180"
+        )}
+      />
     </button>
   );
 
@@ -240,35 +259,46 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     <aside
       className={cn(
         "fixed left-0 top-0 h-screen bg-sidebar text-sidebar-foreground flex flex-col transition-all duration-300 z-40",
-        "border-r border-sidebar-border shadow-[4px_0_24px_-12px_rgba(15,23,42,0.08)]",
+        "border-r border-sidebar-border",
         collapsed ? "w-16" : "w-64"
       )}
     >
-      <div className="h-16 flex items-center justify-between px-4">
-        {!collapsed && (
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0 shadow-md shadow-primary/30">
+      <div className="relative overflow-hidden">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{
+            background:
+              "radial-gradient(ellipse 80% 120% at 0% 0%, hsl(168 65% 48% / 0.22), transparent 55%)",
+          }}
+        />
+        <div className="relative h-16 flex items-center justify-between px-4">
+          {!collapsed && (
+            <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
+              <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20">
+                <LogoIcon className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <span className="font-bold text-[15px] tracking-tight text-sidebar-accent-foreground truncate">
+                {restaurantName}
+              </span>
+            </div>
+          )}
+          {collapsed && (
+            <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center mx-auto shadow-lg shadow-black/20">
               <LogoIcon className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-lg tracking-tight text-foreground truncate">{restaurantName}</span>
-          </div>
-        )}
-        {collapsed && (
-          <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center mx-auto shadow-md shadow-primary/30">
-            <LogoIcon className="h-5 w-5 text-primary-foreground" />
-          </div>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggle}
-          className={cn(
-            "h-8 w-8 text-muted-foreground hover:bg-sidebar-accent flex-shrink-0",
-            collapsed && "hidden"
           )}
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className={cn(
+              "h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex-shrink-0",
+              collapsed && "hidden"
+            )}
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        </div>
       </div>
       {collapsed && (
         <div className="px-2 pb-2">
@@ -276,21 +306,21 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             variant="ghost"
             size="icon"
             onClick={onToggle}
-            className="h-8 w-8 w-full text-muted-foreground hover:bg-sidebar-accent"
+            className="h-8 w-8 w-full text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       )}
 
-      <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto custom-scrollbar">
-        <div className="space-y-1">
+      <nav className="flex-1 py-3 px-2.5 space-y-1 overflow-y-auto custom-scrollbar">
+        <div className="space-y-0.5">
           <NavItem icon={LayoutDashboard} label="Dashboard" href="/" />
 
           {collapsed ? (
             usersChildren.map((item) => <NavItem key={item.href} {...item} />)
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <GroupButton
                 open={usersOpen}
                 onToggleOpen={() => setUsersOpen((v) => !v)}
@@ -299,7 +329,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 label="Users"
               />
               {usersOpen && (
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {usersChildren.map((item) => (
                     <NavItem key={item.href} {...item} indent />
                   ))}
@@ -320,7 +350,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 label="Orders"
               />
               {ordersOpen && (
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   <NavItem icon={ClipboardList} label="All orders" href="/orders" indent />
                   {ordersChildren.map((c) => (
                     <NavItem key={c.href} {...c} indent />
@@ -342,7 +372,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 label="Menu"
               />
               {menuOpen && (
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {menuChildren.map((item) => (
                     <NavItem key={item.href} {...item} indent />
                   ))}
@@ -370,7 +400,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               label="Reports"
             />
             {reportsOpen && (
-              <div className="space-y-1 mt-1">
+              <div className="space-y-0.5 mt-0.5">
                 {reportsChildren.map((item) => (
                   <NavItem key={item.href} {...item} indent />
                 ))}
@@ -380,8 +410,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
 
         {!collapsed && (
-          <div className="pt-4 mt-3 border-t border-sidebar-border space-y-1">
-            <p className="px-3 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider mb-2">
+          <div className="pt-4 mt-3 border-t border-sidebar-border space-y-0.5">
+            <p className="px-3 text-[10px] font-bold text-sidebar-foreground/35 uppercase tracking-[0.16em] mb-2">
               Management
             </p>
             {finalManagement.map((item) => (
@@ -393,17 +423,19 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {!collapsed && (
         <div className="p-3 border-t border-sidebar-border">
-          <div className="rounded-2xl bg-muted/60 border border-border/50 p-3">
+          <div className="rounded-xl bg-sidebar-accent/80 border border-sidebar-border p-3">
             <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10 ring-2 ring-white shadow-sm">
+              <Avatar className="h-10 w-10 ring-2 ring-sidebar-primary/30">
                 <AvatarImage src={profile?.avatar_url || undefined} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-sm font-semibold">
                   {initial}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-foreground truncate leading-tight">{displayName}</p>
-                <p className="text-xs text-muted-foreground capitalize">({roleLabel})</p>
+                <p className="text-sm font-semibold text-sidebar-accent-foreground truncate leading-tight">
+                  {displayName}
+                </p>
+                <p className="text-xs text-sidebar-foreground/50 capitalize">({roleLabel})</p>
               </div>
             </div>
           </div>
@@ -413,7 +445,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <div className="p-2 border-t border-sidebar-border flex justify-center">
           <Avatar className="h-9 w-9">
             <AvatarImage src={profile?.avatar_url || undefined} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs">{initial}</AvatarFallback>
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
+              {initial}
+            </AvatarFallback>
           </Avatar>
         </div>
       )}

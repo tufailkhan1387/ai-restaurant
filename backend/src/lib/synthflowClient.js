@@ -181,6 +181,52 @@ export async function updateAgent(modelId, payload) {
   });
 }
 
+/** List assistants (paginated). */
+export async function listAssistants({ limit = 100, offset = 0 } = {}) {
+  const q = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const json = await synthflowRequest(`/assistants?${q}`);
+  return (
+    json?.response?.assistants ||
+    json?.response ||
+    json?.assistants ||
+    (Array.isArray(json) ? json : [])
+  );
+}
+
+/**
+ * Find an existing inbound agent that already owns this E.164 number.
+ */
+export async function findAssistantByPhone(phoneE164) {
+  const want = String(phoneE164 || "").trim();
+  if (!want) return null;
+
+  const pages = 5;
+  for (let page = 0; page < pages; page++) {
+    const assistants = await listAssistants({ limit: 50, offset: page * 50 });
+    if (!Array.isArray(assistants) || !assistants.length) break;
+
+    for (const a of assistants) {
+      const id = a?.model_id || a?.id || null;
+      const direct = String(a?.phone_number || "").trim();
+      const attached = Array.isArray(a?.attached_phone_numbers)
+        ? a.attached_phone_numbers
+            .map((p) => String(p?.phone_number || p?.number || p || "").trim())
+            .filter(Boolean)
+        : [];
+      const candidates = [direct, ...attached].filter(Boolean);
+      if (candidates.some((n) => n === want || n.replace(/\s/g, "") === want)) {
+        return { model_id: id, raw: a };
+      }
+    }
+
+    if (assistants.length < 50) break;
+  }
+  return null;
+}
+
 export async function createInformationExtractor({ kind, identifier, description, examples, choices }) {
   /** @type {Record<string, unknown>} */
   const inner = { identifier, description };

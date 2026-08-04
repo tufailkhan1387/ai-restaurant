@@ -68,14 +68,20 @@ type Props = {
 };
 
 export function OrderFulfillmentTimeline({ order, history, className, orientation = "auto" }: Props) {
-  const st = (ORDER_FULFILLMENT_FLOW as readonly string[]).includes(order.status)
-    ? (order.status as OrderStatus)
-    : order.status === "cancelled"
+  const rawStatus = order.status;
+  // "assigned" is hidden from the visible timeline; treat progress as past Ready.
+  const st =
+    rawStatus === "cancelled"
       ? ("cancelled" as const)
-      : ("pending" as OrderStatus);
+      : rawStatus === "assigned"
+        ? ("ready" as OrderStatus)
+        : (ORDER_FULFILLMENT_FLOW as readonly string[]).includes(rawStatus)
+          ? (rawStatus as OrderStatus)
+          : ("pending" as OrderStatus);
 
   const cancelled = st === "cancelled";
-  const flowIdx = cancelled ? -1 : ORDER_FULFILLMENT_FLOW.indexOf(st as OrderStatus);
+  const flowIdx = cancelled ? -1 : ORDER_FULFILLMENT_FLOW.indexOf(st);
+  const assignedHidden = rawStatus === "assigned";
 
   if (cancelled) {
     return (
@@ -114,12 +120,12 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
       <ol
         className={cn(
           orientation === "vertical" ? "hidden" : "hidden lg:grid",
-          "grid-cols-7 gap-0",
+          "grid-cols-6 gap-0",
         )}
       >
         {ORDER_FULFILLMENT_FLOW.map((step, idx) => {
-          const done = flowIdx >= 0 && idx < flowIdx;
-          const active = flowIdx >= 0 && idx === flowIdx;
+          const done = flowIdx >= 0 && (assignedHidden ? idx <= flowIdx : idx < flowIdx);
+          const active = flowIdx >= 0 && !assignedHidden && idx === flowIdx;
           const when = timestampForStep(step, order, history);
           const notes = notesForStep(step, history);
           return (
@@ -166,8 +172,8 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
       {/* Mobile / vertical */}
       <ol className={cn(orientation === "vertical" ? "block" : "lg:hidden", "space-y-0")}>
         {ORDER_FULFILLMENT_FLOW.map((step, idx) => {
-          const done = flowIdx >= 0 && idx < flowIdx;
-          const active = flowIdx >= 0 && idx === flowIdx;
+          const done = flowIdx >= 0 && (assignedHidden ? idx <= flowIdx : idx < flowIdx);
+          const active = flowIdx >= 0 && !assignedHidden && idx === flowIdx;
           const when = timestampForStep(step, order, history);
           const notes = notesForStep(step, history);
           const isLast = idx === ORDER_FULFILLMENT_FLOW.length - 1;

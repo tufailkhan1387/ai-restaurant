@@ -7,7 +7,7 @@ export function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen canvas-atmosphere flex">
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -18,7 +18,7 @@ export function DashboardLayout() {
         }`}
       >
         <TopBar />
-        <main className="flex-1 p-4 sm:p-6 overflow-auto">
+        <main className="flex-1 px-4 pb-8 pt-2 sm:px-6 lg:px-8 overflow-auto">
           <Outlet />
         </main>
       </div>

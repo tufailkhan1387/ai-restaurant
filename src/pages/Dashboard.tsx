@@ -6,7 +6,6 @@ import {
   ChefHat,
   Store,
   Tag,
-  LayoutDashboard,
   Calendar,
   ArrowUpRight,
   BarChart2,
@@ -63,24 +62,24 @@ type RecentOrderRow = {
 };
 
 const AVATAR_TONES = [
-  "bg-violet-100 text-violet-700",
-  "bg-sky-100 text-sky-700",
-  "bg-rose-100 text-rose-700",
-  "bg-teal-100 text-teal-700",
-  "bg-amber-100 text-amber-700",
-  "bg-indigo-100 text-indigo-700",
+  "bg-orange-100 text-orange-800",
+  "bg-amber-100 text-amber-800",
+  "bg-stone-200 text-stone-700",
+  "bg-slate-200 text-slate-700",
+  "bg-rose-100 text-rose-800",
+  "bg-yellow-100 text-yellow-800",
 ];
 
 function StatCardSkeleton() {
   return (
-    <Card className="rounded-xl border-border/50 shadow-sm">
+    <Card className="rounded-xl border-border/80 shadow-sm">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2 flex-1">
-            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-3 w-24" />
             <Skeleton className="h-8 w-16" />
           </div>
-          <Skeleton className="h-11 w-11 rounded-xl shrink-0" />
+          <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
         </div>
       </CardContent>
     </Card>
@@ -178,10 +177,10 @@ export default function Dashboard() {
     }
     const total = orders.length;
     const palette = [
-      { bar: "bg-teal-500", track: "bg-teal-100" },
-      { bar: "bg-sky-500", track: "bg-sky-100" },
-      { bar: "bg-rose-400", track: "bg-rose-100" },
-      { bar: "bg-violet-500", track: "bg-violet-100" },
+      { bar: "bg-orange-500", track: "bg-orange-100" },
+      { bar: "bg-amber-500", track: "bg-amber-100" },
+      { bar: "bg-slate-500", track: "bg-slate-200" },
+      { bar: "bg-emerald-500", track: "bg-emerald-100" },
     ];
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
@@ -196,10 +195,10 @@ export default function Dashboard() {
   const sourceBreakdown = useMemo(() => {
     const orders = recentOrders || [];
     const sources = {
-      in_house: { label: "In house", icon: Building2, tone: "bg-rose-50 text-rose-500" },
-      online: { label: "Online", icon: Globe, tone: "bg-sky-50 text-sky-500" },
-      takeaway: { label: "Take away", icon: Package, tone: "bg-teal-50 text-teal-500" },
-      app: { label: "App", icon: Smartphone, tone: "bg-emerald-50 text-emerald-500" },
+      in_house: { label: "In house", icon: Building2, tone: "bg-rose-50 text-rose-600" },
+      online: { label: "Online", icon: Globe, tone: "bg-slate-100 text-slate-700" },
+      takeaway: { label: "Take away", icon: Package, tone: "bg-orange-50 text-orange-700" },
+      app: { label: "App", icon: Smartphone, tone: "bg-emerald-50 text-emerald-700" },
     };
     const counts = { in_house: 0, online: 0, takeaway: 0, app: 0 };
     for (const o of orders) {
@@ -226,84 +225,75 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 animate-fade-in pb-4">
-      {/* Header */}
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant="secondary"
-              className="rounded-full px-3 font-normal text-muted-foreground bg-primary/10 text-primary border-0"
-            >
-              <LayoutDashboard className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-              Dashboard
-            </Badge>
-            <Badge
-              variant="outline"
-              className={cn(
-                "rounded-full border font-normal",
-                isSuperAdmin
-                  ? "border-primary/25 bg-primary/5 text-primary"
-                  : "border-status-available/30 bg-status-available/5 text-status-available"
-              )}
-            >
-              {isSuperAdmin ? "Platform admin" : "Restaurant"}
-            </Badge>
+      {/* Welcome band */}
+      <section className="relative overflow-hidden rounded-2xl gradient-hero text-primary-foreground shadow-[0_20px_48px_-18px_rgba(249,115,22,0.45),0_8px_20px_-10px_rgba(31,41,55,0.5)] animate-rise">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 18% 18%, rgba(249,115,22,0.35) 0, transparent 42%), radial-gradient(circle at 88% 12%, rgba(251,191,36,0.22) 0, transparent 38%), linear-gradient(135deg, transparent 38%, rgba(0,0,0,0.28) 100%)",
+          }}
+        />
+        <div className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-7">
+          <div className="space-y-3 min-w-0">
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+                Welcome back, {firstName}
+              </h1>
+              <p className="mt-1.5 max-w-xl text-sm text-white/75">
+                {isSuperAdmin
+                  ? "Snapshot of restaurants, catalog, and orders."
+                  : `What’s happening at ${restaurantInfo?.name || "your restaurant"} today.`}
+              </p>
+            </div>
+            <p className="flex items-center gap-2 text-sm text-white/65">
+              <Calendar className="h-4 w-4 shrink-0" aria-hidden />
+              {todayLabel}
+            </p>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Welcome back, {firstName}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {isSuperAdmin
-              ? "Snapshot of restaurants, catalog, and orders."
-              : `What’s happening at ${restaurantInfo?.name || "your restaurant"} today.`}
-          </p>
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="h-4 w-4 shrink-0 text-primary/80" aria-hidden />
-            {todayLabel}
-          </p>
         </div>
       </section>
 
       {/* Exactly 6 shortcut cards */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {quickActions.map(({ href, label, icon: Icon }) => (
+        {quickActions.map(({ href, label, icon: Icon }, index) => (
           <Link
             key={href}
             to={href}
+            style={{ animationDelay: `${index * 40}ms` }}
             className={cn(
-              "group flex flex-col justify-between rounded-xl border border-border/50 bg-card p-4",
-              "shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)]",
-              "transition-all duration-200 hover:border-primary/20 hover:shadow-md"
+              "group flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4",
+              "shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)]",
+              "transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md animate-rise"
             )}
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="rounded-xl bg-primary/10 p-2 text-primary">
+              <div className="rounded-lg bg-primary/10 p-2 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
                 <Icon className="h-5 w-5" aria-hidden />
               </div>
               <ArrowUpRight
-                className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                className="h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
                 aria-hidden
               />
             </div>
-            <span className="mt-3 text-sm font-medium leading-snug text-foreground">{label}</span>
+            <span className="mt-3 text-sm font-semibold leading-snug text-foreground">{label}</span>
           </Link>
         ))}
       </section>
 
-      {/* Main grid: content + order history (same layout as before) */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
         <div className="xl:col-span-8 space-y-5">
           {!isSuperAdmin && (
-            <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)] overflow-hidden">
-              <CardContent className="p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0 space-y-2">
-                    <h3 className="text-lg font-semibold tracking-tight">{restaurantInfo?.name || "Restaurant"}</h3>
+            <Card className="rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)] overflow-hidden">
+              <CardContent className="p-0">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-l-4 border-l-status-available bg-card px-5 py-4">
+                  <div className="min-w-0 space-y-1">
+                    <h3 className="text-lg font-bold tracking-tight">{restaurantInfo?.name || "Restaurant"}</h3>
                     <p className="text-sm text-muted-foreground">
                       {restaurantInfo?.is_active ? "Accepting orders" : "Currently closed"}
                     </p>
                   </div>
-                  <Badge className="shrink-0 bg-status-available/12 text-status-available border border-status-available/25 hover:bg-status-available/12">
+                  <Badge className="shrink-0 rounded-md bg-status-available/12 text-status-available border border-status-available/25 hover:bg-status-available/12">
                     ● Live
                   </Badge>
                 </div>
@@ -325,44 +315,46 @@ export default function Dashboard() {
                   title="Total restaurants"
                   value={globalStats?.totalRestaurants ?? 0}
                   icon={Store}
-                  iconClassName="bg-sky-50 text-sky-600"
+                  iconClassName="bg-slate-100 text-slate-700"
                 />
                 <StatsCard
                   title="Menu items"
                   value={globalStats?.totalMenuItems ?? 0}
                   icon={ChefHat}
-                  iconClassName="bg-violet-50 text-violet-600"
+                  iconClassName="bg-orange-50 text-orange-700"
                 />
                 <StatsCard
                   title="Active offers"
                   value={globalStats?.totalDeals ?? 0}
                   icon={Tag}
-                  iconClassName="bg-rose-50 text-rose-500"
+                  iconClassName="bg-amber-50 text-amber-800"
                 />
               </>
             )}
           </div>
 
           {/* Total overview */}
-          <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)]">
+          <Card className="rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base font-semibold">Total overview</CardTitle>
+              <CardTitle className="text-base font-bold tracking-tight">Total overview</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {sourceBreakdown.map((item) => {
                   const Icon = item.icon;
                   return (
                     <div
                       key={item.label}
-                      className="flex items-center gap-4 rounded-xl border border-border/40 bg-muted/30 p-4"
+                      className="flex items-center gap-4 rounded-xl border border-border/70 bg-gradient-to-br from-muted/40 to-card p-4 transition-colors hover:border-primary/25"
                     >
-                      <div className={cn("rounded-xl p-3", item.tone)}>
+                      <div className={cn("rounded-lg p-2.5", item.tone)}>
                         <Icon className="h-5 w-5" aria-hidden />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground">{item.label}</p>
-                        <p className="text-xl font-bold tabular-nums tracking-tight">
+                        <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                          {item.label}
+                        </p>
+                        <p className="text-xl font-extrabold tabular-nums tracking-tight">
                           {Number(item.value).toLocaleString()}
                         </p>
                       </div>
@@ -374,9 +366,9 @@ export default function Dashboard() {
           </Card>
 
           {/* Activity */}
-          <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)]">
+          <Card className="rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold">Activity</CardTitle>
+              <CardTitle className="text-base font-bold tracking-tight">Activity</CardTitle>
               <p className="text-sm text-muted-foreground">Status mix from recent orders</p>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -388,11 +380,14 @@ export default function Dashboard() {
                 statusActivity.map((row) => (
                   <div key={row.label} className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium text-foreground">{row.label}</span>
-                      <span className="tabular-nums text-muted-foreground">{row.pct}%</span>
+                      <span className="font-semibold text-foreground">{row.label}</span>
+                      <span className="tabular-nums text-muted-foreground font-medium">{row.pct}%</span>
                     </div>
-                    <div className={cn("h-2.5 rounded-full overflow-hidden", row.track)}>
-                      <div className={cn("h-full rounded-full transition-all", row.bar)} style={{ width: `${row.pct}%` }} />
+                    <div className={cn("h-2 rounded-full overflow-hidden", row.track)}>
+                      <div
+                        className={cn("h-full rounded-full transition-all duration-500", row.bar)}
+                        style={{ width: `${row.pct}%` }}
+                      />
                     </div>
                   </div>
                 ))
@@ -403,17 +398,17 @@ export default function Dashboard() {
 
         {/* Order History — right column */}
         <div className="xl:col-span-4">
-          <Card className="rounded-xl border-border/50 shadow-[0_4px_24px_-8px_rgba(15,23,42,0.08)] h-full">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-base font-semibold">Order History</CardTitle>
-              <Button asChild variant="outline" size="sm" className="h-8 rounded-lg gap-1.5 border-border/60">
+          <Card className="rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)] h-full">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
+              <CardTitle className="text-base font-bold tracking-tight">Order History</CardTitle>
+              <Button asChild variant="outline" size="sm" className="h-8 rounded-lg gap-1.5 border-border/80">
                 <Link to="/orders">
                   <Filter className="h-3.5 w-3.5" aria-hidden />
                   Filter
                 </Link>
               </Button>
             </CardHeader>
-            <CardContent className="pt-0">
+            <CardContent className="pt-4">
               {ordersLoading && restaurantId ? (
                 <div className="space-y-3">
                   {Array.from({ length: 6 }).map((_, i) => (
@@ -426,11 +421,11 @@ export default function Dashboard() {
                     <li key={o.id}>
                       <Link
                         to={`/orders/${o.id}`}
-                        className="flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-muted/60"
+                        className="flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-muted/70"
                       >
                         <div
                           className={cn(
-                            "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+                            "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm font-bold",
                             avatarTone(o.customer_name || o.order_number)
                           )}
                         >
@@ -470,11 +465,11 @@ export default function Dashboard() {
                       : "Resolve an active restaurant to load order history."}
                   </p>
                   {restaurantId ? (
-                    <Button asChild className="mt-4 rounded-full" size="sm">
+                    <Button asChild className="mt-4 rounded-lg" size="sm">
                       <Link to="/orders">Go to orders</Link>
                     </Button>
                   ) : isSuperAdmin ? (
-                    <Button asChild className="mt-4 rounded-full" size="sm" variant="outline">
+                    <Button asChild className="mt-4 rounded-lg" size="sm" variant="outline">
                       <Link to="/restaurants">Manage restaurants</Link>
                     </Button>
                   ) : null}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Users, Search, Mail, Phone, Building2, TrendingUp, Plus } from "lucide-react";
+import { Users, Search, Mail, Phone, Building2, TrendingUp, Plus, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,8 +24,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { StatsCard } from "@/components/dashboard/StatsCard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+
+const AVATAR_TONES = [
+  "bg-orange-100 text-orange-800",
+  "bg-amber-100 text-amber-800",
+  "bg-stone-200 text-stone-700",
+  "bg-slate-200 text-slate-700",
+  "bg-rose-100 text-rose-800",
+  "bg-yellow-100 text-yellow-800",
+];
+
+function avatarTone(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash + name.charCodeAt(i) * (i + 1)) % AVATAR_TONES.length;
+  return AVATAR_TONES[hash];
+}
+
+const CARD_SHADOW =
+  "rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)]";
 
 export default function Customers() {
   const { toast } = useToast();
@@ -144,18 +165,31 @@ export default function Customers() {
   const potentialCount = wonLeads.length - wonOnly.length;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Customers</h1>
-          <p className="text-muted-foreground">View customers and converted leads</p>
+    <div className="mx-auto max-w-[1400px] space-y-6 animate-fade-in pb-4">
+      {/* Hero band — same language as Dashboard */}
+      <section className="relative overflow-hidden rounded-2xl gradient-hero text-primary-foreground shadow-[0_20px_48px_-18px_rgba(249,115,22,0.45),0_8px_20px_-10px_rgba(31,41,55,0.5)] animate-rise">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 18% 18%, rgba(249,115,22,0.35) 0, transparent 42%), radial-gradient(circle at 88% 12%, rgba(251,191,36,0.22) 0, transparent 38%), linear-gradient(135deg, transparent 38%, rgba(0,0,0,0.28) 100%)",
+          }}
+        />
+        <div className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-7">
+          <div className="min-w-0 space-y-1.5">
+            <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Customers</h1>
+            <p className="max-w-xl text-sm text-white/75">View customers and converted leads</p>
+          </div>
+          <Button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="shrink-0 rounded-lg bg-white text-foreground hover:bg-white/90 shadow-sm"
+          >
+            <Plus className="h-4 w-4 mr-2" aria-hidden />
+            Add customer
+          </Button>
         </div>
-        <Button type="button" onClick={() => setAddOpen(true)} className="shrink-0">
-          <Plus className="h-4 w-4 mr-2" />
-          Add customer
-        </Button>
-      </div>
+      </section>
 
       <Dialog
         open={addOpen}
@@ -164,48 +198,56 @@ export default function Customers() {
           if (!open) resetAddForm();
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
           <DialogHeader>
-            <DialogTitle>Add customer</DialogTitle>
+            <DialogTitle className="text-lg font-bold tracking-tight">Add customer</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="cust-phone">Phone number *</Label>
-              <Input
-                id="cust-phone"
-                placeholder="+1 555 0100"
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                autoComplete="tel"
-              />
+          <div className="grid gap-4 py-2 pb-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="cust-phone">Phone number *</Label>
+                <Input
+                  id="cust-phone"
+                  placeholder="+1 555 0100"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  autoComplete="tel"
+                  className="rounded-lg"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="cust-name">Full name</Label>
+                <Input
+                  id="cust-name"
+                  placeholder="Jane Doe"
+                  value={newFullName}
+                  onChange={(e) => setNewFullName(e.target.value)}
+                  className="rounded-lg"
+                />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cust-name">Full name</Label>
-              <Input
-                id="cust-name"
-                placeholder="Jane Doe"
-                value={newFullName}
-                onChange={(e) => setNewFullName(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cust-email">Email</Label>
-              <Input
-                id="cust-email"
-                type="email"
-                placeholder="jane@example.com"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cust-company">Company</Label>
-              <Input
-                id="cust-company"
-                placeholder="Acme Inc."
-                value={newCompany}
-                onChange={(e) => setNewCompany(e.target.value)}
-              />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="cust-email">Email</Label>
+                <Input
+                  id="cust-email"
+                  type="email"
+                  placeholder="jane@example.com"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  className="rounded-lg"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="cust-company">Company</Label>
+                <Input
+                  id="cust-company"
+                  placeholder="Acme Inc."
+                  value={newCompany}
+                  onChange={(e) => setNewCompany(e.target.value)}
+                  className="rounded-lg"
+                />
+              </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="cust-notes">Notes</Label>
@@ -215,13 +257,15 @@ export default function Customers() {
                 value={newNotes}
                 onChange={(e) => setNewNotes(e.target.value)}
                 rows={3}
+                className="rounded-lg"
               />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-3">
             <Button
               type="button"
               variant="outline"
+              className="rounded-lg"
               onClick={() => {
                 setAddOpen(false);
                 resetAddForm();
@@ -229,155 +273,213 @@ export default function Customers() {
             >
               Cancel
             </Button>
-            <Button type="button" disabled={addCustomer.isPending} onClick={() => addCustomer.mutate()}>
+            <Button
+              type="button"
+              className="rounded-lg"
+              disabled={addCustomer.isPending}
+              onClick={() => addCustomer.mutate()}
+            >
               {addCustomer.isPending ? "Saving…" : "Save customer"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Customers</p>
-                <p className="text-2xl font-bold">{allCustomers.length}</p>
-              </div>
-              <Users className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Direct Customers</p>
-                <p className="text-2xl font-bold">{customers.length}</p>
-              </div>
-              <Users className="h-8 w-8 text-status-available" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Converted Leads</p>
-                <p className="text-2xl font-bold">{convertedCount}</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-status-on-call" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Potential (qualified)</p>
-                <p className="text-2xl font-bold">{potentialCount}</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* Stats — Dashboard StatsCard language */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {isLoading ? (
+          <>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className={CARD_SHADOW}>
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-3 w-24" />
+                      <Skeleton className="h-8 w-16" />
+                    </div>
+                    <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        ) : (
+          <>
+            <StatsCard
+              title="Total Customers"
+              value={allCustomers.length}
+              icon={Users}
+              iconClassName="bg-orange-50 text-orange-700"
+            />
+            <StatsCard
+              title="Direct Customers"
+              value={customers.length}
+              icon={UserPlus}
+              iconClassName="bg-amber-50 text-amber-800"
+            />
+            <StatsCard
+              title="Converted Leads"
+              value={convertedCount}
+              icon={TrendingUp}
+              iconClassName="bg-emerald-50 text-emerald-700"
+            />
+            <StatsCard
+              title="Potential (qualified)"
+              value={potentialCount}
+              icon={TrendingUp}
+              iconClassName="bg-slate-100 text-slate-700"
+            />
+          </>
+        )}
       </div>
 
-      {/* Customers Table */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>All Customers</CardTitle>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search customers..."
-                className="pl-10 w-[300px]"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+      {/* Customers table */}
+      <Card className={cn(CARD_SHADOW, "overflow-hidden")}>
+        <CardHeader className="flex flex-col gap-4 space-y-0 border-b border-border/60 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-base font-bold tracking-tight">All Customers</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {filteredCustomers.length}{" "}
+              {filteredCustomers.length === 1 ? "record" : "records"}
+              {searchQuery ? " matching your search" : ""}
+            </p>
+          </div>
+          <div className="relative w-full sm:w-[300px]">
+            <Search
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder="Search customers..."
+              className="rounded-lg border-border/80 bg-muted/30 pl-10"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <div className="space-y-3 p-5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-xl" />
+              ))}
             </div>
           ) : filteredCustomers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
-              <p>No customers found</p>
-              <p className="text-sm mt-1">Add a customer with the button above, or convert leads to see them here.</p>
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 m-5 px-4 py-12 text-center">
+              <Users className="mb-3 h-8 w-8 text-muted-foreground" aria-hidden />
+              <p className="text-sm font-medium text-foreground">No customers found</p>
+              <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                Add a customer with the button above, or convert leads to see them here.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="mt-4 rounded-lg"
+                onClick={() => setAddOpen(true)}
+              >
+                <Plus className="mr-1.5 h-4 w-4" aria-hidden />
+                Add customer
+              </Button>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Added</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCustomers.map((customer) => (
-                  <TableRow key={customer.id} className="cursor-pointer hover:bg-muted/50">
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarFallback className="bg-primary/10 text-primary">
-                            {customer.full_name?.split(" ").map((n) => n[0]).join("").slice(0, 2) || "?"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="font-medium">{customer.full_name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {customer.email && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <Mail className="h-3 w-3 text-muted-foreground" />
-                            {customer.email}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Phone className="h-3 w-3" />
-                          {customer.phone_number || "—"}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {customer.company ? (
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {customer.company}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={customer.source === "converted_lead" ? "default" : "secondary"}>
-                        {customer.source === "converted_lead"
-                          ? "Converted Lead"
-                          : customer.source === "potential"
-                            ? `Potential (${customer.status})`
-                            : "Direct"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {customer.created_at 
-                        ? format(new Date(customer.created_at), "MMM d, yyyy")
-                        : "-"
-                      }
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent border-border/60">
+                    <TableHead className="pl-5 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Customer
+                    </TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Contact
+                    </TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Company
+                    </TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Source
+                    </TableHead>
+                    <TableHead className="pr-5 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Added
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredCustomers.map((customer) => (
+                    <TableRow
+                      key={customer.id}
+                      className="cursor-pointer border-border/50 transition-colors hover:bg-muted/70"
+                    >
+                      <TableCell className="pl-5">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 rounded-lg">
+                            <AvatarFallback
+                              className={cn(
+                                "rounded-lg text-sm font-bold",
+                                avatarTone(customer.full_name || "?")
+                              )}
+                            >
+                              {customer.full_name
+                                ?.split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .slice(0, 2) || "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="font-semibold text-foreground">{customer.full_name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          {customer.email && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                              <span className="truncate">{customer.email}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Phone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            {customer.phone_number || "—"}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {customer.company ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                            {customer.company}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={cn(
+                            "rounded-md border font-medium",
+                            customer.source === "converted_lead"
+                              ? "bg-primary/12 text-primary border-primary/25 hover:bg-primary/12"
+                              : customer.source === "potential"
+                                ? "bg-amber-50 text-amber-800 border-amber-200/80 hover:bg-amber-50"
+                                : "bg-slate-100 text-slate-800 border-slate-200/80 hover:bg-slate-100"
+                          )}
+                        >
+                          {customer.source === "converted_lead"
+                            ? "Converted Lead"
+                            : customer.source === "potential"
+                              ? `Potential (${customer.status})`
+                              : "Direct"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="pr-5 text-sm text-muted-foreground tabular-nums">
+                        {customer.created_at
+                          ? format(new Date(customer.created_at), "MMM d, yyyy")
+                          : "-"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

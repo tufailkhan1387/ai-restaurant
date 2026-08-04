@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogBody } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge, Search, X, FilterX } from "lucide-react";
@@ -222,9 +222,7 @@ function MenuItemsTable({
                   </td>
                 )}
                 <td className="py-3 px-4 align-middle">
-                  <Badge variant="outline" className="text-xs font-medium bg-muted/40 text-foreground border-muted-foreground/30">
-                    {categoryName}
-                  </Badge>
+                  <span className="text-xs font-medium text-foreground">{categoryName}</span>
                 </td>
                 <td className="py-3 px-4 align-middle whitespace-nowrap font-semibold text-foreground">
                   {formatCurrency(it.price)}
@@ -235,12 +233,8 @@ function MenuItemsTable({
                       <div className="text-xs text-muted-foreground whitespace-nowrap">{it.prep_time_minutes} min</div>
                     ) : null}
                     {it.dietary_tags?.length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {it.dietary_tags.map((t) => (
-                          <Badge key={t} variant="outline" className="text-[10px] px-1 py-0 font-normal">
-                            {t}
-                          </Badge>
-                        ))}
+                      <div className="text-[10px] text-muted-foreground">
+                        {it.dietary_tags.join(", ")}
                       </div>
                     ) : null}
                   </div>
@@ -914,24 +908,6 @@ export default function Menu() {
                     : maxOrderTab ? "Set the maximum quantity a customer can order per item. Leave blank for no limit."
                       : "Categories and items for this restaurant only."}
           </p>
-          {/* Restaurant filter */}
-          {isSuperAdmin && (
-            <div className="flex items-center gap-4 mt-2">
-              <Select value={restaurantFilterId} onValueChange={setRestaurantFilterId}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Restaurants</SelectItem>
-                  {allRestaurants.map((r) => (
-                    <SelectItem key={r.id} value={String(r.id)}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
         </div>
         <div className="flex gap-2 flex-wrap">
           {itemsTab && restaurantId ? <MenuImportButton restaurantId={restaurantId} onImported={load} /> : null}
@@ -1537,7 +1513,7 @@ function AddonForm({
   };
 
   return (
-    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+    <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>{initial ? "Edit add-on" : "New add-on"}</DialogTitle>
         {showRestaurantPicker ? (
@@ -1555,7 +1531,7 @@ function AddonForm({
           <p className="text-sm text-muted-foreground pt-1">Saved for your authenticated restaurant.</p>
         )}
       </DialogHeader>
-      <div className="space-y-3 max-h-[70vh] overflow-y-auto py-4 pr-1 custom-scrollbar">
+      <DialogBody className="space-y-3">
         {showRestaurantPicker && restaurantPickerOptions.length > 0 && !initial ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1732,7 +1708,7 @@ function AddonForm({
           <Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
           <Label>Active</Label>
         </div>
-      </div>
+      </DialogBody>
       <DialogFooter>
         <Button type="button" onClick={handleSubmit} disabled={isSaving}>
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -1779,11 +1755,11 @@ function CategoryForm({
   };
 
   return (
-    <DialogContent>
+    <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>{initial ? "Edit category" : "New category"}</DialogTitle>
       </DialogHeader>
-      <div className="space-y-3 max-h-[70vh] overflow-y-auto py-4 pr-1 custom-scrollbar">
+      <DialogBody className="space-y-3">
         {isSuperAdmin && (
           <div>
             <Label>Restaurant</Label>
@@ -1821,7 +1797,7 @@ function CategoryForm({
           <Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
           <Label>Active</Label>
         </div>
-      </div>
+      </DialogBody>
       <DialogFooter>
         <Button onClick={handleSave} disabled={isSaving}>
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -1875,11 +1851,11 @@ function SubCategoryForm({
   }, [categories, isSuperAdmin, selectedRestaurantId]);
 
   return (
-    <DialogContent>
+    <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>{initial ? "Edit sub-category" : "New sub-category"}</DialogTitle>
       </DialogHeader>
-      <div className="space-y-3 max-h-[70vh] overflow-y-auto py-4 pr-1 custom-scrollbar">
+      <DialogBody className="space-y-3">
         {isSuperAdmin && (
           <div>
             <Label>Restaurant</Label>
@@ -1935,7 +1911,7 @@ function SubCategoryForm({
           <Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
           <Label>Active</Label>
         </div>
-      </div>
+      </DialogBody>
       <DialogFooter>
         <Button onClick={handleSave} disabled={isSaving}>
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -2064,12 +2040,12 @@ function ItemForm({
   };
 
   return (
-    <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden gap-0 p-0 sm:p-0">
-      <DialogHeader className="mx-0 px-6 sm:px-7 pt-6 sm:pt-7 shrink-0">
+    <DialogContent className="max-w-2xl">
+      <DialogHeader>
         <DialogTitle>{initial ? "Edit item" : "New item"}</DialogTitle>
         <p className="text-sm text-zinc-500 pt-1">Fill in the details below, then save to update the menu.</p>
       </DialogHeader>
-      <div className="space-y-4 flex-1 min-h-0 overflow-y-auto px-6 sm:px-7 py-5 custom-scrollbar">
+      <DialogBody className="space-y-4">
         <div className="form-field">
           <Label>Name</Label>
           <Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Margherita Pizza" />
@@ -2254,8 +2230,8 @@ function ItemForm({
           </div>
           <Switch checked={form.is_available ?? true} onCheckedChange={(v) => setForm({ ...form, is_available: v })} />
         </div>
-      </div>
-      <DialogFooter className="mx-0 mb-0 shrink-0">
+      </DialogBody>
+      <DialogFooter>
         <Button onClick={() => void handleSave()} disabled={uploading || isSaving}>
           {(uploading || isSaving) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {uploading || isSaving ? "Saving…" : "Save"}

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { getKnex } from "../db.js";
 import { createPhoneOrder, parseOrderItemsText } from "../lib/phoneOrderService.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
@@ -102,8 +103,7 @@ async function resolveRestaurant(knex, payload) {
   const modelId =
     payload?.call?.model_id ||
     payload?.model_id ||
-    payload?.executed_actions &&
-      Object.values(payload.executed_actions)[0]?.model_id;
+    (payload?.executed_actions && Object.values(payload.executed_actions)[0]?.model_id);
 
   if (modelId) {
     const row = await knex("restaurants")
@@ -112,34 +112,84 @@ async function resolveRestaurant(knex, payload) {
     if (row) return row;
   }
 
-  const toNumber =
-    payload?.call?.to ||
-    payload?.call?.to_number ||
-    payload?.metadata?.to ||
-    payload?.lead?.to_phone_number;
+  const promptVars = payload?.lead?.prompt_variables || {};
+  const candidates = [
+    // Restaurant DID is often the "from" in Synthflow prompt vars when customer dials in
+    promptVars.from_phone_number,
+    promptVars.to_phone_number,
+    payload?.call?.to,
+    payload?.call?.to_number,
+    payload?.call?.from,
+    payload?.metadata?.to,
+    payload?.lead?.to_phone_number,
+  ].filter(Boolean);
 
-  if (toNumber) {
+  for (const toNumber of candidates) {
     const raw = String(toNumber).trim();
     const norm = normalizeE164(raw);
-    let row = await knex("restaurants").where({ telnyx_phone_number: raw }).first();
-    if (!row && norm) row = await knex("restaurants").where({ telnyx_phone_number: norm }).first();
-    if (row) return row;
+    const phones = [...new Set([raw, norm].filter(Boolean))];
+    for (const phone of phones) {
+      let row = await knex("restaurants").where({ telnyx_phone_number: phone }).first();
+      if (row) return row;
+      row = await knex("restaurants").where({ twilio_phone_number: phone }).first();
+      if (row) return row;
+    }
   }
 
   return null;
 }
 
-function verifyWebhookSecret(req) {
+/**
+ * Synthflow signs call_id with HMAC-SHA256 and sends base64 in HTTP_SYNTHFLOW_SIGNATURE.
+ * @see https://docs.synthflow.ai/security
+ */
+function getSynthflowSignatureHeader(req) {
+  const h = req.headers || {};
+  const keys = [
+    "x-synthflow-signature",
+    "synthflow-signature",
+    "http-synthflow-signature",
+    "http_synthflow_signature",
+    "x-webhook-secret",
+  ];
+  for (const k of keys) {
+    const v = req.get?.(k) || h[k];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  const auth = req.get?.("authorization") || h.authorization;
+  if (auth != null && String(auth).trim()) return String(auth).trim();
+  return "";
+}
+
+function verifyWebhookSecret(req, payload = {}) {
   const secret = String(process.env.SYNTHFLOW_WEBHOOK_SECRET || "").trim();
   if (!secret) return true;
-  const header =
-    req.get("x-synthflow-signature") ||
-    req.get("x-webhook-secret") ||
-    req.get("authorization") ||
-    "";
+
+  const header = getSynthflowSignatureHeader(req);
+  if (!header) return false;
+
+  // Legacy shared-secret compare (custom setups)
   if (header === secret) return true;
-  if (header.replace(/^Bearer\s+/i, "") === secret) return true;
-  return false;
+  const token = header.replace(/^Bearer\s+/i, "").trim();
+  if (token === secret) return true;
+
+  // Official Synthflow: HMAC-SHA256(call_id) → base64
+  const callId =
+    payload?.call?.call_id ||
+    payload?.call_id ||
+    payload?.lead?.prompt_variables?.call_id ||
+    "";
+  if (!callId) return false;
+
+  const expected = crypto.createHmac("sha256", secret).update(String(callId), "utf8").digest("base64");
+  try {
+    const a = Buffer.from(expected);
+    const b = Buffer.from(token || header);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -148,7 +198,7 @@ function verifyWebhookSecret(req) {
 export async function synthflowPostCallWebhook(req, res) {
   res.set("Access-Control-Allow-Origin", "*");
   try {
-    if (!verifyWebhookSecret(req)) {
+    if (!verifyWebhookSecret(req, req.body || {})) {
       return res.status(401).json({ success: false, error: "invalid webhook secret" });
     }
 

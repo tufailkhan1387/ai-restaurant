@@ -14,6 +14,7 @@ import { useReportRestaurants } from "@/hooks/useReportRestaurants";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { syncRestaurantMenuToVoiceAgent } from "@/lib/syncRestaurantMenuToVoiceAgent";
 
 // Types returned from the new backend endpoint
 type InventoryItem = {
@@ -96,9 +97,7 @@ export default function InventoryReportPage() {
 
       // Trigger AI sync if a specific restaurant is selected
       if (restaurantId && restaurantId !== "all") {
-        await supabase.functions.invoke("sync-restaurant-menu-to-agent", {
-          body: { restaurant_id: restaurantId },
-        });
+        await syncRestaurantMenuToVoiceAgent(restaurantId);
       }
     } catch (e: any) {
       toast({
@@ -144,9 +143,7 @@ export default function InventoryReportPage() {
       queryClient.invalidateQueries({ queryKey: ["inventory-report", restaurantId] });
 
       if (restaurantId && restaurantId !== "all") {
-        await supabase.functions.invoke("sync-restaurant-menu-to-agent", {
-          body: { restaurant_id: restaurantId },
-        });
+        await syncRestaurantMenuToVoiceAgent(restaurantId);
       }
     } catch (e: any) {
       toast({

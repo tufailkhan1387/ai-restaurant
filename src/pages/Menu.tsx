@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogBody } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge, Search, X, FilterX } from "lucide-react";
+import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge, Search, X, FilterX, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/lib/restaurant";
@@ -21,6 +21,7 @@ import { getApiBase, resolveMediaUrl } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { syncRestaurantMenuToVoiceAgent } from "@/lib/syncRestaurantMenuToVoiceAgent";
 
 interface Category { id: string; restaurant_id?: string; name: string; description: string | null; sort_order: number; is_active: boolean }
 interface SubCategory { id: string; restaurant_id: string; category_id: string; name: string; description: string | null; sort_order: number; is_active: boolean }
@@ -137,8 +138,6 @@ function MenuItemsTable({
   onToggleAvailability,
   addonSummary,
   itemAddonCount,
-  showRestaurant,
-  restaurantMap,
   emptyMessage,
 }: {
   items: MenuItem[];
@@ -150,8 +149,6 @@ function MenuItemsTable({
   onToggleAvailability?: (it: MenuItem) => void;
   addonSummary?: Record<string, string>;
   itemAddonCount?: Record<string, number>;
-  showRestaurant?: boolean;
-  restaurantMap?: Record<string, string>;
   emptyMessage?: string;
 }) {
   return (
@@ -160,17 +157,15 @@ function MenuItemsTable({
         <thead className="text-left bg-muted/40 text-muted-foreground border-b text-xs font-semibold uppercase tracking-wider">
           <tr>
             <th className="py-3 px-4 w-12 text-center">#</th>
-            <th className="py-3 px-4 w-20">ID</th>
             <th className="py-3 px-4 w-16">Image</th>
             <th className="py-3 px-4 min-w-[180px]">Product name</th>
-            {showRestaurant && <th className="py-3 px-4">Business</th>}
             <th className="py-3 px-4">Menu category</th>
             <th className="py-3 px-4 whitespace-nowrap">Price</th>
-            <th className="py-3 px-4">Prep / Tags</th>
+            <th className="py-3 px-4">Prep</th>
             <th className="py-3 px-4">Sub-category</th>
             <th className="py-3 px-4 text-center whitespace-nowrap">Add-on groups</th>
             <th className="py-3 px-4 text-center">Status</th>
-            <th className="py-3 px-4 w-24 text-right">Actions</th>
+            <th className="py-3 px-4 w-28 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">
@@ -180,15 +175,11 @@ function MenuItemsTable({
             const subCategoryName = subCategories?.find((sc) => sc.id === it.sub_category_id)?.name || "—";
             const addOnCount = itemAddonCount?.[it.id] ?? (addonSummary?.[it.id] ? addonSummary[it.id].split(',').length : 0);
             const addOnNames = addonSummary?.[it.id];
-            const shortId = it.id ? (it.id.length > 8 ? it.id.slice(0, 4) : it.id) : String(idx + 1000);
 
             return (
               <tr key={it.id} className="hover:bg-muted/40 transition-colors">
                 <td className="py-3 px-4 align-middle text-center text-xs font-medium text-muted-foreground">
                   {idx + 1}
-                </td>
-                <td className="py-3 px-4 align-middle text-xs font-mono text-muted-foreground">
-                  {shortId}
                 </td>
                 <td className="py-3 px-4 align-middle">
                   {thumbSrc ? (
@@ -200,7 +191,12 @@ function MenuItemsTable({
                   )}
                 </td>
                 <td className="py-3 px-4 align-middle font-medium">
-                  <div className="text-foreground font-semibold">{it.name}</div>
+                  <Link
+                    to={`/menu/items/${it.id}`}
+                    className="text-foreground font-semibold hover:text-primary hover:underline underline-offset-2"
+                  >
+                    {it.name}
+                  </Link>
                   {it.description && (
                     <div className="text-xs text-muted-foreground line-clamp-1 max-w-[220px]" title={it.description}>
                       {it.description}
@@ -216,11 +212,6 @@ function MenuItemsTable({
                     </div>
                   ) : null}
                 </td>
-                {showRestaurant && (
-                  <td className="py-3 px-4 align-middle text-xs text-muted-foreground font-medium">
-                    {restaurantMap?.[it.restaurant_id] || "—"}
-                  </td>
-                )}
                 <td className="py-3 px-4 align-middle">
                   <span className="text-xs font-medium text-foreground">{categoryName}</span>
                 </td>
@@ -228,15 +219,8 @@ function MenuItemsTable({
                   {formatCurrency(it.price)}
                 </td>
                 <td className="py-3 px-4 align-middle">
-                  <div className="space-y-1">
-                    {it.prep_time_minutes ? (
-                      <div className="text-xs text-muted-foreground whitespace-nowrap">{it.prep_time_minutes} min</div>
-                    ) : null}
-                    {it.dietary_tags?.length ? (
-                      <div className="text-[10px] text-muted-foreground">
-                        {it.dietary_tags.join(", ")}
-                      </div>
-                    ) : null}
+                  <div className="text-xs text-muted-foreground whitespace-nowrap">
+                    {it.prep_time_minutes ? `${it.prep_time_minutes} min` : "—"}
                   </div>
                 </td>
                 <td className="py-3 px-4 align-middle text-xs text-muted-foreground">
@@ -269,6 +253,11 @@ function MenuItemsTable({
                 </td>
                 <td className="py-3 px-4 align-middle text-right">
                   <div className="flex items-center justify-end gap-1">
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
+                      <Link to={`/menu/items/${it.id}`} title="View details">
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                    </Button>
                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => onEdit(it)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -283,7 +272,7 @@ function MenuItemsTable({
 
           {rows.length === 0 && (
             <tr>
-              <td colSpan={11 + (showRestaurant ? 1 : 0)} className="py-12 text-center text-muted-foreground">
+              <td colSpan={10} className="py-12 text-center text-muted-foreground">
                 {emptyMessage || "No items found."}
               </td>
             </tr>
@@ -299,7 +288,7 @@ export default function Menu() {
   const { role } = useAuth();
   const isSuperAdmin = role === "super_admin";
   const { restaurantId, loading: activeRestaurantLoading } = useActiveRestaurant();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") || "items";
   const itemsTab = activeTab === "items";
   const categoriesTab = activeTab === "categories";
@@ -488,18 +477,24 @@ export default function Menu() {
   const triggerMenuSync = useCallback(async () => {
     if (!restaurantId) return;
     try {
-      const { data, error } = await supabase.functions.invoke("sync-restaurant-menu-to-agent", {
-        body: { restaurant_id: restaurantId },
-      });
-      if (error || (data as any)?.success === false) {
-        console.error("AI sync failed:", error ?? (data as any)?.error);
+      const result = await syncRestaurantMenuToVoiceAgent(restaurantId);
+      if (!result.success) {
+        console.error("AI sync failed:", result.error);
         toast({
           variant: "destructive",
           title: "AI Sync Failed",
-          description: "Menu updated locally, but failed to sync with the AI agent. You can retry manually.",
+          description:
+            result.error ||
+            "Menu updated locally, but failed to sync with the AI agent. You can retry manually.",
         });
       } else {
-        toast({ title: "AI Agent Updated", description: "Your menu changes are now live on the voice agent." });
+        toast({
+          title: "AI Agent Updated",
+          description:
+            result.provider === "synthflow"
+              ? "Menu & inventory are now live on your Synthflow voice agent."
+              : "Your menu changes are now live on the voice agent.",
+        });
       }
     } catch (e) {
       console.error("AI sync error:", e);
@@ -543,6 +538,19 @@ export default function Menu() {
     setEditItemAddonIds(raw.filter((id) => allowed.has(id)));
     setItemDialog(true);
   };
+
+  // Open edit dialog when arriving from item details (?editItem=...)
+  useEffect(() => {
+    const editId = searchParams.get("editItem");
+    if (!editId || loading || !items.length) return;
+    const match = items.find((it) => it.id === editId);
+    if (!match) return;
+    void beginEditItem(match);
+    const next = new URLSearchParams(searchParams);
+    next.delete("editItem");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when items ready
+  }, [loading, items, searchParams]);
 
   /** Only links add-ons that belong to this restaurant (`addons` list). */
   const syncItemAddonLinks = async (itemId: string, addonIds: string[], allowedAddonIds: Set<string>) => {
@@ -957,7 +965,11 @@ export default function Menu() {
               <Plus className="h-4 w-4 mr-1" />Add Add-on
             </Button>
           )}
-          <Button variant="outline" onClick={() => void triggerMenuSync()} title="Manually sync menu changes to ElevenLabs AI">
+          <Button
+            variant="outline"
+            onClick={() => void triggerMenuSync()}
+            title="Sync menu & inventory to Synthflow (or ElevenLabs) AI agent"
+          >
             <RefreshCw className="h-4 w-4 mr-1" />
             Sync AI
           </Button>
@@ -1412,8 +1424,6 @@ export default function Menu() {
               onToggleAvailability={toggleItemAvailability}
               addonSummary={addonSummary}
               itemAddonCount={itemAddonCount}
-              showRestaurant={isSuperAdmin || restaurantFilterId === 'all'}
-              restaurantMap={restaurantMap}
               emptyMessage={
                 hasActiveFilters
                   ? "No menu items match your current search and filter criteria."

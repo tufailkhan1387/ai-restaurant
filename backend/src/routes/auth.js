@@ -125,4 +125,121 @@ router.get("/me", optionalAuth, requireAuth, async (req, res) => {
   }
 });
 
+/** Authenticated user changes their own password (current + new). */
+router.post("/change-password", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body || {};
+    const current = typeof current_password === "string" ? current_password : "";
+    const next = typeof new_password === "string" ? new_password : "";
+
+    if (!current || !next) {
+      return res.status(400).json({ error: "current_password and new_password are required" });
+    }
+    if (next.length < 8) {
+      return res.status(400).json({ error: "New password must be at least 8 characters" });
+    }
+    if (current === next) {
+      return res.status(400).json({ error: "New password must be different from the current password" });
+    }
+
+    const knex = getKnex();
+    const profile = await knex("profiles").where({ id: req.user.id }).first();
+    if (!profile?.password_hash) {
+      return res.status(400).json({ error: "Password login is not set up for this account" });
+    }
+
+    const ok = await bcrypt.compare(current, profile.password_hash);
+    if (!ok) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+
+    const hash = await bcrypt.hash(next, 10);
+    await knex("profiles").where({ id: req.user.id }).update({
+      password_hash: hash,
+      updated_at: knex.fn.now(),
+    });
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("change-password error:", e);
+    return res.status(500).json({ error: e.message || "Failed to change password" });
+  }
+});
+
+/** Demo forgot-password: every account uses OTP 123456 (no email send). */
+const DEMO_RESET_OTP = String(process.env.DEMO_RESET_OTP || "123456").trim();
+/** email → requestedAt ms */
+const pendingPasswordResets = new Map();
+const RESET_WINDOW_MS = 30 * 60 * 1000;
+
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    if (!email) {
+      return res.status(400).json({ error: "email is required" });
+    }
+
+    const knex = getKnex();
+    const profile = await knex("profiles").whereRaw("lower(email) = lower(?)", [email]).first();
+
+    // Always respond the same way to avoid account enumeration; only mark pending when found.
+    if (profile) {
+      pendingPasswordResets.set(email, Date.now());
+    }
+
+    return res.json({
+      success: true,
+      message: "If an account exists for that email, you can continue with the demo OTP.",
+      // Demo mode: always expose OTP for local/testing convenience
+      demo_otp: DEMO_RESET_OTP,
+    });
+  } catch (e) {
+    console.error("forgot-password error:", e);
+    return res.status(500).json({ error: e.message || "Failed to start password reset" });
+  }
+});
+
+router.post("/reset-password", async (req, res) => {
+  try {
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const otp = typeof req.body?.otp === "string" ? req.body.otp.trim() : String(req.body?.otp || "").trim();
+    const newPassword = typeof req.body?.new_password === "string" ? req.body.new_password : "";
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ error: "email, otp, and new_password are required" });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: "New password must be at least 8 characters" });
+    }
+    if (otp !== DEMO_RESET_OTP) {
+      return res.status(401).json({ error: "Invalid OTP" });
+    }
+
+    const requestedAt = pendingPasswordResets.get(email);
+    if (!requestedAt || Date.now() - requestedAt > RESET_WINDOW_MS) {
+      return res.status(400).json({
+        error: "Reset not started or expired. Request a new OTP first.",
+      });
+    }
+
+    const knex = getKnex();
+    const profile = await knex("profiles").whereRaw("lower(email) = lower(?)", [email]).first();
+    if (!profile) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await knex("profiles").where({ id: profile.id }).update({
+      password_hash: hash,
+      updated_at: knex.fn.now(),
+    });
+    pendingPasswordResets.delete(email);
+
+    return res.json({ success: true, message: "Password updated. You can sign in with the new password." });
+  } catch (e) {
+    console.error("reset-password error:", e);
+    return res.status(500).json({ error: e.message || "Failed to reset password" });
+  }
+});
+
 export default router;

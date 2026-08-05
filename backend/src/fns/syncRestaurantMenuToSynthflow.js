@@ -37,7 +37,7 @@ export async function syncRestaurantMenuToSynthflow(req, res) {
     const webhookUrl = postCallWebhookUrl();
 
     await updateAgent(r.synthflow_agent_id, {
-      ...(r.telnyx_phone_number ? { phone_number: r.telnyx_phone_number } : {}),
+      // Do not re-send phone_number — number is already attached; re-sending can fail.
       ...(webhookUrl ? { external_webhook_url: webhookUrl } : {}),
       agent: {
         prompt,

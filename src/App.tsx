@@ -21,6 +21,7 @@ import AutoDialer from "@/pages/AutoDialer";
 import LiveQueue from "@/pages/LiveQueue";
 import NotFound from "@/pages/NotFound";
 import Menu from "@/pages/Menu";
+import MenuItemDetail from "@/pages/menu/MenuItemDetail";
 import Deals from "@/pages/Deals";
 import Orders from "@/pages/Orders";
 import OrdersNew from "@/pages/orders/OrdersNew";
@@ -94,6 +95,7 @@ const App = () => (
               <Route path="auto-dialer" element={<AutoDialer />} />
               <Route path="live-queue" element={<LiveQueue />} />
               <Route path="menu" element={<Menu />} />
+              <Route path="menu/items/:itemId" element={<MenuItemDetail />} />
               <Route path="inventory" element={<Menu />} />
               <Route path="deals" element={<Deals />} />
               <Route path="orders" element={<Orders />} />

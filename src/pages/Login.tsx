@@ -1,22 +1,66 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { UtensilsCrossed, Eye, EyeOff, ArrowRight, Sparkles } from "lucide-react";
+import {
+  UtensilsCrossed,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  Sparkles,
+  Shield,
+  Store,
+  ArrowLeft,
+  KeyRound,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { getApiBase } from "@/lib/apiBase";
 import { cn } from "@/lib/utils";
+
+const DEMO_CREDENTIALS = [
+  {
+    label: "Super Admin",
+    description: "Full platform access",
+    email: "admin@admin.com",
+    password: "11223344",
+    icon: Shield,
+  },
+  {
+    label: "Royal Restaurant",
+    description: "Restaurant admin",
+    email: "royal@gmail.com",
+    password: "11223344",
+    icon: Store,
+  },
+] as const;
+
+type AuthView = "login" | "forgot" | "reset";
 
 export default function Login() {
   const { user, loading, signIn } = useAuth();
+  const { toast } = useToast();
+  const [view, setView] = useState<AuthView>("login");
   const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const fillCredentials = (creds: (typeof DEMO_CREDENTIALS)[number]) => {
+    setEmail(creds.email);
+    setPassword(creds.password);
+    setShowPassword(true);
+    setView("login");
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[hsl(220_33%_97%)]">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 animate-pulse">
           <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/30">
             <UtensilsCrossed className="h-6 w-6 text-primary-foreground" />
@@ -41,82 +85,171 @@ export default function Login() {
     }
   };
 
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        demo_otp?: string;
+        success?: boolean;
+      };
+      if (!res.ok) throw new Error(data.error || "Could not start reset");
+
+      setOtp(data.demo_otp || "123456");
+      setView("reset");
+      toast({
+        title: "Demo OTP ready",
+        description: `Use OTP ${data.demo_otp || "123456"} for any account, then set a new password.`,
+      });
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Request failed",
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      toast({
+        variant: "destructive",
+        title: "Password too short",
+        description: "New password must be at least 8 characters.",
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({
+        variant: "destructive",
+        title: "Passwords do not match",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          otp: otp.trim(),
+          new_password: newPassword,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) throw new Error(data.error || "Reset failed");
+
+      setPassword(newPassword);
+      setNewPassword("");
+      setConfirmPassword("");
+      setOtp("");
+      setView("login");
+      toast({
+        title: "Password updated",
+        description: "You can sign in with your new password now.",
+      });
+    } catch (err: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Reset failed",
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const heading =
+    view === "login"
+      ? { title: "Welcome back", subtitle: "Sign in to access your dashboard" }
+      : view === "forgot"
+        ? { title: "Forgot password", subtitle: "Enter your account email to continue" }
+        : { title: "Reset password", subtitle: "Enter the demo OTP and choose a new password" };
+
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-[hsl(220_33%_97%)]">
-      {/* Brand plane — full-bleed visual */}
-      <aside className="relative hidden lg:flex flex-col justify-between overflow-hidden p-10 xl:p-14 text-white">
+    <div className="min-h-screen grid lg:grid-cols-2 bg-background">
+      <aside className="relative hidden lg:flex flex-col justify-between overflow-hidden p-10 xl:p-14 text-primary-foreground">
         <div
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(145deg, hsl(248 70% 52%) 0%, hsl(262 65% 42%) 48%, hsl(230 55% 28%) 100%)",
+              "linear-gradient(145deg, hsl(var(--primary)) 0%, hsl(18 92% 42%) 48%, hsl(217 28% 17%) 100%)",
           }}
           aria-hidden
         />
-        {/* Atmosphere layers */}
         <div
           className="absolute inset-0 opacity-40"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.35) 0%, transparent 42%), radial-gradient(circle at 85% 75%, rgba(255,180,200,0.25) 0%, transparent 45%)",
+              "radial-gradient(circle at 20% 20%, hsl(0 0% 100% / 0.35) 0%, transparent 42%), radial-gradient(circle at 85% 75%, hsl(32 96% 60% / 0.35) 0%, transparent 45%)",
           }}
           aria-hidden
         />
         <div
-          className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-white/10 blur-3xl animate-[pulse-subtle_6s_ease-in-out_infinite]"
+          className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-primary-foreground/10 blur-3xl animate-[pulse-subtle_6s_ease-in-out_infinite]"
           aria-hidden
         />
         <div
-          className="absolute -left-16 bottom-20 h-64 w-64 rounded-full bg-rose-300/20 blur-3xl animate-[pulse-subtle_8s_ease-in-out_infinite]"
+          className="absolute -left-16 bottom-20 h-64 w-64 rounded-full bg-primary/30 blur-3xl animate-[pulse-subtle_8s_ease-in-out_infinite]"
           aria-hidden
         />
-        {/* Soft grid texture */}
         <div
           className="absolute inset-0 opacity-[0.07]"
           style={{
             backgroundImage:
-              "linear-gradient(rgba(255,255,255,.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.9) 1px, transparent 1px)",
+              "linear-gradient(hsl(0 0% 100% / 0.9) 1px, transparent 1px), linear-gradient(90deg, hsl(0 0% 100% / 0.9) 1px, transparent 1px)",
             backgroundSize: "48px 48px",
           }}
           aria-hidden
         />
 
         <div className="relative z-10 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 rounded-2xl bg-primary-foreground/15 backdrop-blur-sm border border-primary-foreground/20 flex items-center justify-center shadow-lg">
             <UtensilsCrossed className="h-5 w-5" />
           </div>
           <span className="text-lg font-semibold tracking-tight">Royal Restaurant</span>
         </div>
 
         <div className="relative z-10 max-w-md space-y-5">
-          <p className="inline-flex items-center gap-2 text-sm font-medium text-white/80">
+          <p className="inline-flex items-center gap-2 text-sm font-medium text-primary-foreground/80">
             <Sparkles className="h-4 w-4" aria-hidden />
             AI Ordering System
           </p>
           <h1 className="text-4xl xl:text-5xl font-bold leading-[1.1] tracking-tight">
             Run your kitchen from one calm dashboard.
           </h1>
-          <p className="text-base xl:text-lg text-white/75 leading-relaxed max-w-sm">
+          <p className="text-base xl:text-lg text-primary-foreground/75 leading-relaxed max-w-sm">
             Orders, menu, fleet, and reports — signed in and ready when you are.
           </p>
         </div>
 
-        <p className="relative z-10 text-sm text-white/50">© {new Date().getFullYear()} Royal Restaurant</p>
+        <p className="relative z-10 text-sm text-primary-foreground/50">
+          © {new Date().getFullYear()} Royal Restaurant
+        </p>
       </aside>
 
-      {/* Form panel */}
       <main className="relative flex items-center justify-center p-6 sm:p-10">
         <div
           className="pointer-events-none absolute inset-0 opacity-60 lg:opacity-100"
           style={{
             background:
-              "radial-gradient(ellipse 70% 50% at 50% 0%, hsl(248 70% 60% / 0.08), transparent 70%)",
+              "radial-gradient(ellipse 70% 50% at 50% 0%, hsl(var(--primary) / 0.1), transparent 70%)",
           }}
           aria-hidden
         />
 
         <div className="relative w-full max-w-[400px] animate-fade-in">
-          {/* Mobile brand */}
           <div className="flex lg:hidden items-center gap-3 mb-10 justify-center">
             <div className="w-11 h-11 rounded-2xl gradient-primary flex items-center justify-center shadow-md shadow-primary/30">
               <UtensilsCrossed className="h-5 w-5 text-primary-foreground" />
@@ -128,82 +261,252 @@ export default function Login() {
           </div>
 
           <div className="mb-8 space-y-2 text-center lg:text-left">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Welcome back</h2>
-            <p className="text-muted-foreground text-sm sm:text-base">
-              Sign in to access your dashboard
-            </p>
+            {view !== "login" ? (
+              <button
+                type="button"
+                onClick={() => setView(view === "reset" ? "forgot" : "login")}
+                className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </button>
+            ) : null}
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">{heading.title}</h2>
+            <p className="text-muted-foreground text-sm sm:text-base">{heading.subtitle}</p>
           </div>
 
-          <form
-            onSubmit={handleLogin}
-            className={cn(
-              "rounded-3xl border border-border/60 bg-card/80 backdrop-blur-sm",
-              "shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-5"
-            )}
-          >
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-foreground/80">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="admin@restaurant.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="h-12"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-foreground/80">
-                Password
-              </Label>
-              <div className="relative">
+          {view === "login" ? (
+            <form
+              onSubmit={handleLogin}
+              className={cn(
+                "rounded-3xl border border-border/60 bg-card/80 backdrop-blur-sm",
+                "shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-5",
+              )}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-foreground/80">
+                  Email
+                </Label>
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="email"
+                  type="email"
+                  placeholder="admin@restaurant.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
-                  autoComplete="current-password"
-                  className="h-12 pr-11"
+                  autoComplete="email"
+                  className="h-12"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg hover:bg-muted"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="password" className="text-foreground/80">
+                    Password
+                  </Label>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline underline-offset-2"
+                    onClick={() => setView("forgot")}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    className="h-12 pr-11"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg hover:bg-muted"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full h-12 rounded-xl text-base font-semibold shadow-md shadow-primary/25 gap-2 group"
+              >
+                {isSubmitting ? (
+                  "Signing in…"
+                ) : (
+                  <>
+                    Sign In
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  </>
+                )}
+              </Button>
+            </form>
+          ) : null}
+
+          {view === "forgot" ? (
+            <form
+              onSubmit={handleForgot}
+              className={cn(
+                "rounded-3xl border border-border/60 bg-card/80 backdrop-blur-sm",
+                "shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-5",
+              )}
+            >
+              <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs text-muted-foreground">
+                Demo mode: OTP for every account is <span className="font-mono font-semibold text-foreground">123456</span>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="forgot-email">Account email</Label>
+                <Input
+                  id="forgot-email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  className="h-12"
+                />
+              </div>
+              <Button type="submit" disabled={isSubmitting} className="w-full h-12 rounded-xl gap-2">
+                {isSubmitting ? "Sending…" : (
+                  <>
+                    <KeyRound className="h-4 w-4" />
+                    Continue with OTP
+                  </>
+                )}
+              </Button>
+            </form>
+          ) : null}
+
+          {view === "reset" ? (
+            <form
+              onSubmit={handleReset}
+              className={cn(
+                "rounded-3xl border border-border/60 bg-card/80 backdrop-blur-sm",
+                "shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-5",
+              )}
+            >
+              <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs text-muted-foreground">
+                Demo OTP: <span className="font-mono font-semibold text-foreground">123456</span>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="reset-email">Email</Label>
+                <Input id="reset-email" type="email" value={email} disabled className="h-12 bg-muted/40" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="otp">OTP</Label>
+                <Input
+                  id="otp"
+                  inputMode="numeric"
+                  placeholder="123456"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  required
+                  className="h-12 font-mono tracking-widest"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New password</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    className="h-12 pr-11"
+                    placeholder="At least 8 characters"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 rounded-lg"
+                    onClick={() => setShowNewPassword((v) => !v)}
+                  >
+                    {showNewPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  className="h-12"
+                />
+              </div>
+              <Button type="submit" disabled={isSubmitting} className="w-full h-12 rounded-xl">
+                {isSubmitting ? "Updating…" : "Reset password"}
+              </Button>
+            </form>
+          ) : null}
+
+          {view === "login" ? (
+            <div className="mt-6 space-y-3">
+              <p className="text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Demo login credentials
+              </p>
+              <div className="grid gap-2">
+                {DEMO_CREDENTIALS.map((cred) => {
+                  const Icon = cred.icon;
+                  return (
+                    <button
+                      key={cred.email}
+                      type="button"
+                      onClick={() => fillCredentials(cred)}
+                      className={cn(
+                        "w-full rounded-xl border border-border/70 bg-card/90 px-4 py-3 text-left",
+                        "hover:border-primary/40 hover:bg-accent/60 transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <Icon className="h-4 w-4" aria-hidden />
+                        </span>
+                        <span className="min-w-0 flex-1 space-y-0.5">
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-foreground">{cred.label}</span>
+                            <span className="text-[11px] text-muted-foreground">Click to fill</span>
+                          </span>
+                          <span className="block text-xs text-muted-foreground">{cred.description}</span>
+                          <span className="block font-mono text-xs text-foreground/80 pt-1">
+                            {cred.email}
+                            <span className="text-muted-foreground"> · </span>
+                            {cred.password}
+                          </span>
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full h-12 rounded-xl text-base font-semibold shadow-md shadow-primary/25 gap-2 group"
-            >
-              {isSubmitting ? (
-                "Signing in…"
-              ) : (
-                <>
-                  Sign In
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
-                </>
-              )}
-            </Button>
-          </form>
+          ) : null}
 
           <p className="text-center text-sm text-muted-foreground mt-8 lg:mt-10">
             Powered by AI Ordering System

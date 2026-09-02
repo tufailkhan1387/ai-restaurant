@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install frontend deps
@@ -27,7 +27,6 @@ jobs:
 
       - name: Build frontend
         env:
-          # Set secret VITE_API_URL in GitHub, or this default is used
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
           if [ -z "$VITE_API_URL" ]; then
@@ -36,47 +35,61 @@ jobs:
           echo "Building with VITE_API_URL=$VITE_API_URL"
           npm run build
 
-      - name: Setup SSH
+      - name: Check deploy secrets
+        run: |
+          missing=0
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then echo "Missing secret: SSH_HOST"; missing=1; fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then echo "Missing secret: SSH_USER"; missing=1; fi
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then echo "Missing secret: SSH_PRIVATE_KEY"; missing=1; fi
+          exit $missing
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
-          cat >> ~/.ssh/config << EOF
-          Host webuzo
-            HostName ${{ secrets.SSH_HOST }}
-            User ${{ secrets.SSH_USER }}
-            IdentityFile ~/.ssh/deploy_key
-            StrictHostKeyChecking yes
-          EOF
+          chmod 700 ~/.ssh
+          ssh-keyscan -T 30 -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
       - name: Deploy frontend (dist → public_html/airestaurant)
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
         run: |
           rsync -avz --delete \
+            -e "ssh -o StrictHostKeyChecking=yes" \
             --exclude '.git' \
             --exclude '.env' \
-            dist/ webuzo:/home/limiria/public_html/airestaurant/
+            dist/ "${SSH_USER}@${SSH_HOST}:/home/limiria/public_html/airestaurant/"
 
       - name: Deploy backend (backend → public_html/airestaurantbackend)
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
         run: |
           rsync -avz --delete \
+            -e "ssh -o StrictHostKeyChecking=yes" \
             --exclude 'node_modules' \
             --exclude '.env' \
             --exclude 'uploads' \
             --exclude 'backend_log.txt' \
             --exclude 'scratch' \
-            backend/ webuzo:/home/limiria/public_html/airestaurantbackend/
+            backend/ "${SSH_USER}@${SSH_HOST}:/home/limiria/public_html/airestaurantbackend/"
 
       - name: Install backend deps + restart
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
         run: |
-          ssh webuzo 'bash -s' << 'EOF'
+          ssh -o StrictHostKeyChecking=yes "${SSH_USER}@${SSH_HOST}" 'bash -s' << 'EOF'
           set -e
           cd /home/limiria/public_html/airestaurantbackend
           npm ci --omit=dev || npm install --omit=dev
-          # Passenger / Node selector restart (harmless if unused)
           mkdir -p tmp
           touch tmp/restart.txt
-          # If you use PM2, uncomment and set the app name:
-          # pm2 restart airestaurant-api || true
           echo "Backend deploy finished at $(date -u)"
           EOF

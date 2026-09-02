@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, UserPlus } from "lucide-react";
+import { PhoneIncoming, PhoneOutgoing, PhoneMissed, UserPlus } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { formatDistanceToNow } from "date-fns";
+import { formatDate } from "@/i18n/formatters";
 
 type ActivityType = "call_inbound" | "call_outbound" | "call_missed" | "lead_new";
 
@@ -24,6 +25,7 @@ const activityConfig: Record<ActivityType, { icon: any; iconClass: string; bgCla
 };
 
 export function RecentActivity() {
+  const { t } = useTranslation(["dashboard", "common", "calls"]);
   const { data: activities = [], isLoading } = useQuery({
     queryKey: ["recent-activity"],
     queryFn: async () => {
@@ -36,8 +38,8 @@ export function RecentActivity() {
         .order("created_at", { ascending: false })
         .limit(10);
 
-      if (calls) {
-        calls.forEach((call) => {
+      if (Array.isArray(calls)) {
+        (calls as any[]).forEach((call) => {
           let type: ActivityType = "call_inbound";
           if (call.status === "missed") {
             type = "call_missed";
@@ -49,9 +51,9 @@ export function RecentActivity() {
             id: `call-${call.id}`,
             type,
             description: `${call.direction === "inbound" ? "Call from" : "Call to"} ${call.phone_number}`,
-            time: call.created_at ? formatDistanceToNow(new Date(call.created_at), { addSuffix: true }) : "Unknown",
+            time: call.created_at ? formatDate(call.created_at, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "",
             details: call.duration_seconds 
-              ? `Duration: ${Math.floor(call.duration_seconds / 60)}:${String(call.duration_seconds % 60).padStart(2, "0")}`
+              ? `${Math.floor(call.duration_seconds / 60)}:${String(call.duration_seconds % 60).padStart(2, "0")}`
               : undefined,
           });
         });
@@ -64,31 +66,27 @@ export function RecentActivity() {
         .order("created_at", { ascending: false })
         .limit(5);
 
-      if (leads) {
-        leads.forEach((lead) => {
+      if (Array.isArray(leads)) {
+        (leads as any[]).forEach((lead) => {
           activityList.push({
             id: `lead-${lead.id}`,
             type: "lead_new",
-            description: `New lead: ${lead.full_name || lead.phone_number}`,
-            time: lead.created_at ? formatDistanceToNow(new Date(lead.created_at), { addSuffix: true }) : "Unknown",
+            description: `${lead.full_name || lead.phone_number}`,
+            time: lead.created_at ? formatDate(lead.created_at, { month: "short", day: "numeric" }) : "",
             details: lead.company || undefined,
           });
         });
       }
 
-      // Sort by time (most recent first)
-      return activityList.sort((a, b) => {
-        // Parse the relative time strings back to compare
-        return 0; // Keep original order since we fetched in desc order
-      }).slice(0, 10);
+      return activityList.slice(0, 10);
     },
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
   return (
     <Card className="border-border">
       <CardHeader className="pb-4">
-        <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
+        <CardTitle className="text-lg font-semibold">{t("dashboard:recentActivity", "Recent Activity")}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <ScrollArea className="h-[300px]">
@@ -99,7 +97,7 @@ export function RecentActivity() {
               </div>
             ) : activities.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No recent activity
+                {t("dashboard:noRecentActivity", "No recent activity")}
               </div>
             ) : (
               activities.map((activity) => {
@@ -129,3 +127,4 @@ export function RecentActivity() {
     </Card>
   );
 }
+

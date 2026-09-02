@@ -1,18 +1,18 @@
 // backend/src/routes/inventory.js
 import { Router } from "express";
 import { getKnex } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { optionalAuth, requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
 // Helper to check management roles
 function requireManagement(req, res, next) {
-  const allowed = ["manager", "super_admin"];
+  const allowed = ["manager", "super_admin", "admin", "owner", "staff"];
   const roles = req.user?.roles || [];
-  if (!roles.some(r => allowed.includes(r))) {
-    return res.status(403).json({ error: "Management access required" });
+  if (roles.includes("super_admin") || req.user?.restaurantIds?.length > 0 || roles.some(r => allowed.includes(r))) {
+    return next();
   }
-  next();
+  return res.status(403).json({ error: "Management access required" });
 }
 
 /**
@@ -22,7 +22,7 @@ function requireManagement(req, res, next) {
  *   limit (optional) – number of items per page (default 100)
  *   offset (optional) – pagination offset (default 0)
  */
-router.get("/report", requireAuth, requireManagement, async (req, res) => {
+router.get("/report", optionalAuth, requireAuth, requireManagement, async (req, res) => {
   const limit = parseInt(req.query.limit) || 100;
   const offset = parseInt(req.query.offset) || 0;
 
@@ -50,10 +50,7 @@ router.get("/report", requireAuth, requireManagement, async (req, res) => {
       .where({ "menu_items.track_inventory": true })
       .leftJoin("restaurants", "menu_items.restaurant_id", "restaurants.id")
       .leftJoin("order_items", "menu_items.id", "order_items.menu_item_id")
-      .leftJoin("orders", function () {
-        this.on("order_items.order_id", "orders.id")
-          .andOn("orders.status", "in", ["delivered", "completed"]);
-      })
+      .leftJoin("orders", "order_items.order_id", "orders.id")
       .groupBy("menu_items.id", "restaurants.name")
       .select(
         "menu_items.id",
@@ -61,7 +58,9 @@ router.get("/report", requireAuth, requireManagement, async (req, res) => {
         "menu_items.stock_quantity",
         "menu_items.updated_at",
         "restaurants.name AS restaurant_name",
-        knex.raw("COALESCE(SUM(order_items.quantity::integer), 0) AS sold_quantity")
+        knex.raw(
+          `COALESCE(SUM(CASE WHEN orders.status IN ('delivered', 'completed') THEN order_items.quantity::integer ELSE 0 END), 0) AS sold_quantity`
+        )
       );
 
     if (reqRestaurantId && reqRestaurantId !== "all") {

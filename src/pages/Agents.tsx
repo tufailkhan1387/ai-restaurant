@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Bot,
   RefreshCw,
@@ -47,6 +48,7 @@ type AgentRow = {
 };
 
 export default function Agents() {
+  const { t } = useTranslation(["calls", "common"]);
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
   const [testAgent, setTestAgent] = useState<AgentRow | null>(null);
@@ -173,17 +175,17 @@ export default function Agents() {
   const inactiveAgents = agents?.filter((a) => !a.is_active) ?? [];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-10">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">AI Agents</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t("calls:agents", "AI Agents")}</h1>
           <p className="text-muted-foreground">
             Sync, edit, create, and delete ElevenLabs agents directly from your dashboard
           </p>
         </div>
         <div className="flex gap-2">
           <Button onClick={openCreate} variant="outline">
-            <Plus className="h-4 w-4 mr-2" /> New agent
+            <Plus className="h-4 w-4 mr-2" /> {t("common:add", "New agent")}
           </Button>
           <Button
             onClick={handleSync}
@@ -191,7 +193,7 @@ export default function Agents() {
             className="gradient-primary text-primary-foreground"
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing..." : "Sync from ElevenLabs"}
+            {syncing ? t("calls:syncing", "Syncing...") : t("calls:syncElevenLabs", "Sync from ElevenLabs")}
           </Button>
         </div>
       </div>
@@ -199,7 +201,7 @@ export default function Agents() {
       {isLoading ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            Loading agents...
+            {t("common:loading", "Loading agents...")}
           </CardContent>
         </Card>
       ) : activeAgents.length === 0 ? (
@@ -263,14 +265,14 @@ export default function Agents() {
                       <Star className="h-4 w-4 mr-1" /> Set default
                     </Button>
                   )}
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(agent)} title="Edit">
+                  <Button size="sm" variant="ghost" onClick={() => openEdit(agent)} title={t("common:edit", "Edit")}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => setConfirmDelete(agent)}
-                    title="Delete"
+                    title={t("common:delete", "Delete")}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
@@ -319,7 +321,7 @@ export default function Agents() {
                   className="text-destructive hover:underline"
                   onClick={() => setConfirmDelete(a)}
                 >
-                  Remove
+                  {t("common:delete", "Remove")}
                 </button>
               </div>
             ))}
@@ -372,14 +374,14 @@ export default function Agents() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDelete(null)}>
-              Cancel
+              {t("common:cancel", "Cancel")}
             </Button>
             <Button
               variant="destructive"
               onClick={() => confirmDelete && deleteAgent.mutate(confirmDelete.id)}
               disabled={deleteAgent.isPending}
             >
-              {deleteAgent.isPending ? "Deleting…" : "Delete permanently"}
+              {deleteAgent.isPending ? "Deleting…" : t("common:delete", "Delete permanently")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -406,7 +408,7 @@ export default function Agents() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="test-phone">Phone number</Label>
+              <Label htmlFor="test-phone">{t("common:phone", "Phone number")}</Label>
               <Input
                 id="test-phone"
                 placeholder="+14155551234"
@@ -426,7 +428,7 @@ export default function Agents() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTestAgent(null)} disabled={calling}>
-              Cancel
+              {t("common:cancel", "Cancel")}
             </Button>
             <Button onClick={handleTestCall} disabled={calling}>
               <PhoneCall className="h-4 w-4 mr-1" />
@@ -438,3 +440,4 @@ export default function Agents() {
     </div>
   );
 }
+

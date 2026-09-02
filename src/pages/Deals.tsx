@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Plus, Tag, Trash2, Ticket } from "lucide-react";
@@ -21,6 +22,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { formatDate, formatTime } from "@/i18n/formatters";
 
 interface Deal {
   id: string;
@@ -56,7 +58,7 @@ function validateDealForm(form: Partial<Deal>): Partial<Record<DealFieldKey, str
   else if (price > 99_999_999.99) errors.price = "Price is too large (max 99,999,999.99).";
 
   const op = form.original_price;
-  if (op != null && !(typeof op === "string" && op.trim() === "")) {
+  if (op != null && String(op).trim() !== "") {
     const orig = typeof op === "number" ? op : parseFloat(String(op));
     if (!Number.isFinite(orig)) errors.original_price = "Enter a valid original price or leave it empty.";
     else if (orig < 0) errors.original_price = "Original price cannot be negative.";
@@ -100,11 +102,11 @@ function dealIdentityKey(
     desc,
     dealPriceNorm(d.price),
     orig,
-    d.image_url ?? "",
+    (d.image_url ?? "").trim(),
     d.starts_at ?? "",
     d.ends_at ?? "",
-    Boolean(d.is_active),
-  ].join("\t");
+    d.is_active ? "1" : "0",
+  ].join("\0");
 }
 
 function buildDealRestaurantClusters(
@@ -156,12 +158,13 @@ function fmtTableDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso.slice(0, 16);
-  return d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  return `${formatDate(iso)} ${formatTime(iso)}`;
 }
 
 type DealFormSubmit = Partial<Deal> & { restaurant_ids?: string[] };
 
 export default function Deals() {
+  const { t } = useTranslation(["deals", "common"]);
   const { toast } = useToast();
   const { role } = useAuth();
   const isSuperAdmin = role === "super_admin";
@@ -180,171 +183,89 @@ export default function Deals() {
 
   const load = useCallback(async () => {
     if (!restaurantId) return;
-    const [d, rn] = await Promise.all([
-      supabase.from("deals").select("*").eq("restaurant_id", restaurantId).order("created_at", { ascending: false }),
-      supabase.from("restaurants").select("name").eq("id", restaurantId).maybeSingle(),
-    ]);
-    if (d.data) setDeals(d.data as Deal[]);
-    else setDeals([]);
-    setRestaurantName((rn.data as { name?: string } | null)?.name ?? null);
-
-    if (isSuperAdmin) {
-      const [{ data: allDeals }, { data: allRest }] = await Promise.all([
-        supabase
-          .from("deals")
-          .select("id, restaurant_id, name, description, price, original_price, image_url, starts_at, ends_at, is_active"),
-        supabase.from("restaurants").select("id, name"),
-      ]);
-      const rmap = new Map<string, string>(
-        ((allRest as { id: string; name: string }[]) || []).map((r) => [r.id, r.name]),
-      );
-      const rows = (allDeals as DealClusterRow[] | null) ?? [];
-      setDealRestaurantCluster(buildDealRestaurantClusters(rows, rmap));
-      setDealRestaurantIdsMap(buildDealRestaurantIdClusters(rows));
-    } else {
-      setDealRestaurantCluster({});
-      setDealRestaurantIdsMap({});
-    }
-  }, [restaurantId, isSuperAdmin]);
+    const { data: dData } = await supabase
+      .from("deals")
+      .select("*")
+      .eq("restaurant_id", restaurantId)
+      .order("name");
+    const list = (dData as Deal[]) || [];
+    const { data: rRow } = await supabase.from("restaurants").select("name").eq("id", restaurantId).maybeSingle();
+    const rName = rRow?.name ?? null;
+    setRestaurantName(rName);
+    setRestaurantPickerList(rName ? [{ id: restaurantId, name: rName }] : []);
+    const nameMap = new Map<string, string>([[restaurantId, rName || "Current restaurant"]]);
+    setDealRestaurantCluster(buildDealRestaurantClusters(list, nameMap));
+    setDealRestaurantIdsMap(buildDealRestaurantIdClusters(list));
+    setDeals(list);
+  }, [restaurantId]);
 
   useEffect(() => {
-    if (activeRestaurantLoading) return;
-    if (!restaurantId) {
-      setDeals([]);
-      setRestaurantName(null);
-      setDealRestaurantCluster({});
-      setDealRestaurantIdsMap({});
-      return;
-    }
     void load();
-  }, [restaurantId, activeRestaurantLoading, load]);
-
-  useEffect(() => {
-    if (!dealDialog || !isSuperAdmin) return;
-    void (async () => {
-      const { data, error } = await supabase.from("restaurants").select("id, name").order("name");
-      if (error) {
-        console.error(error);
-        return;
-      }
-      setRestaurantPickerList((data as { id: string; name: string }[]) ?? []);
-    })();
-  }, [dealDialog, isSuperAdmin]);
+  }, [load]);
 
   const saveDeal = async (form: DealFormSubmit) => {
-    if (editDeal && !isSuperAdmin && editDeal.restaurant_id !== restaurantId) {
-      toast({ variant: "destructive", title: "Cannot edit this deal", description: "It belongs to another restaurant." });
-      return;
-    }
-
-    const fieldErrs = validateDealForm(form);
-    if (Object.keys(fieldErrs).length > 0) {
-      toast({
-        variant: "destructive",
-        title: "Check your input",
-        description: Object.values(fieldErrs).join(" "),
-      });
-      return;
-    }
-
-    const nameTrim = (form.name ?? "").trim();
-    const priceVal = typeof form.price === "number" ? form.price : parseFloat(String(form.price ?? "0"));
-    const opRaw = form.original_price;
-    let original_price: number | null = null;
-    if (opRaw != null && !(typeof opRaw === "string" && opRaw.trim() === "")) {
-      const o = typeof opRaw === "number" ? opRaw : parseFloat(String(opRaw));
-      if (Number.isFinite(o)) original_price = Math.round(o * 100) / 100;
-    }
-    const descTrim = (form.description ?? "").trim();
+    const { restaurant_ids: pickedIds, ...dealFields } = form;
     const basePayload = {
-      name: nameTrim,
-      description: descTrim.length ? descTrim : null,
-      price: Math.round(priceVal * 100) / 100,
-      original_price,
-      image_url: form.image_url ?? null,
-      starts_at: form.starts_at || null,
-      ends_at: form.ends_at || null,
-      is_active: form.is_active ?? true,
+      name: dealFields.name,
+      description: dealFields.description || null,
+      price: dealFields.price ?? 0,
+      original_price: dealFields.original_price ?? null,
+      image_url: dealFields.image_url ?? null,
+      starts_at: dealFields.starts_at || null,
+      ends_at: dealFields.ends_at || null,
+      is_active: dealFields.is_active ?? true,
     };
 
     if (editDeal) {
-      if (isSuperAdmin) {
-        const targetIds = (form.restaurant_ids?.filter(Boolean) ?? []).length
-          ? [...new Set(form.restaurant_ids!.filter(Boolean))]
-          : [String(form.restaurant_id || editDeal.restaurant_id)].filter(Boolean);
-        if (!targetIds.length) {
-          toast({ variant: "destructive", title: "Restaurant required", description: "Select at least one restaurant." });
-          return;
-        }
+      if (isSuperAdmin && pickedIds && pickedIds.length > 0) {
+        const initialLinked = dealRestaurantIdsMap[editDeal.id] ?? [editDeal.restaurant_id];
+        const fp = dealIdentityKey(editDeal);
+        const { data: fullRows } = await supabase.from("deals").select("*");
+        const matchingCluster = ((fullRows as Deal[]) || []).filter((r) => dealIdentityKey(r) === fp);
+        const currentRestIds = new Set(matchingCluster.map((r) => r.restaurant_id));
+        const desiredRestIds = new Set(pickedIds);
 
-        const oldFingerprint = dealIdentityKey(editDeal);
-        const { data: allDeals, error: allErr } = await supabase
-          .from("deals")
-          .select("id, restaurant_id, name, description, price, original_price, image_url, starts_at, ends_at, is_active");
-        if (allErr) {
-          toast({ variant: "destructive", title: "Failed", description: allErr.message });
-          return;
-        }
-        const rows = ((allDeals as DealClusterRow[] | null) ?? []).filter((d) => dealIdentityKey(d) === oldFingerprint);
-        const existingByRestaurant = new Map(rows.map((r) => [r.restaurant_id, r]));
-
-        for (const rid of targetIds) {
-          const payload = { ...basePayload, restaurant_id: rid };
-          const existing = existingByRestaurant.get(rid);
-          if (existing) {
-            const up = await supabase.from("deals").update(payload).eq("id", existing.id);
-            if (up.error) {
-              toast({ variant: "destructive", title: "Failed", description: up.error.message });
-              return;
-            }
-          } else {
-            const ins = await supabase.from("deals").insert(payload);
-            if (ins.error) {
-              toast({ variant: "destructive", title: "Failed", description: ins.error.message });
-              return;
-            }
+        for (const row of matchingCluster) {
+          if (!desiredRestIds.has(row.restaurant_id)) {
+            await supabase.from("deals").delete().eq("id", row.id);
           }
         }
-
-        const toDelete = rows.filter((r) => !targetIds.includes(r.restaurant_id));
-        for (const d of toDelete) {
-          const del = await supabase.from("deals").delete().eq("id", d.id);
-          if (del.error) {
-            toast({ variant: "destructive", title: "Failed", description: del.error.message });
-            return;
+        for (const row of matchingCluster) {
+          if (desiredRestIds.has(row.restaurant_id)) {
+            await supabase.from("deals").update(basePayload).eq("id", row.id);
           }
         }
-
-        toast({ title: "Deal updated across selected restaurants" });
+        const toAdd = pickedIds.filter((rid) => !currentRestIds.has(rid));
+        if (toAdd.length) {
+          await supabase.from("deals").insert(toAdd.map((restaurant_id) => ({ ...basePayload, restaurant_id })));
+        }
+        toast({ title: t("deals:editDeal", "Deal updated"), description: `Synced across ${pickedIds.length} restaurant(s).` });
         setDealDialog(false);
         setEditDeal(null);
         void load();
-      } else {
-        const targetRestaurantId = restaurantId!;
-        const payload = { ...basePayload, restaurant_id: targetRestaurantId };
-        const res = await supabase.from("deals").update(payload).eq("id", editDeal.id).eq("restaurant_id", editDeal.restaurant_id);
-        if (res.error) toast({ variant: "destructive", title: "Failed", description: res.error.message });
-        else {
-          toast({ title: "Deal updated" });
-          setDealDialog(false);
-          setEditDeal(null);
-          void load();
-        }
+        return;
+      }
+
+      let q = supabase.from("deals").update(basePayload).eq("id", editDeal.id);
+      if (!isSuperAdmin) q = q.eq("restaurant_id", restaurantId);
+      const res = await q;
+      if (res.error) toast({ variant: "destructive", title: t("common:error", "Failed"), description: (res.error as any)?.message || "Failed to update deal" });
+      else {
+        toast({ title: t("deals:editDeal", "Deal updated") });
+        setDealDialog(false);
+        setEditDeal(null);
+        void load();
       }
       return;
     }
 
-    let targetIds: string[];
-    if (isSuperAdmin) {
-      const fromMulti = form.restaurant_ids?.filter(Boolean) ?? [];
-      targetIds = fromMulti.length ? [...new Set(fromMulti)] : [String(form.restaurant_id || restaurantId || "")].filter(Boolean);
-    } else {
-      if (!restaurantId) {
-        toast({ variant: "destructive", title: "No restaurant", description: "No restaurant is linked to your account." });
-        return;
-      }
-      targetIds = [restaurantId];
-    }
+    const targetIds =
+      isSuperAdmin && pickedIds && pickedIds.length > 0
+        ? pickedIds
+        : restaurantId
+          ? [restaurantId]
+          : [];
+
     if (!targetIds.length) {
       toast({
         variant: "destructive",
@@ -356,7 +277,7 @@ export default function Deals() {
 
     const rows = targetIds.map((restaurant_id) => ({ ...basePayload, restaurant_id }));
     const res = await supabase.from("deals").insert(rows);
-    if (res.error) toast({ variant: "destructive", title: "Failed", description: res.error.message });
+    if (res.error) toast({ variant: "destructive", title: t("common:error", "Failed"), description: (res.error as any)?.message || "Failed to create deal" });
     else {
       const n = rows.length;
       if (isSuperAdmin && n > 1) {
@@ -365,10 +286,8 @@ export default function Deals() {
           description: `Created ${n} copies (one per selected restaurant).`,
         });
       } else {
-        const pickedName = restaurantPickerList.find((x) => x.id === targetIds[0])?.name;
         toast({
           title: "Deal created",
-          ...(pickedName && targetIds[0] !== restaurantId ? { description: `Stored for “${pickedName}”.` } : {}),
         });
       }
       setDealDialog(false);
@@ -378,30 +297,33 @@ export default function Deals() {
   };
 
   if (activeRestaurantLoading) {
-    return <p className="text-muted-foreground p-4">Loading…</p>;
+    return <p className="text-muted-foreground p-4">{t("common:loading", "Loading…")}</p>;
   }
   if (!restaurantId) {
     return (
       <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center text-muted-foreground">
-        <p className="font-medium text-foreground">No restaurant selected</p>
-        <p className="text-sm mt-1">Select or join a restaurant to manage deals.</p>
+        <p className="font-medium text-foreground">{t("deals:noRestaurantSelected", "No restaurant selected")}</p>
+        <p className="text-sm mt-1">{t("deals:selectRestaurantToManage", "Select or join a restaurant to manage deals.")}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Tag className="h-6 w-6" />Deals & Offers</h1>
-          <p className="text-muted-foreground text-sm">Combo deals and promotional offers</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Tag className="h-6 w-6 text-primary" />
+            {t("deals:title", "Deals & Offers")}
+          </h1>
+          <p className="text-muted-foreground text-sm">{t("deals:subtitle", "Combo deals and promotional offers")}</p>
         </div>
         <div className="flex items-center gap-2">
           <DealsImportButton restaurantId={restaurantId} type="deals" onImported={() => void load()} />
           <Dialog open={dealDialog} onOpenChange={(o) => { setDealDialog(o); if (!o) setEditDeal(null); }}>
             <DialogTrigger asChild>
               <Button type="button" onClick={() => setEditDeal(null)}>
-                <Plus className="h-4 w-4 mr-1" />New deal
+                <Plus className="h-4 w-4 mr-1" />{t("deals:addDeal", "New deal")}
               </Button>
             </DialogTrigger>
             <DealForm
@@ -409,8 +331,8 @@ export default function Deals() {
               initialRestaurantIds={editDeal ? dealRestaurantIdsMap[editDeal.id] ?? [editDeal.restaurant_id] : [restaurantId]}
               restaurantName={restaurantName}
               defaultRestaurantId={restaurantId}
-              showRestaurantPicker={isSuperAdmin}
-              restaurantPickerOptions={restaurantPickerList}
+              showRestaurantPicker={false}
+              restaurantPickerOptions={[]}
               onSubmit={saveDeal}
             />
           </Dialog>
@@ -422,15 +344,15 @@ export default function Deals() {
           <table className="w-full text-sm min-w-[720px]">
             <thead className="text-left bg-muted/50">
               <tr>
-                <th className="p-3 w-14">Image</th>
-                <th className="p-3">Name</th>
-                <th className="p-3 max-w-[200px]">Description</th>
-                <th className="p-3 whitespace-nowrap">Price</th>
-                <th className="p-3 whitespace-nowrap">Original</th>
-                <th className="p-3 whitespace-nowrap">Starts</th>
-                <th className="p-3 whitespace-nowrap">Ends</th>
-                <th className="p-3 whitespace-nowrap">Restaurants</th>
-                <th className="p-3">Status</th>
+                <th className="p-3 w-14">{t("deals:colImage", "Image")}</th>
+                <th className="p-3">{t("deals:colName", "Name")}</th>
+                <th className="p-3 max-w-[200px]">{t("deals:colDescription", "Description")}</th>
+                <th className="p-3 whitespace-nowrap">{t("deals:colPrice", "Price")}</th>
+                <th className="p-3 whitespace-nowrap">{t("deals:colOriginal", "Original")}</th>
+                <th className="p-3 whitespace-nowrap">{t("deals:colStarts", "Starts")}</th>
+                <th className="p-3 whitespace-nowrap">{t("deals:colEnds", "Ends")}</th>
+                <th className="p-3 whitespace-nowrap">{t("deals:colRestaurants", "Restaurants")}</th>
+                <th className="p-3">{t("deals:colStatus", "Status")}</th>
                 <th className="p-3 w-[100px]" />
               </tr>
             </thead>
@@ -490,9 +412,9 @@ export default function Deals() {
                     </td>
                     <td className="p-3 align-middle">
                       {d.is_active ? (
-                        <Badge variant="outline" className="bg-green-500/15 text-green-700">Active</Badge>
+                        <Badge variant="outline" className="bg-green-500/15 text-green-700">{t("deals:active", "Active")}</Badge>
                       ) : (
-                        <Badge variant="secondary">Inactive</Badge>
+                        <Badge variant="secondary">{t("deals:inactive", "Inactive")}</Badge>
                       )}
                     </td>
                     <td className="p-2 align-middle">
@@ -501,11 +423,11 @@ export default function Deals() {
                         size="sm"
                         variant="ghost"
                         onClick={async () => {
-                          if (!confirm("Delete?")) return;
+                          if (!confirm(t("common:confirmDelete", "Delete?"))) return;
                           let q = supabase.from("deals").delete().eq("id", d.id);
                           if (!isSuperAdmin) q = q.eq("restaurant_id", restaurantId);
                           const { error } = await q;
-                          if (error) toast({ variant: "destructive", title: "Failed", description: error.message });
+                          if (error) toast({ variant: "destructive", title: t("common:error", "Failed"), description: (error as any)?.message || "Failed to delete deal" });
                           else void load();
                         }}
                       >
@@ -517,7 +439,7 @@ export default function Deals() {
               })}
               {deals.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="p-10 text-center text-muted-foreground">No deals yet</td>
+                  <td colSpan={10} className="p-10 text-center text-muted-foreground">{t("deals:noDeals", "No deals yet")}</td>
                 </tr>
               )}
             </tbody>
@@ -545,6 +467,7 @@ function DealForm({
   restaurantPickerOptions: { id: string; name: string }[];
   onSubmit: (f: DealFormSubmit) => void | Promise<void>;
 }) {
+  const { t } = useTranslation(["deals", "common"]);
   const { toast } = useToast();
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<DealFieldKey, string>>>({});
   const [form, setForm] = useState<Partial<Deal>>(
@@ -679,26 +602,26 @@ function DealForm({
   return (
     <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
-        <DialogTitle>{initial ? "Edit deal" : "New deal"}</DialogTitle>
+        <DialogTitle>{initial ? t("deals:editDeal", "Edit deal") : t("deals:addDeal", "New deal")}</DialogTitle>
         {showRestaurantPicker ? (
-          <p className="text-sm text-muted-foreground pt-1">
+          <DialogDescription className="text-sm text-muted-foreground pt-1">
             {initial
               ? "Super admin: move this deal to another restaurant if needed."
               : "Super admin: select one or more restaurants."}
-          </p>
+          </DialogDescription>
         ) : restaurantName ? (
-          <p className="text-sm text-muted-foreground pt-1">
-            account).
-          </p>
+          <DialogDescription className="text-sm text-muted-foreground pt-1">
+            {restaurantName}
+          </DialogDescription>
         ) : (
-          <p className="text-sm text-muted-foreground pt-1">Saved for your authenticated restaurant.</p>
+          <DialogDescription className="text-sm text-muted-foreground pt-1">Saved for your authenticated restaurant.</DialogDescription>
         )}
       </DialogHeader>
       <div className="space-y-3 pt-4 pb-4">
         {showRestaurantPicker && restaurantPickerOptions.length > 0 ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Label>Restaurants</Label>
+              <Label>{t("deals:selectRestaurants", "Restaurants")}</Label>
               <div className="flex gap-1 shrink-0">
                 <Button
                   type="button"
@@ -707,7 +630,7 @@ function DealForm({
                   className="h-7 text-xs"
                   onClick={() => setSelectedRestaurantIds(restaurantPickerOptions.map((r) => r.id))}
                 >
-                  Select all
+                  {t("deals:selectAll", "Select all")}
                 </Button>
                 <Button
                   type="button"
@@ -716,7 +639,7 @@ function DealForm({
                   className="h-7 text-xs"
                   onClick={() => setSelectedRestaurantIds(initial ? initialRestaurantIds : [defaultRestaurantId])}
                 >
-                  Reset
+                  {t("deals:reset", "Reset")}
                 </Button>
               </div>
             </div>
@@ -740,7 +663,7 @@ function DealForm({
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              {selectedRestaurantIds.length} restaurant{selectedRestaurantIds.length === 1 ? "" : "s"} selected
+              {selectedRestaurantIds.length} {t("deals:colRestaurants", "Restaurants")}
             </p>
           </div>
         ) : null}
@@ -750,7 +673,7 @@ function DealForm({
           </p>
         ) : null}
         <div>
-          <Label htmlFor="deal-name">Name</Label>
+          <Label htmlFor="deal-name">{t("deals:colName", "Name")}</Label>
           <Input
             id="deal-name"
             required
@@ -766,7 +689,7 @@ function DealForm({
           {fieldErrors.name ? <p className="text-xs text-destructive mt-1">{fieldErrors.name}</p> : null}
         </div>
         <div>
-          <Label htmlFor="deal-description">Description</Label>
+          <Label htmlFor="deal-description">{t("deals:colDescription", "Description")}</Label>
           <Textarea
             id="deal-description"
             maxLength={5000}
@@ -786,7 +709,7 @@ function DealForm({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label htmlFor="deal-price">Price</Label>
+            <Label htmlFor="deal-price">{t("deals:colPrice", "Price")}</Label>
             <Input
               id="deal-price"
               type="number"
@@ -808,7 +731,7 @@ function DealForm({
             {fieldErrors.price ? <p className="text-xs text-destructive mt-1">{fieldErrors.price}</p> : null}
           </div>
           <div>
-            <Label htmlFor="deal-original">Original price</Label>
+            <Label htmlFor="deal-original">{t("deals:colOriginal", "Original price")}</Label>
             <Input
               id="deal-original"
               type="number"
@@ -836,7 +759,7 @@ function DealForm({
           </div>
         </div>
         <div className="space-y-2">
-          <Label>Deal image</Label>
+          <Label>{t("deals:dealImage", "Deal image")}</Label>
           {displayImageSrc ? <img src={displayImageSrc} alt="" className="w-full h-32 object-cover rounded-md border" /> : null}
           <Input
             type="file"
@@ -857,14 +780,14 @@ function DealForm({
                 setForm((prev) => ({ ...prev, image_url: null }));
               }}
             >
-              Remove image
+              {t("deals:removeImage", "Remove image")}
             </Button>
           )}
-          <p className="text-xs text-muted-foreground">JPEG, PNG, GIF, or WebP — up to 5MB.</p>
+          <p className="text-xs text-muted-foreground">{t("deals:imageHint", "JPEG, PNG, GIF, or WebP — up to 5MB.")}</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label htmlFor="deal-starts">Starts</Label>
+            <Label htmlFor="deal-starts">{t("deals:colStarts", "Starts")}</Label>
             <Input
               id="deal-starts"
               type="datetime-local"
@@ -878,7 +801,7 @@ function DealForm({
             />
           </div>
           <div>
-            <Label htmlFor="deal-ends">Ends</Label>
+            <Label htmlFor="deal-ends">{t("deals:colEnds", "Ends")}</Label>
             <Input
               id="deal-ends"
               type="datetime-local"
@@ -895,12 +818,12 @@ function DealForm({
         {fieldErrors.dates ? <p className="text-xs text-destructive">{fieldErrors.dates}</p> : null}
         <div className="flex items-center gap-2">
           <Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
-          <Label>Active</Label>
+          <Label>{t("deals:active", "Active")}</Label>
         </div>
       </div>
       <DialogFooter>
         <Button type="button" onClick={() => void handleSave()} disabled={uploading}>
-          {uploading ? "Saving…" : "Save"}
+          {uploading ? t("common:saving", "Saving…") : t("common:save", "Save")}
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -908,35 +831,41 @@ function DealForm({
 }
 
 function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmit: (f: Partial<Discount>) => void }) {
+  const { t } = useTranslation(["coupons", "common"]);
   const [form, setForm] = useState<Partial<Discount>>(initial || { code: "", discount_type: "percentage", discount_value: 10, min_order_amount: 0, is_active: true });
   useEffect(() => { setForm(initial || { code: "", discount_type: "percentage", discount_value: 10, min_order_amount: 0, is_active: true }); }, [initial]);
   return (
     <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-      <DialogHeader><DialogTitle>{initial ? "Edit code" : "New discount code"}</DialogTitle></DialogHeader>
+      <DialogHeader>
+        <DialogTitle>{initial ? t("coupons:editCoupon", "Edit coupon") : t("coupons:addCoupon", "New coupon")}</DialogTitle>
+        <DialogDescription className="text-xs text-muted-foreground pt-1">
+          {initial ? "Update coupon details and rules." : "Create a new discount coupon code for your customers."}
+        </DialogDescription>
+      </DialogHeader>
       <div className="space-y-3">
-        <div><Label>Code</Label><Input value={form.code || ""} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} /></div>
-        <div><Label>Description</Label><Input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+        <div><Label>{t("coupons:couponCode", "Code")}</Label><Input value={form.code || ""} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} /></div>
+        <div><Label>{t("common:description", "Description")}</Label><Input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Type</Label>
+            <Label>{t("coupons:discountType", "Type")}</Label>
             <Select value={form.discount_type || "percentage"} onValueChange={(v) => setForm({ ...form, discount_type: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="percentage">Percentage</SelectItem><SelectItem value="fixed">Fixed amount</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="percentage">{t("coupons:percentage", "Percentage")}</SelectItem><SelectItem value="fixed">{t("coupons:fixedAmount", "Fixed amount")}</SelectItem></SelectContent>
             </Select>
           </div>
-          <div><Label>Value</Label><Input type="number" step="0.01" value={form.discount_value || 0} onChange={(e) => setForm({ ...form, discount_value: parseFloat(e.target.value) || 0 })} /></div>
+          <div><Label>{t("coupons:discountValue", "Value")}</Label><Input type="number" step="0.01" value={form.discount_value || 0} onChange={(e) => setForm({ ...form, discount_value: parseFloat(e.target.value) || 0 })} /></div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div><Label>Min order</Label><Input type="number" step="0.01" value={form.min_order_amount || 0} onChange={(e) => setForm({ ...form, min_order_amount: parseFloat(e.target.value) || 0 })} /></div>
-          <div><Label>Max uses</Label><Input type="number" value={form.max_uses || ""} onChange={(e) => setForm({ ...form, max_uses: parseInt(e.target.value) || null })} /></div>
+          <div><Label>{t("coupons:minOrder", "Min order")}</Label><Input type="number" step="0.01" value={form.min_order_amount || 0} onChange={(e) => setForm({ ...form, min_order_amount: parseFloat(e.target.value) || 0 })} /></div>
+          <div><Label>{t("coupons:maxUses", "Max uses")}</Label><Input type="number" value={form.max_uses || ""} onChange={(e) => setForm({ ...form, max_uses: parseInt(e.target.value) || null })} /></div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div><Label>Starts</Label><Input type="datetime-local" value={form.starts_at?.slice(0,16) || ""} onChange={(e) => setForm({ ...form, starts_at: e.target.value || null })} /></div>
-          <div><Label>Ends</Label><Input type="datetime-local" value={form.ends_at?.slice(0,16) || ""} onChange={(e) => setForm({ ...form, ends_at: e.target.value || null })} /></div>
+          <div><Label>{t("coupons:startDate", "Starts")}</Label><Input type="datetime-local" value={form.starts_at?.slice(0,16) || ""} onChange={(e) => setForm({ ...form, starts_at: e.target.value || null })} /></div>
+          <div><Label>{t("coupons:endDate", "Ends")}</Label><Input type="datetime-local" value={form.ends_at?.slice(0,16) || ""} onChange={(e) => setForm({ ...form, ends_at: e.target.value || null })} /></div>
         </div>
-        <div className="flex items-center gap-2"><Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} /><Label>Active</Label></div>
+        <div className="flex items-center gap-2"><Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} /><Label>{t("coupons:active", "Active")}</Label></div>
       </div>
-      <DialogFooter><Button onClick={() => onSubmit(form)}>Save</Button></DialogFooter>
+      <DialogFooter><Button onClick={() => onSubmit(form)}>{t("common:save", "Save")}</Button></DialogFooter>
     </DialogContent>
   );
-}
+}

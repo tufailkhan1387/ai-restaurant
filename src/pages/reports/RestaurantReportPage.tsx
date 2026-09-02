@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Store, Loader2, DollarSign, ShoppingCart } from "lucide-react";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatCurrency } from "@/lib/restaurant";
 
 interface EarningStats {
   restaurants: {
@@ -19,6 +21,7 @@ interface EarningStats {
 }
 
 export default function RestaurantReportPage() {
+  const { t } = useTranslation(["reports", "common"]);
   const [restaurantId, setRestaurantId] = useState("all");
 
   const { data, isLoading, error } = useQuery<EarningStats>({
@@ -56,9 +59,6 @@ export default function RestaurantReportPage() {
     [filtered]
   );
 
-  const fmtCurrency = (value: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -70,28 +70,28 @@ export default function RestaurantReportPage() {
   if (error) {
     return (
       <div className="p-8 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-        <p className="font-bold">Error loading restaurant report</p>
+        <p className="font-bold">{t("common:error", "Error loading restaurant report")}</p>
         <p className="text-sm">{(error as Error).message}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-6 animate-fade-in pb-10 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
             <Store className="h-8 w-8 text-primary" />
-            Restaurant report
+            {t("reports:restaurantReport", "Restaurant report")}
           </h1>
-          <p className="text-muted-foreground mt-1">Sales and commission by restaurant</p>
+          <p className="text-muted-foreground mt-1">{t("reports:restaurantReportDesc", "Sales and commission by restaurant")}</p>
         </div>
         <Select value={restaurantId} onValueChange={setRestaurantId}>
           <SelectTrigger className="w-full md:w-[280px]">
-            <SelectValue placeholder="Filter by restaurant" />
+            <SelectValue placeholder={t("reports:filterByRestaurant", "Filter by restaurant")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Restaurants</SelectItem>
+            <SelectItem value="all">{t("reports:allRestaurants", "All Restaurants")}</SelectItem>
             {restaurants.map((r) => (
               <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
                 {r.restaurant_name}
@@ -106,8 +106,8 @@ export default function RestaurantReportPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Sales</p>
-                <p className="text-2xl font-bold">{fmtCurrency(totals.sales)}</p>
+                <p className="text-sm text-muted-foreground">{t("reports:totalSales", "Total Sales")}</p>
+                <p className="text-2xl font-bold">{formatCurrency(totals.sales)}</p>
               </div>
               <DollarSign className="h-6 w-6 text-primary" />
             </div>
@@ -117,10 +117,10 @@ export default function RestaurantReportPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Orders</p>
+                <p className="text-sm text-muted-foreground">{t("reports:totalOrders", "Total Orders")}</p>
                 <p className="text-2xl font-bold">{totals.orders}</p>
               </div>
-              <ShoppingCart className="h-6 w-6 text-status-available" />
+              <ShoppingCart className="h-6 w-6 text-emerald-600" />
             </div>
           </CardContent>
         </Card>
@@ -128,10 +128,10 @@ export default function RestaurantReportPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Restaurants Included</p>
+                <p className="text-sm text-muted-foreground">{t("reports:restaurantsIncluded", "Restaurants Included")}</p>
                 <p className="text-2xl font-bold">{filtered.length}</p>
               </div>
-              <Store className="h-6 w-6 text-status-on-call" />
+              <Store className="h-6 w-6 text-primary" />
             </div>
           </CardContent>
         </Card>
@@ -139,19 +139,19 @@ export default function RestaurantReportPage() {
 
       <Card className="border-none bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
         <CardHeader>
-          <CardTitle>Restaurant report details</CardTitle>
+          <CardTitle>{t("reports:reportDetails", "Restaurant report details")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/50 text-muted-foreground font-medium border-y">
                 <tr>
-                  <th className="px-6 py-4">Restaurant</th>
-                  <th className="px-6 py-4 text-right">Orders</th>
-                  <th className="px-6 py-4 text-right">Sales</th>
-                  <th className="px-6 py-4 text-right">Commission %</th>
-                  <th className="px-6 py-4 text-right">Admin Earnings</th>
-                  <th className="px-6 py-4 text-right">Restaurant Earnings</th>
+                  <th className="px-6 py-4">{t("reports:colRestaurant", "Restaurant")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colOrders", "Orders")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colSales", "Sales")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colCommission", "Commission %")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colAdminEarnings", "Admin Earnings")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colRestaurantEarnings", "Restaurant Earnings")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -159,18 +159,18 @@ export default function RestaurantReportPage() {
                   <tr key={row.restaurant_id} className="hover:bg-muted/30 transition-colors">
                     <td className="px-6 py-4 font-semibold text-foreground">{row.restaurant_name}</td>
                     <td className="px-6 py-4 text-right">{row.order_count}</td>
-                    <td className="px-6 py-4 text-right">{fmtCurrency(row.total_sales)}</td>
+                    <td className="px-6 py-4 text-right">{formatCurrency(row.total_sales)}</td>
                     <td className="px-6 py-4 text-right">{row.commission_rate}%</td>
-                    <td className="px-6 py-4 text-right text-primary font-medium">{fmtCurrency(row.admin_earning)}</td>
-                    <td className="px-6 py-4 text-right text-status-available font-medium">
-                      {fmtCurrency(row.restaurant_earning)}
+                    <td className="px-6 py-4 text-right text-primary font-medium">{formatCurrency(row.admin_earning)}</td>
+                    <td className="px-6 py-4 text-right text-emerald-600 font-medium">
+                      {formatCurrency(row.restaurant_earning)}
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-6 py-8 text-center text-muted-foreground">
-                      No report data available for this restaurant.
+                      {t("reports:noData", "No report data available for this restaurant.")}
                     </td>
                   </tr>
                 )}
@@ -182,3 +182,4 @@ export default function RestaurantReportPage() {
     </div>
   );
 }
+

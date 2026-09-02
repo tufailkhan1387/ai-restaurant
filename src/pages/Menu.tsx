@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogBody } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter, DialogBody } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge, Search, X, FilterX, Eye } from "lucide-react";
@@ -151,27 +152,28 @@ function MenuItemsTable({
   itemAddonCount?: Record<string, number>;
   emptyMessage?: string;
 }) {
+  const { t } = useTranslation(["menu", "common"]);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[980px] border-collapse">
         <thead className="text-left bg-muted/40 text-muted-foreground border-b text-xs font-semibold uppercase tracking-wider">
           <tr>
             <th className="py-3 px-4 w-12 text-center">#</th>
-            <th className="py-3 px-4 w-16">Image</th>
-            <th className="py-3 px-4 min-w-[180px]">Product name</th>
-            <th className="py-3 px-4">Menu category</th>
-            <th className="py-3 px-4 whitespace-nowrap">Price</th>
-            <th className="py-3 px-4">Prep</th>
-            <th className="py-3 px-4">Sub-category</th>
-            <th className="py-3 px-4 text-center whitespace-nowrap">Add-on groups</th>
-            <th className="py-3 px-4 text-center">Status</th>
-            <th className="py-3 px-4 w-28 text-right">Actions</th>
+            <th className="py-3 px-4 w-16">{t("menu:image", "Image")}</th>
+            <th className="py-3 px-4 min-w-[180px]">{t("menu:itemName", "Product name")}</th>
+            <th className="py-3 px-4">{t("menu:category", "Menu category")}</th>
+            <th className="py-3 px-4 whitespace-nowrap">{t("menu:price", "Price")}</th>
+            <th className="py-3 px-4">{t("menu:preparationTime", "Prep")}</th>
+            <th className="py-3 px-4">{t("menu:subCategory", "Sub-category")}</th>
+            <th className="py-3 px-4 text-center whitespace-nowrap">{t("menu:tabAddOns", "Add-on groups")}</th>
+            <th className="py-3 px-4 text-center">{t("common:status", "Status")}</th>
+            <th className="py-3 px-4 w-28 text-right">{t("common:actions", "Actions")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">
           {rows.map((it, idx) => {
             const thumbSrc = resolveMediaUrl(it.image_url);
-            const categoryName = categories?.find((c) => c.id === it.category_id)?.name || "Uncategorized";
+            const categoryName = categories?.find((c) => c.id === it.category_id)?.name || t("common:uncategorized", "Uncategorized");
             const subCategoryName = subCategories?.find((sc) => sc.id === it.sub_category_id)?.name || "—";
             const addOnCount = itemAddonCount?.[it.id] ?? (addonSummary?.[it.id] ? addonSummary[it.id].split(',').length : 0);
             const addOnNames = addonSummary?.[it.id];
@@ -191,12 +193,22 @@ function MenuItemsTable({
                   )}
                 </td>
                 <td className="py-3 px-4 align-middle font-medium">
-                  <Link
-                    to={`/menu/items/${it.id}`}
-                    className="text-foreground font-semibold hover:text-primary hover:underline underline-offset-2"
-                  >
-                    {it.name}
-                  </Link>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Link
+                      to={`/menu/items/${it.id}`}
+                      className="text-foreground font-semibold hover:text-primary hover:underline underline-offset-2"
+                    >
+                      {it.name}
+                    </Link>
+                    {(!it.is_available || (it.track_inventory && Number(it.stock_quantity || 0) <= 0)) && (
+                      <Badge
+                        variant="destructive"
+                        className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] px-1.5 py-0 h-4 font-semibold"
+                      >
+                        {t("menu:outOfStock", "Out of Order")}
+                      </Badge>
+                    )}
+                  </div>
                   {it.description && (
                     <div className="text-xs text-muted-foreground line-clamp-1 max-w-[220px]" title={it.description}>
                       {it.description}
@@ -273,7 +285,7 @@ function MenuItemsTable({
           {rows.length === 0 && (
             <tr>
               <td colSpan={10} className="py-12 text-center text-muted-foreground">
-                {emptyMessage || "No items found."}
+                {emptyMessage || t("menu:noItemsFound", "No items found.")}
               </td>
             </tr>
           )}
@@ -283,7 +295,9 @@ function MenuItemsTable({
   );
 }
 
+
 export default function Menu() {
+  const { t } = useTranslation(["menu", "common", "superAdmin"]);
   const { toast } = useToast();
   const { role } = useAuth();
   const isSuperAdmin = role === "super_admin";
@@ -331,81 +345,40 @@ export default function Menu() {
   const load = useCallback(async () => {
     if (!restaurantId) return;
     setLoading(true);
-    if (isSuperAdmin) {
-      const [
-        { data: itemsData, error: itemsErr },
-        { data: restData, error: restErr },
-        { data: catsData },
-        { data: subCatsData },
-        { data: addonsData },
-        { data: itemAddonsData }
-      ] = await Promise.all([
-        supabase.from('menu_items').select('*').order('sort_order'),
-        supabase.from('restaurants').select('id, name').order('name'),
-        supabase.from('menu_categories').select('*').order('sort_order'),
-        supabase.from('menu_sub_categories').select('*').order('sort_order'),
-        supabase.from('menu_addons').select('*').order('sort_order'),
-        supabase.from('menu_item_addons').select('*'),
-      ]);
-      if (itemsErr) console.error(itemsErr);
-      if (restErr) console.error(restErr);
-      if (itemsData) setItems(itemsData as MenuItem[]);
-      if (catsData) setCategories(catsData as Category[]);
-      if (subCatsData) setSubCategories(subCatsData as SubCategory[]);
-      if (addonsData) setAddons(addonsData as MenuAddon[]);
-      if (itemAddonsData) setItemAddonLinks(itemAddonsData as any[]);
-      const rlist = (restData as { id: string; name: string }[]) ?? [];
-      setAllRestaurants((prev) => JSON.stringify(prev) === JSON.stringify(rlist) ? prev : rlist);
-      const rmap: Record<string, string> = {};
-      rlist.forEach(r => { rmap[r.id] = r.name; });
-      setRestaurantMap(rmap);
-    } else {
-      const [
-        { data: catsData },
-        { data: subCatsData },
-        { data: itemsData },
-        { data: variantsData },
-        { data: addonsData },
-        { data: linksData },
-        { data: restData },
-        { data: allAddonsData },
-      ] = await Promise.all([
-        supabase.from('menu_categories').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
-        supabase.from('menu_sub_categories').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
-        supabase.from('menu_items').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
-        supabase.from('menu_item_variants').select('*').order('sort_order'),
-        supabase.from('menu_addons').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
-        supabase.from('menu_item_addons').select('*'),
-        supabase.from('restaurants').select('id, name').eq('id', restaurantId).single(),
-        supabase.from('menu_addons').select('*').order('sort_order'),
-      ]);
-      if (catsData) setCategories(catsData as Category[]);
-      if (subCatsData) setSubCategories(subCatsData as SubCategory[]);
-      if (itemsData) setItems(itemsData as MenuItem[]);
-      if (variantsData) setItemVariants(variantsData as MenuItemVariant[]);
-      if (addonsData) setAddons(addonsData as MenuAddon[]);
-      if (linksData) setItemAddonLinks(linksData as ItemAddonLink[]);
-      if (restData) setRestaurantName((restData as any).name);
-      if (allAddonsData) {
-        const rNameMap = new Map<string, string>(allRestaurants.map(r => [r.id, r.name]));
-        setAddonRestaurantCluster(buildAddonRestaurantClusters(allAddonsData as AddonClusterRow[], rNameMap));
-      }
-    }
-    setLoading(false);
-  }, [restaurantId, isSuperAdmin, allRestaurants]);
 
-  const displayedItems = isSuperAdmin
-    ? items.filter((it) => restaurantFilterId === 'all' || String(it.restaurant_id) === String(restaurantFilterId))
-    : items;
-  const displayedCategories = isSuperAdmin
-    ? categories.filter((c) => restaurantFilterId === 'all' || String(c.restaurant_id) === String(restaurantFilterId))
-    : categories;
-  const displayedSubCategories = isSuperAdmin
-    ? subCategories.filter((sc) => restaurantFilterId === 'all' || String(sc.restaurant_id) === String(restaurantFilterId))
-    : subCategories;
-  const displayedAddons = isSuperAdmin
-    ? addons.filter((a) => restaurantFilterId === 'all' || String(a.restaurant_id) === String(restaurantFilterId))
-    : addons;
+    const [
+      { data: catsData },
+      { data: subCatsData },
+      { data: itemsData },
+      { data: variantsData },
+      { data: addonsData },
+      { data: linksData },
+      { data: restData },
+    ] = await Promise.all([
+      supabase.from('menu_categories').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
+      supabase.from('menu_sub_categories').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
+      supabase.from('menu_items').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
+      supabase.from('menu_item_variants').select('*').order('sort_order'),
+      supabase.from('menu_addons').select('*').eq('restaurant_id', restaurantId).order('sort_order'),
+      supabase.from('menu_item_addons').select('*'),
+      supabase.from('restaurants').select('id, name').eq('id', restaurantId).maybeSingle(),
+    ]);
+
+    if (catsData) setCategories(catsData as Category[]);
+    if (subCatsData) setSubCategories(subCatsData as SubCategory[]);
+    if (itemsData) setItems(itemsData as MenuItem[]);
+    if (variantsData) setItemVariants(variantsData as MenuItemVariant[]);
+    if (addonsData) setAddons(addonsData as MenuAddon[]);
+    if (linksData) setItemAddonLinks(linksData as ItemAddonLink[]);
+    if (restData) setRestaurantName((restData as any).name);
+
+    setLoading(false);
+  }, [restaurantId]);
+
+  const displayedItems = items;
+  const displayedCategories = categories;
+  const displayedSubCategories = subCategories;
+  const displayedAddons = addons;
 
   const filteredItems = useMemo(() => {
     let list = displayedItems;
@@ -461,7 +434,7 @@ export default function Menu() {
     setItems((prev) => prev.map((row) => (row.id === item.id ? { ...row, is_available: nextAvailable } : row)));
     const { error } = await supabase.from("menu_items").update({ is_available: nextAvailable }).eq("id", item.id);
     if (error) {
-      toast({ variant: "destructive", title: "Failed to update status", description: error.message });
+      toast({ variant: "destructive", title: "Failed to update status", description: (error as any)?.message || "Failed to update status" });
       setItems((prev) => prev.map((row) => (row.id === item.id ? { ...row, is_available: item.is_available } : row)));
     } else {
       toast({ title: nextAvailable ? `"${item.name}" marked as available` : `"${item.name}" marked as unavailable` });
@@ -474,30 +447,34 @@ export default function Menu() {
     void load();
   }, [isSuperAdmin, load]);
 
-  const triggerMenuSync = useCallback(async () => {
+  const triggerMenuSync = useCallback(async (interactive = false) => {
     if (!restaurantId) return;
     try {
       const result = await syncRestaurantMenuToVoiceAgent(restaurantId);
       if (!result.success) {
-        console.error("AI sync failed:", result.error);
-        toast({
-          variant: "destructive",
-          title: "AI Sync Failed",
-          description:
-            result.error ||
-            "Menu updated locally, but failed to sync with the AI agent. You can retry manually.",
-        });
+        console.warn("AI voice agent sync notice:", result.error);
+        if (interactive) {
+          toast({
+            variant: "destructive",
+            title: "AI Voice Sync",
+            description:
+              result.error ||
+              "Menu updated locally. To sync with Voice Agent, configure ElevenLabs or Synthflow credentials in Settings.",
+          });
+        }
       } else {
-        toast({
-          title: "AI Agent Updated",
-          description:
-            result.provider === "synthflow"
-              ? "Menu & inventory are now live on your Synthflow voice agent."
-              : "Your menu changes are now live on the voice agent.",
-        });
+        if (interactive) {
+          toast({
+            title: "AI Agent Updated",
+            description:
+              result.provider === "synthflow"
+                ? "Menu & inventory are now live on your Synthflow voice agent."
+                : "Your menu changes are now live on the voice agent.",
+          });
+        }
       }
-    } catch (e) {
-      console.error("AI sync error:", e);
+    } catch (e: any) {
+      console.warn("AI sync notice:", e?.message || e);
     }
   }, [restaurantId, toast]);
 
@@ -827,7 +804,7 @@ export default function Menu() {
       .eq("id", item.id);
     setSavingItemId(null);
     if (error) {
-      toast({ variant: "destructive", title: "Failed", description: error.message });
+      toast({ variant: "destructive", title: "Failed", description: (error as any)?.message || "Failed to update inventory" });
       return;
     }
     setItems((prev) =>
@@ -851,7 +828,7 @@ export default function Menu() {
       .eq("id", item.id);
     setSavingItemId(null);
     if (error) {
-      toast({ variant: "destructive", title: "Failed", description: error.message });
+      toast({ variant: "destructive", title: "Failed", description: (error as any)?.message || "Failed to update max order quantity" });
       return;
     }
     setItems((prev) =>
@@ -868,7 +845,8 @@ export default function Menu() {
     return (
       <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center text-muted-foreground">
         <p className="font-medium text-foreground">No restaurant selected</p>
-        <p className="text-sm mt-1">Menu and add-ons are per restaurant. Link your account to a restaurant, then open this page again.</p>
+        <p className="font-medium text-foreground">{t("menu:noRestaurantSelected", "No restaurant selected")}</p>
+        <p className="text-sm mt-1">{t("menu:linkRestaurantToView", "Menu and add-ons are per restaurant. Link your account to a restaurant, then open this page again.")}</p>
       </div>
     );
   }
@@ -885,16 +863,16 @@ export default function Menu() {
                     inventoryTab ? <Boxes className="h-6 w-6" /> :
                       maxOrderTab ? <Gauge className="h-6 w-6" /> :
                         <PlusSquare className="h-6 w-6" />}
-              {itemsTab ? "Menu" :
-                categoriesTab ? "Categories" :
-                  subCategoriesTab ? "Sub-categories" :
-                    inventoryTab ? "Inventory" :
-                      maxOrderTab ? "Max Order" :
-                        "Add-ons"}
+              {itemsTab ? t("menu:title", "Menu") :
+                categoriesTab ? t("menu:tabCategories", "Categories") :
+                  subCategoriesTab ? t("menu:tabSubCategories", "Sub-categories") :
+                    inventoryTab ? t("menu:tabInventory", "Inventory") :
+                      maxOrderTab ? t("menu:tabMaxOrder", "Max Order") :
+                        t("menu:tabAddOns", "Add-ons")}
             </h1>
             {isSuperAdmin ? (
               <Badge variant="secondary" className="font-normal">
-                {restaurantFilterId === 'all' ? 'All Restaurants' : (restaurantMap[restaurantFilterId] || 'Loading...')}
+                {restaurantFilterId === 'all' ? t("superAdmin:allRestaurants", "All Restaurants") : (restaurantMap[restaurantFilterId] || 'Loading...')}
               </Badge>
             ) : restaurantName ? (
               <Badge variant="secondary" className="font-normal">
@@ -903,44 +881,44 @@ export default function Menu() {
             ) : null}
             {addonsTab ? (
               <Badge variant="outline" className="text-xs font-normal border-primary/40 text-primary">
-                This location only
+                {t("menu:thisLocationOnly", "This location only")}
               </Badge>
             ) : null}
           </div>
           <p className="text-muted-foreground text-sm max-w-2xl">
             {addonsTab
-              ? "Add-ons belong only to this restaurant. They never appear on another location’s menu. Link them to items from the Items tab when editing an item."
-              : categoriesTab ? "Manage menu categories for this restaurant."
-                : subCategoriesTab ? "Manage menu sub-categories for this restaurant."
-                  : inventoryTab ? "Track stock per item. When inventory hits zero, the item is marked unavailable."
-                    : maxOrderTab ? "Set the maximum quantity a customer can order per item. Leave blank for no limit."
-                      : "Categories and items for this restaurant only."}
+              ? t("menu:addonsDesc", "Add-ons belong only to this restaurant. They never appear on another location’s menu. Link them to items from the Items tab when editing an item.")
+              : categoriesTab ? t("menu:categoriesDesc", "Manage menu categories for this restaurant.")
+                : subCategoriesTab ? t("menu:subCategoriesDesc", "Manage menu sub-categories for this restaurant.")
+                  : inventoryTab ? t("menu:inventoryDesc", "Track stock per item. When inventory hits zero, the item is marked unavailable.")
+                    : maxOrderTab ? t("menu:maxOrderDesc", "Set the maximum quantity a customer can order per item. Leave blank for no limit.")
+                      : t("menu:categoriesAndItemsDesc", "Categories and items for this restaurant only.")}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {itemsTab && restaurantId ? <MenuImportButton restaurantId={restaurantId} onImported={load} /> : null}
           {categoriesTab && (
             <Dialog open={catDialog} onOpenChange={(o) => { setCatDialog(o); if (!o) setEditCat(null); }}>
-              <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" />Add Category</Button></DialogTrigger>
+              <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" />{t("menu:addCategory", "Add Category")}</Button></DialogTrigger>
               <CategoryForm
                 initial={editCat}
                 onSubmit={saveCategory}
                 isSaving={isSaving}
-                isSuperAdmin={isSuperAdmin}
-                restaurantPickerOptions={restaurantPickerList}
+                isSuperAdmin={false}
+                restaurantPickerOptions={[]}
               />
             </Dialog>
           )}
           {subCategoriesTab && (
             <Dialog open={subCatDialog} onOpenChange={(o) => { setSubCatDialog(o); if (!o) setEditSubCat(null); }}>
-              <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" />Add Sub-category</Button></DialogTrigger>
+              <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" />{t("menu:addSubCategory", "Add Sub-category")}</Button></DialogTrigger>
               <SubCategoryForm
                 initial={editSubCat}
                 categories={categories}
                 onSubmit={saveSubCategory}
                 isSaving={isSaving}
-                isSuperAdmin={isSuperAdmin}
-                restaurantPickerOptions={restaurantPickerList}
+                isSuperAdmin={false}
+                restaurantPickerOptions={[]}
               />
             </Dialog>
           )}
@@ -952,7 +930,7 @@ export default function Menu() {
                 setItemDialog(true);
               }}
             >
-              <Plus className="h-4 w-4 mr-1" />Add Item
+              <Plus className="h-4 w-4 mr-1" />{t("menu:addItem", "Add Item")}
             </Button>
           )}
           {addonsTab && (
@@ -962,16 +940,16 @@ export default function Menu() {
                 setAddonDialog(true);
               }}
             >
-              <Plus className="h-4 w-4 mr-1" />Add Add-on
+              <Plus className="h-4 w-4 mr-1" />{t("menu:addAddOn", "Add Add-on")}
             </Button>
           )}
           <Button
             variant="outline"
-            onClick={() => void triggerMenuSync()}
+            onClick={() => void triggerMenuSync(true)}
             title="Sync menu & inventory to Synthflow (or ElevenLabs) AI agent"
           >
             <RefreshCw className="h-4 w-4 mr-1" />
-            Sync AI
+            {t("menu:syncAi", "Sync AI")}
           </Button>
         </div>
       </div>
@@ -993,8 +971,8 @@ export default function Menu() {
           addons={addons}
           onSubmit={saveItem}
           isSaving={isSaving}
-          isSuperAdmin={isSuperAdmin}
-          restaurantPickerOptions={restaurantPickerList}
+          isSuperAdmin={false}
+          restaurantPickerOptions={[]}
         />
       </Dialog>
 
@@ -1003,15 +981,15 @@ export default function Menu() {
           initial={editAddon}
           restaurantName={restaurantName}
           defaultRestaurantId={restaurantId}
-          showRestaurantPicker={isSuperAdmin}
-          restaurantPickerOptions={restaurantPickerList}
+          showRestaurantPicker={false}
+          restaurantPickerOptions={[]}
           onSubmit={saveAddon}
           isSaving={isSaving}
         />
       </Dialog>
 
       {loading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <p className="text-muted-foreground">{t("common:loading", "Loading…")}</p>
       ) : addonsTab ? (
         <Card>
           <CardContent className="p-0">
@@ -1019,12 +997,12 @@ export default function Menu() {
               <table className="w-full text-sm min-w-[520px]">
                 <thead className="text-left bg-muted/50">
                   <tr>
-                    <th className="p-3">Name</th>
-                    <th className="p-3 max-w-[200px]">Description</th>
-                    <th className="p-3 whitespace-nowrap">Price</th>
-                    <th className="p-3">Sort</th>
-                    <th className="p-3 whitespace-nowrap">Restaurants</th>
-                    <th className="p-3">Active</th>
+                    <th className="p-3">{t("menu:itemName", "Name")}</th>
+                    <th className="p-3 max-w-[200px]">{t("menu:itemDescription", "Description")}</th>
+                    <th className="p-3 whitespace-nowrap">{t("menu:price", "Price")}</th>
+                    <th className="p-3">{t("common:sort", "Sort")}</th>
+                    <th className="p-3 whitespace-nowrap">{t("superAdmin:allRestaurants", "Restaurants")}</th>
+                    <th className="p-3">{t("common:status", "Active")}</th>
                     <th className="p-3 w-[100px]" />
                   </tr>
                 </thead>
@@ -1051,14 +1029,14 @@ export default function Menu() {
                                   "hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                   restaurantNames.length ? "cursor-help underline decoration-dotted underline-offset-2" : "",
                                 )}
-                                aria-label={tooltipTitle ? `Restaurants: ${tooltipTitle}` : "Restaurants"}
+                                aria-label={tooltipTitle ? t("menu:restaurantsLabel", "Restaurants: {{list}}", { list: tooltipTitle }) : t("menu:restaurants", "Restaurants")}
                               >
                                 {restaurantCount}
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="max-w-xs">
                               <p className="text-xs font-medium text-foreground mb-1.5">
-                                {restaurantCount === 1 ? "Restaurant" : `${restaurantCount} restaurants`}
+                                {restaurantCount === 1 ? t("menu:restaurant", "Restaurant") : t("menu:restaurantsCount", "{{count}} restaurants", { count: restaurantCount })}
                               </p>
                               {restaurantNames.length > 0 ? (
                                 <ul className="text-xs text-popover-foreground list-disc pl-4 space-y-0.5">
@@ -1067,16 +1045,16 @@ export default function Menu() {
                                   ))}
                                 </ul>
                               ) : (
-                                <p className="text-xs text-muted-foreground">No names loaded.</p>
+                                <p className="text-xs text-muted-foreground">{t("menu:noNamesLoaded", "No names loaded.")}</p>
                               )}
                             </TooltipContent>
                           </Tooltip>
                         </td>
                         <td className="p-3">
                           {ad.is_active ? (
-                            <Badge variant="outline" className="bg-green-500/15 text-green-700">Yes</Badge>
+                            <Badge variant="outline" className="bg-green-500/15 text-green-700">{t("common:yes", "Yes")}</Badge>
                           ) : (
-                            <Badge variant="secondary">No</Badge>
+                            <Badge variant="secondary">{t("common:no", "No")}</Badge>
                           )}
                         </td>
                         <td className="p-2">
@@ -1088,7 +1066,7 @@ export default function Menu() {
                   })}
                   {addons.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-muted-foreground">No add-ons yet. Create add-ons here, then link them to items from the Items screen.</td>
+                      <td colSpan={7} className="p-8 text-center text-muted-foreground">{t("menu:noAddonsYet", "No add-ons yet. Create add-ons here, then link them to items from the Items screen.")}</td>
                     </tr>
                   )}
                 </tbody>
@@ -1103,11 +1081,11 @@ export default function Menu() {
               <table className="w-full text-sm">
                 <thead className="text-left bg-muted/50">
                   <tr>
-                    <th className="p-3">Name</th>
-                    <th className="p-3">Description</th>
-                    <th className="p-3">Sort</th>
-                    {isSuperAdmin && <th className="p-3">Restaurant</th>}
-                    <th className="p-3">Active</th>
+                    <th className="p-3">{t("menu:itemName", "Name")}</th>
+                    <th className="p-3">{t("menu:itemDescription", "Description")}</th>
+                    <th className="p-3">{t("common:sort", "Sort")}</th>
+                    {isSuperAdmin && <th className="p-3">{t("menu:restaurant", "Restaurant")}</th>}
+                    <th className="p-3">{t("common:status", "Active")}</th>
                     <th className="p-3 w-[100px]" />
                   </tr>
                 </thead>
@@ -1123,7 +1101,7 @@ export default function Menu() {
                         </td>
                       )}
                       <td className="p-3">
-                        {cat.is_active ? <Badge variant="outline" className="bg-green-500/15 text-green-700">Yes</Badge> : <Badge variant="secondary">No</Badge>}
+                        {cat.is_active ? <Badge variant="outline" className="bg-green-500/15 text-green-700">{t("common:yes", "Yes")}</Badge> : <Badge variant="secondary">{t("common:no", "No")}</Badge>}
                       </td>
                       <td className="p-2">
                         <Button size="sm" variant="ghost" onClick={() => { setEditCat(cat); setCatDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
@@ -1143,12 +1121,12 @@ export default function Menu() {
               <table className="w-full text-sm">
                 <thead className="text-left bg-muted/50">
                   <tr>
-                    <th className="p-3">Name</th>
-                    <th className="p-3">Category</th>
-                    <th className="p-3">Description</th>
-                    <th className="p-3">Sort</th>
-                    {isSuperAdmin && <th className="p-3">Restaurant</th>}
-                    <th className="p-3">Active</th>
+                    <th className="p-3">{t("menu:itemName", "Name")}</th>
+                    <th className="p-3">{t("menu:category", "Category")}</th>
+                    <th className="p-3">{t("menu:itemDescription", "Description")}</th>
+                    <th className="p-3">{t("common:sort", "Sort")}</th>
+                    {isSuperAdmin && <th className="p-3">{t("menu:restaurant", "Restaurant")}</th>}
+                    <th className="p-3">{t("common:status", "Active")}</th>
                     <th className="p-3 w-[100px]" />
                   </tr>
                 </thead>
@@ -1165,7 +1143,7 @@ export default function Menu() {
                         </td>
                       )}
                       <td className="p-3">
-                        {sc.is_active ? <Badge variant="outline" className="bg-green-500/15 text-green-700">Yes</Badge> : <Badge variant="secondary">No</Badge>}
+                        {sc.is_active ? <Badge variant="outline" className="bg-green-500/15 text-green-700">{t("common:yes", "Yes")}</Badge> : <Badge variant="secondary">{t("common:no", "No")}</Badge>}
                       </td>
                       <td className="p-2">
                         <Button size="sm" variant="ghost" onClick={() => { setEditSubCat(sc); setSubCatDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
@@ -1182,7 +1160,7 @@ export default function Menu() {
         <div className="space-y-4">
           {isSuperAdmin && restaurantFilterId === 'all' && (
             <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-500 p-4 rounded-lg text-sm font-medium">
-              ⚠️ To track and edit stock levels, please select a specific restaurant using the filter dropdown above.
+              ⚠️ {t("menu:selectRestaurantWarning", "To track and edit stock levels, please select a specific restaurant using the filter dropdown above.")}
             </div>
           )}
           <Card>
@@ -1191,10 +1169,10 @@ export default function Menu() {
                 <table className="w-full text-sm min-w-[640px]">
                   <thead className="text-left bg-muted/50">
                     <tr>
-                      <th className="p-3">Item</th>
-                      <th className="p-3">Track inventory</th>
-                      <th className="p-3 whitespace-nowrap">Stock</th>
-                      <th className="p-3">Status</th>
+                      <th className="p-3">{t("menu:itemName", "Item")}</th>
+                      <th className="p-3">{t("menu:trackInventory", "Track inventory")}</th>
+                      <th className="p-3 whitespace-nowrap">{t("menu:stock", "Stock")}</th>
+                      <th className="p-3">{t("common:status", "Status")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1202,10 +1180,10 @@ export default function Menu() {
                       const tracked = Boolean(it.track_inventory);
                       const stock = it.stock_quantity ?? 0;
                       const statusLabel = !tracked
-                        ? "Not tracked"
+                        ? t("menu:notTracked", "Not tracked")
                         : stock > 0
-                          ? "In stock"
-                          : "Out of stock";
+                          ? t("menu:inStock", "In stock")
+                          : t("menu:outOfStock", "Out of stock");
                       const statusVariant = !tracked
                         ? "secondary"
                         : stock > 0
@@ -1263,7 +1241,7 @@ export default function Menu() {
                     {displayedItems.length === 0 && (
                       <tr>
                         <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                          No menu items yet. Add items from the Items tab first.
+                          {t("menu:noItemsFound", "No menu items yet. Add items from the Items tab first.")}
                         </td>
                       </tr>
                     )}
@@ -1277,7 +1255,7 @@ export default function Menu() {
         <div className="space-y-4">
           {isSuperAdmin && restaurantFilterId === 'all' && (
             <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-500 p-4 rounded-lg text-sm font-medium">
-              ⚠️ To set and edit maximum order quantities, please select a specific restaurant using the filter dropdown above.
+              ⚠️ {t("menu:selectRestaurantWarning", "To set and edit maximum order quantities, please select a specific restaurant using the filter dropdown above.")}
             </div>
           )}
           <Card>
@@ -1286,9 +1264,9 @@ export default function Menu() {
                 <table className="w-full text-sm min-w-[480px]">
                   <thead className="text-left bg-muted/50">
                     <tr>
-                      <th className="p-3">Item</th>
-                      <th className="p-3 whitespace-nowrap">Max per order</th>
-                      <th className="p-3">Limit</th>
+                      <th className="p-3">{t("menu:itemName", "Item")}</th>
+                      <th className="p-3 whitespace-nowrap">{t("menu:maxOrderQuantity", "Max per order")}</th>
+                      <th className="p-3">{t("common:limit", "Limit")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1302,7 +1280,7 @@ export default function Menu() {
                               type="number"
                               min={1}
                               className="w-28"
-                              placeholder="No limit"
+                              placeholder={t("common:noLimit", "No limit")}
                               defaultValue={it.max_order_quantity ?? ""}
                               disabled={savingItemId === it.id || (isSuperAdmin && restaurantFilterId === 'all')}
                               onBlur={(e) => void saveMaxOrderQuantity(it, e.target.value)}
@@ -1311,14 +1289,14 @@ export default function Menu() {
                           </div>
                         </td>
                         <td className="p-3 text-muted-foreground">
-                          {it.max_order_quantity ? `Up to ${it.max_order_quantity}` : "Unlimited"}
+                          {it.max_order_quantity ? `${t("common:upTo", "Up to")} ${it.max_order_quantity}` : t("common:unlimited", "Unlimited")}
                         </td>
                       </tr>
                     ))}
                     {displayedItems.length === 0 && (
                       <tr>
                         <td colSpan={3} className="p-8 text-center text-muted-foreground">
-                          No menu items yet. Add items from the Items tab first.
+                          {t("menu:noItemsFound", "No menu items yet. Add items from the Items tab first.")}
                         </td>
                       </tr>
                     )}
@@ -1336,7 +1314,7 @@ export default function Menu() {
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by product name..."
+                  placeholder={t("menu:searchPlaceholder", "Search by product name...")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 h-9 text-sm bg-background"
@@ -1357,22 +1335,22 @@ export default function Menu() {
                 {/* Status filter */}
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-[130px] h-9 text-sm">
-                    <SelectValue placeholder="Status" />
+                    <SelectValue placeholder={t("common:status", "Status")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Status: All</SelectItem>
-                    <SelectItem value="available">Available</SelectItem>
-                    <SelectItem value="unavailable">Unavailable</SelectItem>
+                    <SelectItem value="all">{t("common:status", "Status")}: {t("common:all", "All")}</SelectItem>
+                    <SelectItem value="available">{t("menu:available", "Available")}</SelectItem>
+                    <SelectItem value="unavailable">{t("menu:unavailable", "Unavailable")}</SelectItem>
                   </SelectContent>
                 </Select>
 
                 {/* Category filter */}
                 <Select value={categoryFilterId} onValueChange={setCategoryFilterId}>
                   <SelectTrigger className="w-[160px] h-9 text-sm">
-                    <SelectValue placeholder="Category" />
+                    <SelectValue placeholder={t("menu:category", "Category")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="all">{t("menu:allCategories", "All Categories")}</SelectItem>
                     {categories.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}
@@ -1385,10 +1363,10 @@ export default function Menu() {
                 {isSuperAdmin && (
                   <Select value={restaurantFilterId} onValueChange={setRestaurantFilterId}>
                     <SelectTrigger className="w-[160px] h-9 text-sm">
-                      <SelectValue placeholder="Restaurants" />
+                      <SelectValue placeholder={t("superAdmin:restaurants", "Restaurants")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Restaurants</SelectItem>
+                      <SelectItem value="all">{t("superAdmin:allRestaurants", "All Restaurants")}</SelectItem>
                       {allRestaurants.map((r) => (
                         <SelectItem key={r.id} value={String(r.id)}>
                           {r.name}
@@ -1407,7 +1385,7 @@ export default function Menu() {
                     className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground"
                   >
                     <FilterX className="h-3.5 w-3.5 mr-1" />
-                    Clear filters
+                    {t("menu:clearFilters", "Clear filters")}
                   </Button>
                 )}
               </div>
@@ -1456,6 +1434,7 @@ function AddonForm({
   onSubmit: (f: AddonFormSubmit) => void;
   isSaving?: boolean;
 }) {
+  const { t } = useTranslation(["menu", "common", "superAdmin"]);
   const { toast } = useToast();
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<AddonFieldKey, string>>>({});
   const [form, setForm] = useState<Partial<MenuAddon>>(() =>
@@ -1527,18 +1506,18 @@ function AddonForm({
       <DialogHeader>
         <DialogTitle>{initial ? "Edit add-on" : "New add-on"}</DialogTitle>
         {showRestaurantPicker ? (
-          <p className="text-sm text-muted-foreground pt-1">
+          <DialogDescription className="text-sm text-muted-foreground pt-1">
             {initial
               ? "Super admin: move this add-on to another restaurant if needed."
               : "Super admin: select one or more restaurants — we create the same add-on for each. Tenant logins always create add-ons only for their own restaurant."}
-          </p>
+          </DialogDescription>
         ) : restaurantName ? (
-          <p className="text-sm text-muted-foreground pt-1">
+          <DialogDescription className="text-sm text-muted-foreground pt-1">
             Saved for <span className="font-medium text-foreground">{restaurantName}</span> (the restaurant linked to your
             account).
-          </p>
+          </DialogDescription>
         ) : (
-          <p className="text-sm text-muted-foreground pt-1">Saved for your authenticated restaurant.</p>
+          <DialogDescription className="text-sm text-muted-foreground pt-1">Saved for your authenticated restaurant.</DialogDescription>
         )}
       </DialogHeader>
       <DialogBody className="space-y-3">
@@ -1742,6 +1721,7 @@ function CategoryForm({
   isSuperAdmin: boolean;
   restaurantPickerOptions: { id: string; name: string }[];
 }) {
+  const { t } = useTranslation(["menu", "common", "superAdmin"]);
   const [form, setForm] = useState<Partial<Category> & { restaurant_id?: string }>(
     initial || { name: "", description: "", sort_order: 0, is_active: true }
   );
@@ -1768,6 +1748,9 @@ function CategoryForm({
     <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>{initial ? "Edit category" : "New category"}</DialogTitle>
+        <DialogDescription className="text-xs text-muted-foreground pt-1">
+          {initial ? "Update the category details below." : "Create a new category for your menu items."}
+        </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-3">
         {isSuperAdmin && (
@@ -1833,6 +1816,7 @@ function SubCategoryForm({
   isSuperAdmin: boolean;
   restaurantPickerOptions: { id: string; name: string }[];
 }) {
+  const { t } = useTranslation(["menu", "common", "superAdmin"]);
   const [form, setForm] = useState<Partial<SubCategory> & { restaurant_id?: string }>(
     initial || { name: "", description: "", sort_order: 0, is_active: true, category_id: "" }
   );
@@ -1864,6 +1848,9 @@ function SubCategoryForm({
     <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>{initial ? "Edit sub-category" : "New sub-category"}</DialogTitle>
+        <DialogDescription className="text-xs text-muted-foreground pt-1">
+          {initial ? "Update sub-category details below." : "Create a new sub-category."}
+        </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-3">
         {isSuperAdmin && (
@@ -1956,6 +1943,7 @@ function ItemForm({
   isSuperAdmin: boolean;
   restaurantPickerOptions: { id: string; name: string }[];
 }) {
+  const { t } = useTranslation(["menu", "common", "superAdmin"]);
   const { toast } = useToast();
   const [form, setForm] = useState<Partial<MenuItem>>(initial || { name: "", description: "", price: 0, is_available: true, prep_time_minutes: 15, dietary_tags: [], spice_level: 0 });
   const [tagsText, setTagsText] = useState((initial?.dietary_tags || []).join(", "));
@@ -2053,7 +2041,9 @@ function ItemForm({
     <DialogContent className="max-w-2xl">
       <DialogHeader>
         <DialogTitle>{initial ? "Edit item" : "New item"}</DialogTitle>
-        <p className="text-sm text-zinc-500 pt-1">Fill in the details below, then save to update the menu.</p>
+        <DialogDescription className="text-sm text-muted-foreground pt-1">
+          Fill in the details below, then save to update the menu.
+        </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-4">
         <div className="form-field">
@@ -2147,28 +2137,69 @@ function ItemForm({
         </div>
 
         <div className="space-y-3 border-t border-zinc-200 pt-4">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <Label className="text-sm font-semibold text-zinc-900">Variants (Sizes/Options)</Label>
-              <p className="text-xs text-zinc-500 mt-1">Add variants like Small, Large, or 2kg — each with its own price.</p>
+              <Label className="text-sm font-semibold text-zinc-900">Variants (Sizes / Options)</Label>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Set up sizes like Small, Medium, Large, Extra Large — each with its individual price.
+              </p>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setVariants([...variants, { name: "", price: 0, sort_order: variants.length, is_active: true }])}
-            >
-              <Plus className="h-4 w-4 mr-1" />Add Variant
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs h-8"
+                onClick={() => {
+                  const base = Number(form.price) || 10;
+                  setVariants([
+                    { name: "Small", price: Math.max(1, Math.round(base * 0.7)), sort_order: 0, is_active: true },
+                    { name: "Medium", price: base, sort_order: 1, is_active: true },
+                    { name: "Large", price: Math.round(base * 1.35), sort_order: 2, is_active: true },
+                    { name: "Extra Large", price: Math.round(base * 1.7), sort_order: 3, is_active: true },
+                  ]);
+                }}
+              >
+                🍕 + Pizza Sizes
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs h-8"
+                onClick={() => {
+                  const base = Number(form.price) || 8;
+                  setVariants([
+                    { name: "Single Patty", price: base, sort_order: 0, is_active: true },
+                    { name: "Double Patty", price: Math.round(base * 1.45), sort_order: 1, is_active: true },
+                    { name: "Triple Patty", price: Math.round(base * 1.85), sort_order: 2, is_active: true },
+                  ]);
+                }}
+              >
+                🍔 + Burger Sizes
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs h-8"
+                onClick={() =>
+                  setVariants([...variants, { name: "", price: Number(form.price) || 0, sort_order: variants.length, is_active: true }])
+                }
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> Custom Size
+              </Button>
+            </div>
           </div>
+
           {variants.length > 0 && (
             <div className="space-y-3 rounded-lg border border-zinc-200 p-3 bg-zinc-50">
               {variants.map((v, idx) => (
                 <div key={idx} className="flex gap-3 items-end group">
                   <div className="flex-1 form-field">
-                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Name</Label>
+                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Size / Option Name</Label>
                     <Input
-                      placeholder="e.g. Small"
+                      placeholder="e.g. Small / Medium / Large"
                       value={v.name || ""}
                       onChange={(e) => {
                         const next = [...variants];
@@ -2177,8 +2208,8 @@ function ItemForm({
                       }}
                     />
                   </div>
-                  <div className="w-28 form-field">
-                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Price</Label>
+                  <div className="w-32 form-field">
+                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Price ({formatCurrency(0).charAt(0)})</Label>
                     <Input
                       type="number"
                       step="0.01"
@@ -2194,7 +2225,7 @@ function ItemForm({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-10 w-10 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-10 w-10 text-destructive opacity-70 group-hover:opacity-100 transition-opacity"
                     onClick={() => setVariants(variants.filter((_, i) => i !== idx))}
                   >
                     <Trash2 className="h-4 w-4" />

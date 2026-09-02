@@ -258,3 +258,35 @@
     @apply px-6 sm:px-7;
   }
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide entire dashboard, sidebars, headers, action buttons */
+  aside,
+  nav,
+  header,
+  footer,
+  button,
+  .no-print,
+  [data-radix-portal] {
+    display: none !important;
+  }
+
+  #order-receipt-print {
+    display: block !important;
+    width: 100% !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 8px 12px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}

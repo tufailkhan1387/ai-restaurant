@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Crown, Loader2, Search, Store, Mail, User } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { formatDate } from "@/i18n/formatters";
 
 type MemberRow = {
   id: string;
@@ -68,6 +69,7 @@ async function loadOwners(): Promise<OwnerRow[]> {
 }
 
 export default function RestaurantOwnersPage() {
+  const { t } = useTranslation(["users", "common"]);
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data: rows = [], isLoading, error } = useQuery({
@@ -98,7 +100,7 @@ export default function RestaurantOwnersPage() {
   if (error) {
     return (
       <div className="p-8 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-        <p className="font-bold">Error loading restaurant owners</p>
+        <p className="font-bold">{t("common:error", "Error loading restaurant owners")}</p>
         <p className="text-sm">{(error as Error).message}</p>
       </div>
     );
@@ -110,14 +112,14 @@ export default function RestaurantOwnersPage() {
         <div>
           <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
             <Crown className="h-8 w-8 text-primary" />
-            Restaurant owners
+            {t("users:restaurantOwnersTitle", "Restaurant owners")}
           </h1>
-          <p className="text-muted-foreground mt-1">Profiles linked as owner on each restaurant</p>
+          <p className="text-muted-foreground mt-1">{t("users:restaurantOwnersSubtitle", "Profiles linked as owner on each restaurant")}</p>
         </div>
         <div className="relative w-full sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by restaurant, name, or email…"
+            placeholder={t("users:searchOwnersPlaceholder", "Search by restaurant, name, or email…")}
             className="pl-9"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -127,17 +129,17 @@ export default function RestaurantOwnersPage() {
 
       <Card className="border-none bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
         <CardHeader className="border-b border-border/60">
-          <CardTitle className="text-lg">All owner memberships</CardTitle>
+          <CardTitle className="text-lg">{t("users:allOwnerMemberships", "All owner memberships")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Restaurant</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="text-right">Linked</TableHead>
+                  <TableHead>{t("users:colRestaurant", "Restaurant")}</TableHead>
+                  <TableHead>{t("users:colOwner", "Owner")}</TableHead>
+                  <TableHead>{t("common:email", "Email")}</TableHead>
+                  <TableHead className="text-right">{t("users:colLinked", "Linked")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -162,7 +164,7 @@ export default function RestaurantOwnersPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground text-sm">
-                      {row.created_at ? format(new Date(row.created_at), "MMM d, yyyy") : "—"}
+                      {row.created_at ? formatDate(row.created_at, { month: "short", day: "numeric", year: "numeric" }) : "—"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -170,8 +172,8 @@ export default function RestaurantOwnersPage() {
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
                       {rows.length === 0
-                        ? "No restaurant owners found."
-                        : "No rows match your search."}
+                        ? t("users:noOwnersFound", "No restaurant owners found.")
+                        : t("common:noMatchingResults", "No rows match your search.")}
                     </TableCell>
                   </TableRow>
                 )}
@@ -183,3 +185,4 @@ export default function RestaurantOwnersPage() {
     </div>
   );
 }
+

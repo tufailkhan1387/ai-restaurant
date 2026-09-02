@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Users, Loader2, Repeat, UserPlus, DollarSign, ShoppingBag } from "lucide-react";
 import { getApiBase } from "@/lib/apiBase";
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ReportFilters } from "@/components/reports/ReportFilters";
 import { useReportRestaurants } from "@/hooks/useReportRestaurants";
 import { formatCurrency } from "@/lib/restaurant";
+import { formatDate } from "@/i18n/formatters";
 
 type CustomerRow = {
   restaurant_id: string;
@@ -39,11 +41,8 @@ type CustomerAnalyticsResponse = {
   };
 };
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
-}
-
 export default function CustomerAnalyticsPage() {
+  const { t } = useTranslation(["reports", "common"]);
   const { data: meta, isLoading: metaLoading, error: metaError } = useReportRestaurants();
   const restaurants = meta?.restaurants ?? [];
   const [restaurantId, setRestaurantId] = useState("all");
@@ -90,21 +89,21 @@ export default function CustomerAnalyticsPage() {
   if (metaError || restaurants.length === 0) {
     return (
       <div className="p-8 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-        <p className="font-bold">No restaurant access</p>
-        <p className="text-sm">Link your account to a restaurant to view customer analytics.</p>
+        <p className="font-bold">{t("reports:noRestaurantAccess", "No restaurant access")}</p>
+        <p className="text-sm">{t("reports:linkAccountPrompt", "Link your account to a restaurant to view customer analytics.")}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-6 animate-fade-in pb-10 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <Users className="h-8 w-8 text-primary" />
-            Customer analytics
+            {t("reports:customerAnalytics", "Customer analytics")}
           </h1>
-          <p className="text-muted-foreground mt-1">Spend, repeat orders, and top customers by phone</p>
+          <p className="text-muted-foreground mt-1">{t("reports:customerAnalyticsDesc", "Spend, repeat orders, and top customers by phone")}</p>
         </div>
         <ReportFilters
           restaurants={restaurants}
@@ -130,26 +129,26 @@ export default function CustomerAnalyticsPage() {
 
       {error ? (
         <div className="p-6 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-          <p className="font-bold">Error loading analytics</p>
+          <p className="font-bold">{t("common:error", "Error loading analytics")}</p>
           <p className="text-sm">{(error as Error).message}</p>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-            <StatCard label="Unique customers" value={isLoading ? "…" : String(summary?.unique_customers ?? 0)} icon={Users} />
-            <StatCard label="Repeat customers" value={isLoading ? "…" : String(summary?.repeat_customers ?? 0)} icon={Repeat} />
-            <StatCard label="New (30 days)" value={isLoading ? "…" : String(summary?.new_customers_30d ?? 0)} icon={UserPlus} />
-            <StatCard label="Repeat rate" value={isLoading ? "…" : `${summary?.repeat_rate_pct ?? 0}%`} icon={Repeat} />
-            <StatCard label="Total revenue" value={isLoading ? "…" : formatCurrency(summary?.total_revenue ?? 0)} icon={DollarSign} />
-            <StatCard label="Avg order value" value={isLoading ? "…" : formatCurrency(summary?.avg_order_value ?? 0)} icon={ShoppingBag} />
+            <StatCard label={t("reports:uniqueCustomers", "Unique customers")} value={isLoading ? "…" : String(summary?.unique_customers ?? 0)} icon={Users} />
+            <StatCard label={t("reports:repeatCustomers", "Repeat customers")} value={isLoading ? "…" : String(summary?.repeat_customers ?? 0)} icon={Repeat} />
+            <StatCard label={t("reports:newCustomers30d", "New (30 days)")} value={isLoading ? "…" : String(summary?.new_customers_30d ?? 0)} icon={UserPlus} />
+            <StatCard label={t("reports:repeatRate", "Repeat rate")} value={isLoading ? "…" : `${summary?.repeat_rate_pct ?? 0}%`} icon={Repeat} />
+            <StatCard label={t("reports:totalRevenue", "Total revenue")} value={isLoading ? "…" : formatCurrency(summary?.total_revenue ?? 0)} icon={DollarSign} />
+            <StatCard label={t("reports:avgOrderValue", "Avg order value")} value={isLoading ? "…" : formatCurrency(summary?.avg_order_value ?? 0)} icon={ShoppingBag} />
           </div>
 
           <Card className="border-none bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
             <CardHeader>
-              <CardTitle>Top customers</CardTitle>
+              <CardTitle>{t("reports:topCustomers", "Top customers")}</CardTitle>
               <p className="text-sm text-muted-foreground font-normal">
-                Grouped by phone number · excludes cancelled orders
-                {periodDays !== "0" ? ` · last ${periodDays} days` : ""}.
+                {t("reports:topCustomersDesc", "Grouped by phone number · excludes cancelled orders")}
+                {periodDays !== "0" ? ` · ${t("reports:lastDays", { count: parseInt(periodDays) }) || `last ${periodDays} days`}` : ""}.
               </p>
             </CardHeader>
             <CardContent className="p-0">
@@ -157,14 +156,14 @@ export default function CustomerAnalyticsPage() {
                 <table className="w-full text-sm text-left">
                   <thead className="bg-muted/50 text-muted-foreground font-medium border-y">
                     <tr>
-                      {showRestaurantCol && <th className="px-6 py-4">Restaurant</th>}
-                      <th className="px-6 py-4">Customer</th>
-                      <th className="px-6 py-4">Phone</th>
-                      <th className="px-6 py-4 text-right">Orders</th>
-                      <th className="px-6 py-4 text-right">Total spent</th>
-                      <th className="px-6 py-4 text-right">Avg order</th>
-                      <th className="px-6 py-4">First order</th>
-                      <th className="px-6 py-4">Last order</th>
+                      {showRestaurantCol && <th className="px-6 py-4">{t("reports:colRestaurant", "Restaurant")}</th>}
+                      <th className="px-6 py-4">{t("reports:colCustomer", "Customer")}</th>
+                      <th className="px-6 py-4">{t("reports:colPhone", "Phone")}</th>
+                      <th className="px-6 py-4 text-right">{t("reports:colOrders", "Orders")}</th>
+                      <th className="px-6 py-4 text-right">{t("reports:colTotalSpent", "Total spent")}</th>
+                      <th className="px-6 py-4 text-right">{t("reports:colAvgOrder", "Avg order")}</th>
+                      <th className="px-6 py-4">{t("reports:colFirstOrder", "First order")}</th>
+                      <th className="px-6 py-4">{t("reports:colLastOrder", "Last order")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -185,7 +184,7 @@ export default function CustomerAnalyticsPage() {
                             <div className="font-semibold">{row.customer_name}</div>
                             {row.is_repeat && (
                               <Badge variant="outline" className="mt-1 text-[10px]">
-                                Repeat
+                                {t("reports:repeat", "Repeat")}
                               </Badge>
                             )}
                           </td>
@@ -204,7 +203,7 @@ export default function CustomerAnalyticsPage() {
                     {!isLoading && rows.length === 0 && (
                       <tr>
                         <td colSpan={colSpan} className="px-6 py-8 text-center text-muted-foreground">
-                          No customer data for this period.
+                          {t("reports:noDataPeriod", "No customer data for this period.")}
                         </td>
                       </tr>
                     )}
@@ -242,3 +241,4 @@ function StatCard({
     </Card>
   );
 }
+

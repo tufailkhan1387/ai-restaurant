@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Upload, Download } from "lucide-react";
@@ -18,6 +19,7 @@ interface Props {
  *   min_order_amount, max_uses, starts_at, ends_at, is_active
  */
 export function DealsImportButton({ restaurantId, type, onImported }: Props) {
+  const { t } = useTranslation(["deals", "menu", "common"]);
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -146,11 +148,11 @@ export function DealsImportButton({ restaurantId, type, onImported }: Props) {
       />
       <Button variant="outline" size="sm" onClick={downloadTemplate}>
         <Download className="h-4 w-4 mr-1" />
-        Template
+        {t("deals:template", "Template")}
       </Button>
       <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={busy || !restaurantId}>
         <Upload className="h-4 w-4 mr-1" />
-        {busy ? "Importing…" : "Import Excel/CSV"}
+        {busy ? t("menu:importing", "Importing…") : t("menu:importExcelCsv", "Import Excel/CSV")}
       </Button>
     </>
   );

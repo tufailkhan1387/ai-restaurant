@@ -49,6 +49,7 @@ import BestSellersReportPage from "@/pages/reports/BestSellersReportPage";
 import InventoryReportPage from "@/pages/reports/InventoryReportPage";
 import CustomerAnalyticsPage from "@/pages/reports/CustomerAnalyticsPage";
 import RestaurantOwnersPage from "@/pages/users/RestaurantOwnersPage";
+import TeamMembersPage from "@/pages/users/TeamMembersPage";
 
 const queryClient = new QueryClient();
 
@@ -83,9 +84,10 @@ const App = () => (
               <Route path="calls" element={<Calls />} />
               
               <Route path="customers" element={<Navigate to="/users/customers" replace />} />
-              <Route path="users" element={<Navigate to="/users/customers" replace />} />
+              <Route path="users" element={<Navigate to="/users/team-members" replace />} />
               <Route path="users/customers" element={<Customers />} />
-              <Route path="users/restaurant-owners" element={<RestaurantOwnersPage />} />
+              <Route path="users/team-members" element={<TeamMembersPage />} />
+              <Route path="users/restaurant-owners" element={<Navigate to="/users/team-members" replace />} />
               <Route path="leads" element={<Leads />} />
               <Route path="agents" element={<Agents />} />
               <Route path="analytics" element={<Analytics />} />

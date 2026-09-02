@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Bell, Play, Square, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -18,16 +18,17 @@ import {
   getRingtoneUrl,
   saveNotificationPrefs,
 } from "@/lib/notificationSound";
-import { useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 export function NotificationSettings() {
+  const { t } = useTranslation(["settings", "common"]);
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
-  
+
   const [notifications, setNotifications] = useState({
     email: true,
     desktop: true,
@@ -43,7 +44,6 @@ export function NotificationSettings() {
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
 
-  // Load from DB
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -65,7 +65,6 @@ export function NotificationSettings() {
             volume: Number(data.notification_volume) || 0.9,
             enabled: data.notification_enabled ?? true,
           });
-          // Also update local storage for the actual sound engine
           saveNotificationPrefs({
             ringtone: (data.notification_ringtone as RingtoneId) || "classic-bell",
             volume: Number(data.notification_volume) || 0.9,
@@ -96,8 +95,8 @@ export function NotificationSettings() {
       console.error("Failed to save settings:", err);
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Failed to save notification preferences",
+        title: t("common:error", "Error"),
+        description: t("settings:saveError", "Failed to save notification preferences"),
       });
     } finally {
       setSaving(false);
@@ -136,17 +135,17 @@ export function NotificationSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5 text-primary" />
-            New Order Alerts
+            {t("settings:newOrderAlerts", "New Order Alerts")}
           </CardTitle>
           <CardDescription>
-            The bell rings continuously when a new order arrives until you acknowledge it.
+            {t("settings:newOrderAlertsDesc", "The bell rings continuously when a new order arrives until you acknowledge it.")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="setting-row">
             <div className="space-y-0.5 min-w-0">
-              <Label>Enable order ringtone</Label>
-              <p className="text-sm text-muted-foreground">Play a sound on every new order</p>
+              <Label>{t("settings:enableRingtone", "Enable order ringtone")}</Label>
+              <p className="text-sm text-muted-foreground">{t("settings:enableRingtoneDesc", "Play a sound on every new order")}</p>
             </div>
             <Switch
               checked={orderPrefs.enabled}
@@ -160,7 +159,7 @@ export function NotificationSettings() {
           </div>
 
           <div className="form-field">
-            <Label>Ringtone</Label>
+            <Label>{t("settings:ringtone", "Ringtone")}</Label>
             <div className="flex gap-2">
               <Select
                 value={orderPrefs.ringtone}
@@ -184,14 +183,14 @@ export function NotificationSettings() {
               </Select>
               <Button variant="outline" onClick={togglePreview}>
                 {playing ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                <span className="ml-2">{playing ? "Stop" : "Test"}</span>
+                <span className="ml-2">{playing ? t("settings:stop", "Stop") : t("settings:test", "Test")}</span>
               </Button>
             </div>
           </div>
 
           <div className="form-field">
             <div className="flex items-center justify-between">
-              <Label>Volume</Label>
+              <Label>{t("settings:volume", "Volume")}</Label>
               <span className="text-sm text-muted-foreground">
                 {Math.round(orderPrefs.volume * 100)}%
               </span>
@@ -219,15 +218,15 @@ export function NotificationSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5 text-primary" />
-            Other Notifications
+            {t("settings:otherNotifications", "Other Notifications")}
           </CardTitle>
-          <CardDescription>General notification preferences</CardDescription>
+          <CardDescription>{t("settings:otherNotificationsDesc", "General notification preferences")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="setting-row">
             <div className="space-y-0.5 min-w-0">
-              <Label>Email Notifications</Label>
-              <p className="text-sm text-muted-foreground">Receive email updates for important events</p>
+              <Label>{t("settings:emailNotifications", "Email Notifications")}</Label>
+              <p className="text-sm text-muted-foreground">{t("settings:emailNotificationsDesc", "Receive email updates for important events")}</p>
             </div>
             <Switch
               checked={notifications.email}
@@ -239,8 +238,8 @@ export function NotificationSettings() {
           </div>
           <div className="setting-row">
             <div className="space-y-0.5 min-w-0">
-              <Label>Desktop Notifications</Label>
-              <p className="text-sm text-muted-foreground">Show browser notifications</p>
+              <Label>{t("settings:desktopNotifications", "Desktop Notifications")}</Label>
+              <p className="text-sm text-muted-foreground">{t("settings:desktopNotificationsDesc", "Show browser notifications")}</p>
             </div>
             <Switch
               checked={notifications.desktop}
@@ -252,8 +251,8 @@ export function NotificationSettings() {
           </div>
           <div className="setting-row">
             <div className="space-y-0.5 min-w-0">
-              <Label>Missed Call Alerts</Label>
-              <p className="text-sm text-muted-foreground">Get notified about missed calls</p>
+              <Label>{t("settings:missedCallAlerts", "Missed Call Alerts")}</Label>
+              <p className="text-sm text-muted-foreground">{t("settings:missedCallAlertsDesc", "Get notified about missed calls")}</p>
             </div>
             <Switch
               checked={notifications.missedCalls}
@@ -268,7 +267,7 @@ export function NotificationSettings() {
       {saving && (
         <div className="fixed bottom-4 right-4 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Saving changes...
+          {t("settings:savingChanges", "Saving changes...")}
         </div>
       )}
     </div>

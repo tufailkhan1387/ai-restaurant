@@ -19,6 +19,7 @@ import {
   Users,
   Settings,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,7 +30,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ORDER_STATUS_LABELS, OrderStatus, formatCurrency } from "@/lib/restaurant";
+import { formatCurrency } from "@/lib/restaurant";
+import { getOrderStatusLabel, formatDate, formatNumber, getActiveLocale } from "@/i18n/formatters";
 import { getApiBase } from "@/lib/apiBase";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -93,6 +95,7 @@ function avatarTone(name: string) {
 }
 
 export default function Dashboard() {
+  const { t, i18n } = useTranslation(["dashboard", "sidebar", "common", "orders"]);
   const { profile, role } = useAuth();
   const { restaurantId } = useActiveRestaurant();
   const isSuperAdmin = role === "super_admin";
@@ -100,36 +103,36 @@ export default function Dashboard() {
 
   const todayLabel = useMemo(
     () =>
-      new Date().toLocaleDateString(undefined, {
+      formatDate(new Date(), {
         weekday: "long",
         month: "long",
         day: "numeric",
         year: "numeric",
       }),
-    []
+    [i18n.language]
   );
 
   /** Exactly 6 shortcut cards — drivers / vehicles not included */
   const quickActions = useMemo((): { href: string; label: string; icon: LucideIcon }[] => {
     if (isSuperAdmin) {
       return [
-        { href: "/orders", label: "Orders", icon: ShoppingBag },
-        { href: "/menu", label: "Menu", icon: ChefHat },
-        { href: "/deals", label: "Deals & offers", icon: Tag },
-        { href: "/restaurants", label: "Restaurants", icon: Store },
-        { href: "/earnings", label: "Earnings", icon: DollarSign },
-        { href: "/reports/restaurant", label: "Reports", icon: BarChart2 },
+        { href: "/orders", label: t("sidebar:orders", "Orders"), icon: ShoppingBag },
+        { href: "/menu", label: t("sidebar:menu", "Menu"), icon: ChefHat },
+        { href: "/deals", label: t("sidebar:dealsAndOffers", "Deals & offers"), icon: Tag },
+        { href: "/restaurants", label: t("sidebar:restaurants", "Restaurants"), icon: Store },
+        { href: "/earnings", label: t("sidebar:earnings", "Earnings"), icon: DollarSign },
+        { href: "/reports/restaurant", label: t("sidebar:reports", "Reports"), icon: BarChart2 },
       ];
     }
     return [
-      { href: "/orders", label: "Orders", icon: ShoppingBag },
-      { href: "/menu", label: "Menu", icon: ChefHat },
-      { href: "/deals", label: "Deals & offers", icon: Tag },
-      { href: "/coupons", label: "Coupons", icon: Ticket },
-      { href: "/users/customers", label: "Customers", icon: Users },
-      { href: "/settings", label: "Settings", icon: Settings },
+      { href: "/orders", label: t("sidebar:orders", "Orders"), icon: ShoppingBag },
+      { href: "/menu", label: t("sidebar:menu", "Menu"), icon: ChefHat },
+      { href: "/deals", label: t("sidebar:dealsAndOffers", "Deals & offers"), icon: Tag },
+      { href: "/coupons", label: t("sidebar:couponCode", "Coupons"), icon: Ticket },
+      { href: "/users/customers", label: t("sidebar:customers", "Customers"), icon: Users },
+      { href: "/settings", label: t("sidebar:settings", "Settings"), icon: Settings },
     ];
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, t]);
 
   const { data: globalStats, isPending: statsLoading } = useQuery({
     queryKey: ["global-stats"],
@@ -186,18 +189,18 @@ export default function Dashboard() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4)
       .map(([status, count], i) => ({
-        label: ORDER_STATUS_LABELS[status as OrderStatus] ?? status,
+        label: getOrderStatusLabel(status, t),
         pct: Math.round((count / total) * 100),
         ...palette[i % palette.length],
       }));
-  }, [recentOrders]);
+  }, [recentOrders, t]);
 
   const sourceBreakdown = useMemo(() => {
     const orders = recentOrders || [];
     const sources = {
-      in_house: { label: "In house", icon: Building2, tone: "bg-rose-50 text-rose-600" },
-      online: { label: "Online", icon: Globe, tone: "bg-slate-100 text-slate-700" },
-      takeaway: { label: "Take away", icon: Package, tone: "bg-orange-50 text-orange-700" },
+      in_house: { label: t("orders:dineIn", "In house"), icon: Building2, tone: "bg-rose-50 text-rose-600" },
+      online: { label: t("orders:delivery", "Online"), icon: Globe, tone: "bg-slate-100 text-slate-700" },
+      takeaway: { label: t("orders:pickup", "Take away"), icon: Package, tone: "bg-orange-50 text-orange-700" },
       app: { label: "App", icon: Smartphone, tone: "bg-emerald-50 text-emerald-700" },
     };
     const counts = { in_house: 0, online: 0, takeaway: 0, app: 0 };
@@ -211,17 +214,17 @@ export default function Dashboard() {
     const hasAny = Object.values(counts).some((n) => n > 0);
     if (!hasAny && globalStats) {
       return [
-        { ...sources.in_house, value: globalStats.totalRestaurants, label: "Restaurants" },
-        { ...sources.online, value: globalStats.totalMenuItems, label: "Menu items" },
-        { ...sources.takeaway, value: globalStats.totalDeals, label: "Active offers" },
-        { ...sources.app, value: recentOrders?.length ?? 0, label: "Recent orders" },
+        { ...sources.in_house, value: globalStats.totalRestaurants, label: t("sidebar:restaurants", "Restaurants") },
+        { ...sources.online, value: globalStats.totalMenuItems, label: t("sidebar:items", "Menu items") },
+        { ...sources.takeaway, value: globalStats.totalDeals, label: t("dashboard:popularCategories", "Active offers") },
+        { ...sources.app, value: recentOrders?.length ?? 0, label: t("dashboard:recentActivity", "Recent orders") },
       ];
     }
     return (Object.keys(counts) as (keyof typeof counts)[]).map((key) => ({
       ...sources[key],
       value: counts[key],
     }));
-  }, [recentOrders, globalStats]);
+  }, [recentOrders, globalStats, t]);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 animate-fade-in pb-4">
@@ -238,12 +241,12 @@ export default function Dashboard() {
           <div className="space-y-3 min-w-0">
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
-                Welcome back, {firstName}
+                {t("auth:signInSubtitle", "Welcome back")}, {firstName}
               </h1>
               <p className="mt-1.5 max-w-xl text-sm text-white/75">
                 {isSuperAdmin
-                  ? "Snapshot of restaurants, catalog, and orders."
-                  : `What’s happening at ${restaurantInfo?.name || "your restaurant"} today.`}
+                  ? t("dashboard:subtitle", "Snapshot of restaurants, catalog, and orders.")
+                  : `${t("dashboard:salesToday", "What's happening at")} ${restaurantInfo?.name || "your restaurant"}.`}
               </p>
             </div>
             <p className="flex items-center gap-2 text-sm text-white/65">
@@ -290,11 +293,11 @@ export default function Dashboard() {
                   <div className="min-w-0 space-y-1">
                     <h3 className="text-lg font-bold tracking-tight">{restaurantInfo?.name || "Restaurant"}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {restaurantInfo?.is_active ? "Accepting orders" : "Currently closed"}
+                      {restaurantInfo?.is_active ? t("orders:acceptingOrders", "Accepting orders") : t("menu:unavailable", "Currently closed")}
                     </p>
                   </div>
                   <Badge className="shrink-0 rounded-md bg-status-available/12 text-status-available border border-status-available/25 hover:bg-status-available/12">
-                    ● Live
+                    ● {t("dashboard:statusLive", "Live")}
                   </Badge>
                 </div>
               </CardContent>
@@ -312,20 +315,20 @@ export default function Dashboard() {
             ) : (
               <>
                 <StatsCard
-                  title="Total restaurants"
-                  value={globalStats?.totalRestaurants ?? 0}
+                  title={t("superAdmin:allRestaurants", "Total restaurants")}
+                  value={formatNumber(globalStats?.totalRestaurants ?? 0)}
                   icon={Store}
                   iconClassName="bg-slate-100 text-slate-700"
                 />
                 <StatsCard
-                  title="Menu items"
-                  value={globalStats?.totalMenuItems ?? 0}
+                  title={t("sidebar:items", "Menu items")}
+                  value={formatNumber(globalStats?.totalMenuItems ?? 0)}
                   icon={ChefHat}
                   iconClassName="bg-orange-50 text-orange-700"
                 />
                 <StatsCard
-                  title="Active offers"
-                  value={globalStats?.totalDeals ?? 0}
+                  title={t("sidebar:dealsAndOffers", "Active offers")}
+                  value={formatNumber(globalStats?.totalDeals ?? 0)}
                   icon={Tag}
                   iconClassName="bg-amber-50 text-amber-800"
                 />
@@ -336,7 +339,7 @@ export default function Dashboard() {
           {/* Total overview */}
           <Card className="rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base font-bold tracking-tight">Total overview</CardTitle>
+              <CardTitle className="text-base font-bold tracking-tight">{t("dashboard:revenueOverview", "Total overview")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -355,7 +358,7 @@ export default function Dashboard() {
                           {item.label}
                         </p>
                         <p className="text-xl font-extrabold tabular-nums tracking-tight">
-                          {Number(item.value).toLocaleString()}
+                          {formatNumber(Number(item.value))}
                         </p>
                       </div>
                     </div>
@@ -368,13 +371,13 @@ export default function Dashboard() {
           {/* Activity */}
           <Card className="rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base font-bold tracking-tight">Activity</CardTitle>
-              <p className="text-sm text-muted-foreground">Status mix from recent orders</p>
+              <CardTitle className="text-base font-bold tracking-tight">{t("dashboard:recentActivity", "Activity")}</CardTitle>
+              <p className="text-sm text-muted-foreground">{t("dashboard:ordersTrend", "Status mix from recent orders")}</p>
             </CardHeader>
             <CardContent className="space-y-5">
               {statusActivity.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">
-                  {restaurantId ? "No recent orders to summarize yet." : "Select a restaurant to see activity."}
+                  {restaurantId ? t("dashboard:noRecentActivity", "No recent orders to summarize yet.") : t("reports:selectRestaurant", "Select a restaurant to see activity.")}
                 </p>
               ) : (
                 statusActivity.map((row) => (
@@ -400,11 +403,11 @@ export default function Dashboard() {
         <div className="xl:col-span-4">
           <Card className="rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)] h-full">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
-              <CardTitle className="text-base font-bold tracking-tight">Order History</CardTitle>
+              <CardTitle className="text-base font-bold tracking-tight">{t("orders:title", "Order History")}</CardTitle>
               <Button asChild variant="outline" size="sm" className="h-8 rounded-lg gap-1.5 border-border/80">
                 <Link to="/orders">
                   <Filter className="h-3.5 w-3.5" aria-hidden />
-                  Filter
+                  {t("common:filter", "Filter")}
                 </Link>
               </Button>
             </CardHeader>
@@ -440,7 +443,7 @@ export default function Dashboard() {
                             {formatCurrency(Number(o.total_amount))}
                           </p>
                           <p className="text-[11px] text-muted-foreground whitespace-nowrap">
-                            {new Date(o.created_at).toLocaleString(undefined, {
+                            {formatDate(o.created_at, {
                               hour: "2-digit",
                               minute: "2-digit",
                               day: "2-digit",
@@ -457,20 +460,20 @@ export default function Dashboard() {
                 <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-4 py-12 text-center">
                   <ShoppingBag className="h-8 w-8 text-muted-foreground mb-3" aria-hidden />
                   <p className="font-medium text-foreground text-sm">
-                    {restaurantId ? "No recent orders yet" : "Pick a restaurant context"}
+                    {restaurantId ? t("orders:noOrdersFound", "No recent orders yet") : t("reports:selectRestaurant", "Pick a restaurant context")}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground max-w-[220px]">
                     {restaurantId
-                      ? "New orders will show up here as customers check out."
-                      : "Resolve an active restaurant to load order history."}
+                      ? t("ordering:emptyCartPrompt", "New orders will show up here as customers check out.")
+                      : t("superAdmin:manageConfiguration", "Resolve an active restaurant to load order history.")}
                   </p>
                   {restaurantId ? (
                     <Button asChild className="mt-4 rounded-lg" size="sm">
-                      <Link to="/orders">Go to orders</Link>
+                      <Link to="/orders">{t("dashboard:viewAllOrders", "Go to orders")}</Link>
                     </Button>
                   ) : isSuperAdmin ? (
                     <Button asChild className="mt-4 rounded-lg" size="sm" variant="outline">
-                      <Link to="/restaurants">Manage restaurants</Link>
+                      <Link to="/restaurants">{t("superAdmin:allRestaurants", "Manage restaurants")}</Link>
                     </Button>
                   ) : null}
                 </div>
@@ -482,3 +485,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

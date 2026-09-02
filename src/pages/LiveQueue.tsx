@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PhoneIncoming, PhoneOutgoing, Loader2, Activity } from "lucide-react";
 import { CallDetailDialog } from "@/components/calls/CallDetailDialog";
+import { formatTime } from "@/i18n/formatters";
 
 function formatElapsed(start: string | null): string {
   if (!start) return "—";
@@ -24,6 +26,7 @@ function isStale(start: string | null): boolean {
 }
 
 export default function LiveQueue() {
+  const { t } = useTranslation(["calls", "common"]);
   const [tick, setTick] = useState(0);
   const [selectedCall, setSelectedCall] = useState<any | null>(null);
 
@@ -109,10 +112,10 @@ export default function LiveQueue() {
   const outboundActive = liveCalls.filter((c) => c.direction === "outbound");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-10">
       <div>
         <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Activity className="h-7 w-7 text-primary" /> Live Call Queue
+          <Activity className="h-7 w-7 text-primary" /> {t("calls:liveQueue", "Live Call Queue")}
         </h1>
         <p className="text-muted-foreground mt-1">
           Real-time view of every active call across inbound and outbound channels.
@@ -127,7 +130,7 @@ export default function LiveQueue() {
                 <p className="text-xs text-muted-foreground">Active Inbound</p>
                 <p className="text-2xl font-bold">{inboundActive.length}</p>
               </div>
-              <PhoneIncoming className="h-8 w-8 text-success" />
+              <PhoneIncoming className="h-8 w-8 text-emerald-600" />
             </div>
           </CardContent>
         </Card>
@@ -149,14 +152,14 @@ export default function LiveQueue() {
                 <p className="text-xs text-muted-foreground">Auto-Dialer Queue</p>
                 <p className="text-2xl font-bold">{pendingDialer ?? 0}</p>
               </div>
-              <Loader2 className="h-8 w-8 text-warning" />
+              <Loader2 className="h-8 w-8 text-amber-500" />
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div>
-              <p className="text-xs text-muted-foreground">Completed Today</p>
+              <p className="text-xs text-muted-foreground">{t("calls:todayCalls", "Completed Today")}</p>
               <p className="text-2xl font-bold">{(completedToday?.inb || 0) + (completedToday?.outb || 0)}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {completedToday?.inb || 0} in · {completedToday?.outb || 0} out
@@ -172,16 +175,16 @@ export default function LiveQueue() {
         </CardHeader>
         <CardContent>
           {(!activeCalls || activeCalls.length === 0) ? (
-            <p className="text-center text-muted-foreground py-8">No active calls right now.</p>
+            <p className="text-center text-muted-foreground py-8">{t("calls:noCalls", "No active calls right now.")}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Direction</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Elapsed</TableHead>
-                  <TableHead>Started</TableHead>
+                  <TableHead>{t("calls:colDirection", "Direction")}</TableHead>
+                  <TableHead>{t("calls:colPhone", "Phone")}</TableHead>
+                  <TableHead>{t("common:status", "Status")}</TableHead>
+                  <TableHead>{t("calls:duration", "Elapsed")}</TableHead>
+                  <TableHead>{t("calls:colTime", "Started")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -208,7 +211,7 @@ export default function LiveQueue() {
                         {stale ? <span className="text-muted-foreground">—</span> : formatElapsed(c.started_at)}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {c.started_at ? new Date(c.started_at).toLocaleTimeString() : "—"}
+                        {c.started_at ? formatTime(c.started_at) : "—"}
                       </TableCell>
                     </TableRow>
                   );
@@ -227,3 +230,4 @@ export default function LiveQueue() {
     </div>
   );
 }
+

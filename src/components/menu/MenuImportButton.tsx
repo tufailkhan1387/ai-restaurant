@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
@@ -17,6 +18,7 @@ interface Props {
  * Categories are auto-created if missing.
  */
 export function MenuImportButton({ restaurantId, onImported }: Props) {
+  const { t } = useTranslation(["menu", "common"]);
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -119,8 +121,8 @@ export function MenuImportButton({ restaurantId, onImported }: Props) {
         disabled={busy || !restaurantId}
       >
         <Upload className="h-4 w-4 mr-1" />
-        {busy ? "Importing…" : "Import Excel/CSV"}
+        {busy ? t("menu:importing", "Importing…") : t("menu:importExcelCsv", "Import Excel/CSV")}
       </Button>
     </>
   );
-}
+}

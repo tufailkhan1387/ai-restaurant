@@ -110,6 +110,126 @@ router.post("/create-driver-user", optionalAuth, requireAuth, requireManagement,
   }
 });
 
+/** Create / Invite a team member for a restaurant */
+router.post("/create-team-member", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const { email, password, full_name, role, restaurant_id } = req.body || {};
+    const em = typeof email === "string" ? email.trim().toLowerCase() : "";
+    let memberRole = (role || "manager").toLowerCase();
+    // Only 1 Admin allowed per restaurant. Staff members are Manager, Kitchen, or Cashier.
+    if (memberRole === "admin" || memberRole === "owner") {
+      memberRole = "manager";
+    }
+    const rid = restaurant_id;
+
+    if (!em || !password || !rid) {
+      return res.status(400).json({ error: "Email, password, and restaurant are required" });
+    }
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    const knex = getKnex();
+
+    // Verify restaurant
+    const rest = await knex("restaurants").where({ id: rid }).first();
+    if (!rest) {
+      return res.status(404).json({ error: "Restaurant not found" });
+    }
+
+    // Check or create profile
+    let profile = await knex("profiles").whereRaw("lower(email) = lower(?)", [em]).first();
+    if (!profile) {
+      const hash = await bcrypt.hash(String(password), 10);
+      const [newProf] = await knex("profiles")
+        .insert({
+          id: randomUUID(),
+          email: em,
+          full_name: (typeof full_name === "string" && full_name.trim()) || em.split("@")[0],
+          password_hash: hash,
+        })
+        .returning("*");
+      profile = newProf;
+
+      await knex("user_roles").insert({ user_id: profile.id, role: "manager" });
+    } else {
+      if (password) {
+        const hash = await bcrypt.hash(String(password), 10);
+        await knex("profiles").where({ id: profile.id }).update({
+          password_hash: hash,
+          full_name: full_name?.trim() || profile.full_name,
+        });
+      }
+    }
+
+    // Add or update restaurant_members
+    const existingMembership = await knex("restaurant_members")
+      .where({ user_id: profile.id, restaurant_id: rid })
+      .first();
+
+    if (existingMembership) {
+      await knex("restaurant_members")
+        .where({ id: existingMembership.id })
+        .update({ member_role: memberRole });
+    } else {
+      await knex("restaurant_members").insert({
+        id: randomUUID(),
+        user_id: profile.id,
+        restaurant_id: rid,
+        member_role: memberRole,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      user_id: profile.id,
+      email: profile.email,
+      restaurant_id: rid,
+      member_role: memberRole,
+    });
+  } catch (e) {
+    console.error("create-team-member error:", e);
+    return res.status(500).json({ error: e.message || "Failed to create team member" });
+  }
+});
+
+/** Delete team member membership */
+router.delete("/delete-team-member/:id", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const knex = getKnex();
+    await knex("restaurant_members").where({ id }).del();
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("delete-team-member error:", e);
+    return res.status(500).json({ error: e.message || "Failed to delete team member" });
+  }
+});
+
+/** Update team member role */
+router.put("/update-team-member-role", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const { id, member_role } = req.body || {};
+    if (!id || !member_role) {
+      return res.status(400).json({ error: "id and member_role are required" });
+    }
+
+    let roleToSet = member_role.toLowerCase();
+    if (roleToSet === "admin" || roleToSet === "owner") {
+      return res.status(400).json({
+        error: "This restaurant already has an Admin. You can assign Manager, Kitchen Staff, or Cashier.",
+      });
+    }
+
+    const knex = getKnex();
+    await knex("restaurant_members").where({ id }).update({ member_role: roleToSet });
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("update-team-member-role error:", e);
+    return res.status(500).json({ error: e.message || "Failed to update team member role" });
+  }
+});
+
 router.get("/me", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();

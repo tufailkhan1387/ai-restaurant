@@ -7,6 +7,10 @@ function defaultPrompt(name) {
 1) Place a NEW delivery order — collect customer name, phone, delivery address, items (with quantities), and any special notes. Use the menu in your knowledge base to confirm items and prices. When ready, call the place_order tool.
 2) Check the status of an EXISTING order — ask for the short tracking code (e.g. "ABC1234567"), then call the get_order_status tool. Read the status and ETA back to the caller.
 
+IMPORTANT AVAILABILITY RULES:
+- Check your knowledge base for items marked as OUT OF ORDER / OUT OF STOCK.
+- NEVER accept or place an order for out-of-order items. If a caller asks for an out-of-order item, politely apologize and say: "I am sorry, [item name] is currently out of order today. Would you like to try another item from our menu instead?"
+
 Be concise, friendly, and confirm details before submitting. If an item isn't on the menu, politely say so. Never invent prices.`;
 }
 

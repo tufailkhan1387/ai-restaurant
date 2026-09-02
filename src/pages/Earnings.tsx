@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
@@ -28,6 +29,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import { formatCurrency } from "@/lib/restaurant";
 import { cn } from "@/lib/utils";
 
 interface EarningStats {
@@ -48,11 +50,8 @@ interface EarningStats {
   };
 }
 
-function formatCurrency(val: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
-}
-
 export default function Earnings() {
+  const { t } = useTranslation(["superAdmin", "reports", "common"]);
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>("all");
 
   const { data, isLoading, error } = useQuery<EarningStats>({
@@ -78,9 +77,9 @@ export default function Earnings() {
   );
 
   const selectedRestaurantName = useMemo(() => {
-    if (selectedRestaurantId === "all") return "All Restaurants";
-    return restaurants.find((r) => r.restaurant_id === selectedRestaurantId)?.restaurant_name || "Selected Restaurant";
-  }, [restaurants, selectedRestaurantId]);
+    if (selectedRestaurantId === "all") return t("reports:allRestaurants", "All Restaurants");
+    return restaurants.find((r) => r.restaurant_id === selectedRestaurantId)?.restaurant_name || t("superAdmin:selectedRestaurant", "Selected Restaurant");
+  }, [restaurants, selectedRestaurantId, t]);
 
   const displayedSummary = useMemo(
     () =>
@@ -102,28 +101,20 @@ export default function Earnings() {
     [displayedRestaurants]
   );
 
-  const pieData = useMemo(
-    () => [
-      { name: "Admin (Commission)", value: displayedSummary.total_admin_earning, color: "hsl(var(--primary))" },
-      {
-        name: "Restaurants Share",
-        value: displayedSummary.total_restaurant_earning,
-        color: "hsl(var(--status-available))",
-      },
-    ],
-    [displayedSummary.total_admin_earning, displayedSummary.total_restaurant_earning]
-  );
+  const chartData = useMemo(() => {
+    return displayedRestaurants.map((r) => ({
+      name: r.restaurant_name,
+      Admin: r.admin_earning,
+      Restaurant: r.restaurant_earning,
+    }));
+  }, [displayedRestaurants]);
 
-  const chartData = useMemo(
-    () =>
-      displayedRestaurants.map((r) => ({
-        name: r.restaurant_name,
-        Sales: r.total_sales,
-        Admin: r.admin_earning,
-        Restaurant: r.restaurant_earning,
-      })),
-    [displayedRestaurants]
-  );
+  const pieData = useMemo(() => {
+    return [
+      { name: t("superAdmin:adminProfit", "Admin Profit"), value: displayedSummary.total_admin_earning, color: "hsl(var(--primary))" },
+      { name: t("superAdmin:restaurantShare", "Restaurant Share"), value: displayedSummary.total_restaurant_earning, color: "hsl(142, 71%, 45%)" },
+    ];
+  }, [displayedSummary, t]);
 
   if (isLoading) {
     return (
@@ -136,28 +127,28 @@ export default function Earnings() {
   if (error) {
     return (
       <div className="p-8 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-        <p className="font-bold">Error loading earnings</p>
+        <p className="font-bold">{t("common:error", "Error loading earnings")}</p>
         <p className="text-sm">{(error as Error).message}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-6 animate-fade-in pb-10 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
             <Wallet className="h-8 w-8 text-primary" />
-            Platform Earnings
+            {t("superAdmin:earningsTitle", "Platform Earnings")}
           </h1>
-          <p className="text-muted-foreground mt-1">Global revenue and commission analytics</p>
+          <p className="text-muted-foreground mt-1">{t("superAdmin:earningsSubtitle", "Global revenue and commission analytics")}</p>
         </div>
         <Select value={selectedRestaurantId} onValueChange={setSelectedRestaurantId}>
           <SelectTrigger className="w-full md:w-[280px]">
-            <SelectValue placeholder="Filter by restaurant" />
+            <SelectValue placeholder={t("reports:filterByRestaurant", "Filter by restaurant")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Restaurants</SelectItem>
+            <SelectItem value="all">{t("reports:allRestaurants", "All Restaurants")}</SelectItem>
             {restaurants.map((r) => (
               <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
                 {r.restaurant_name}
@@ -170,37 +161,41 @@ export default function Earnings() {
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
-          title="Total Platform Sales" 
+          title={t("superAdmin:totalPlatformSales", "Total Platform Sales")} 
           value={formatCurrency(displayedSummary.total_sales)} 
           icon={TrendingUp} 
           trend="+12.5%" 
           isPositive={true}
-          description="Gross sales across all locations"
+          description={t("superAdmin:grossSalesDesc", "Gross sales across all locations")}
+          vsText={t("common:vsLastMonth", "vs last month")}
         />
         <StatCard 
-          title="Admin Earnings" 
+          title={t("superAdmin:adminEarnings", "Admin Earnings")} 
           value={formatCurrency(displayedSummary.total_admin_earning)} 
           icon={DollarSign} 
           trend="+8.2%" 
           isPositive={true}
-          description="Total commissions collected"
+          description={t("superAdmin:commissionsCollectedDesc", "Total commissions collected")}
+          vsText={t("common:vsLastMonth", "vs last month")}
           highlight
         />
         <StatCard 
-          title="Restaurant Earnings" 
+          title={t("superAdmin:restaurantEarnings", "Restaurant Earnings")} 
           value={formatCurrency(displayedSummary.total_restaurant_earning)} 
           icon={Store} 
           trend="+14.1%" 
           isPositive={true}
-          description="Net revenue for restaurant partners"
+          description={t("superAdmin:netRevenueDesc", "Net revenue for restaurant partners")}
+          vsText={t("common:vsLastMonth", "vs last month")}
         />
         <StatCard 
-          title="Total Orders" 
+          title={t("reports:totalOrders", "Total Orders")} 
           value={displayedSummary.total_orders.toString()} 
           icon={BarChartIcon} 
           trend="+20.4%" 
           isPositive={true}
-          description="Completed deliveries"
+          description={t("superAdmin:completedDeliveriesDesc", "Completed deliveries")}
+          vsText={t("common:vsLastMonth", "vs last month")}
         />
       </div>
 
@@ -210,7 +205,7 @@ export default function Earnings() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChartIcon className="h-5 w-5 text-primary" />
-              {selectedRestaurantId === "all" ? "Restaurant-wise Revenue" : `${selectedRestaurantName} Revenue`}
+              {selectedRestaurantId === "all" ? t("superAdmin:restaurantWiseRevenue", "Restaurant-wise Revenue") : `${selectedRestaurantName} ${t("reports:sales", "Revenue")}`}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -226,8 +221,8 @@ export default function Earnings() {
                     formatter={(value: any) => formatCurrency(value)}
                   />
                   <Legend iconType="circle" />
-                  <Bar dataKey="Admin" name="Admin Profit" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={20} />
-                  <Bar dataKey="Restaurant" name="Restaurant Share" fill="hsl(var(--status-available))" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="Admin" name={t("superAdmin:adminProfit", "Admin Profit")} fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="Restaurant" name={t("superAdmin:restaurantShare", "Restaurant Share")} fill="hsl(142, 71%, 45%)" radius={[4, 4, 0, 0]} barSize={20} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -239,7 +234,7 @@ export default function Earnings() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PieChartIcon className="h-5 w-5 text-primary" />
-              {selectedRestaurantId === "all" ? "Profit Split" : `${selectedRestaurantName} Profit Split`}
+              {selectedRestaurantId === "all" ? t("superAdmin:profitSplit", "Profit Split") : `${selectedRestaurantName} ${t("superAdmin:profitSplit", "Profit Split")}`}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center">
@@ -284,19 +279,19 @@ export default function Earnings() {
       {/* Detailed Table */}
       <Card className="border-none bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
         <CardHeader>
-          <CardTitle>Detailed Restaurant Earnings</CardTitle>
+          <CardTitle>{t("superAdmin:detailedRestaurantEarnings", "Detailed Restaurant Earnings")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/50 text-muted-foreground font-medium border-y">
                 <tr>
-                  <th className="px-6 py-4">Restaurant</th>
-                  <th className="px-6 py-4">Commission</th>
-                  <th className="px-6 py-4 text-right">Orders</th>
-                  <th className="px-6 py-4 text-right">Total Sales</th>
-                  <th className="px-6 py-4 text-right">Admin Profit</th>
-                  <th className="px-6 py-4 text-right">Net Payout</th>
+                  <th className="px-6 py-4">{t("reports:colRestaurant", "Restaurant")}</th>
+                  <th className="px-6 py-4">{t("superAdmin:colCommissionRate", "Commission")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colOrders", "Orders")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colSales", "Total Sales")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colAdminEarnings", "Admin Profit")}</th>
+                  <th className="px-6 py-4 text-right">{t("reports:colRestaurantEarnings", "Net Payout")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -311,13 +306,13 @@ export default function Earnings() {
                     <td className="px-6 py-4 text-right text-muted-foreground">{r.order_count}</td>
                     <td className="px-6 py-4 text-right font-medium">{formatCurrency(r.total_sales)}</td>
                     <td className="px-6 py-4 text-right text-primary font-bold">{formatCurrency(r.admin_earning)}</td>
-                    <td className="px-6 py-4 text-right text-status-available font-bold">{formatCurrency(r.restaurant_earning)}</td>
+                    <td className="px-6 py-4 text-right text-emerald-600 font-bold">{formatCurrency(r.restaurant_earning)}</td>
                   </tr>
                 ))}
                 {displayedRestaurants.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-6 py-8 text-center text-muted-foreground">
-                      No earnings data found for the selected restaurant.
+                      {t("reports:noData", "No earnings data found for the selected restaurant.")}
                     </td>
                   </tr>
                 )}
@@ -337,6 +332,7 @@ function StatCard({
   trend, 
   isPositive, 
   description,
+  vsText,
   highlight = false
 }: { 
   title: string; 
@@ -345,6 +341,7 @@ function StatCard({
   trend: string; 
   isPositive: boolean; 
   description: string;
+  vsText?: string;
   highlight?: boolean;
 }) {
   return (
@@ -364,13 +361,13 @@ function StatCard({
                 "flex items-center gap-0.5 text-xs font-bold px-1.5 py-0.5 rounded-full",
                 highlight 
                   ? "bg-white/20 text-white" 
-                  : isPositive ? "bg-status-available/20 text-status-available" : "bg-destructive/20 text-destructive"
+                  : isPositive ? "bg-emerald-500/20 text-emerald-600" : "bg-destructive/20 text-destructive"
               )}>
                 {isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                 {trend}
               </span>
               <span className={cn("text-[10px]", highlight ? "text-primary-foreground/60" : "text-muted-foreground")}>
-                vs last month
+                {vsText || "vs last month"}
               </span>
             </div>
           </div>

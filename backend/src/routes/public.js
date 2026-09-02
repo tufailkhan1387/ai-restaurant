@@ -17,12 +17,15 @@ router.get("/storefront", async (_req, res) => {
       r.elevenlabs_agent_id = process.env.ELEVENLABS_AGENT_ID;
     }
     const rid = r.id;
-    const [settings, categories, items, deals, hours] = await Promise.all([
+    const [settings, categories, items, deals, hours, variants, addons, itemAddons] = await Promise.all([
       knex("restaurant_settings").where({ restaurant_id: rid }).first(),
       knex("menu_categories").where({ restaurant_id: rid }).andWhere({ is_active: true }).orderBy("sort_order", "asc"),
-      knex("menu_items").where({ restaurant_id: rid }).andWhere({ is_available: true }).orderBy("sort_order", "asc"),
+      knex("menu_items").where({ restaurant_id: rid }).orderBy("sort_order", "asc"),
       knex("deals").where({ restaurant_id: rid }).andWhere({ is_active: true }),
       knex("restaurant_hours").where({ restaurant_id: rid }).orderBy("open_time", "asc"),
+      knex("menu_item_variants").where({ is_active: true }).orderBy("sort_order", "asc"),
+      knex("menu_addons").where({ restaurant_id: rid, is_active: true }).orderBy("sort_order", "asc"),
+      knex("menu_item_addons").select("menu_item_id", "menu_addon_id"),
     ]);
     return res.json({
       restaurant: r,
@@ -31,6 +34,9 @@ router.get("/storefront", async (_req, res) => {
       items,
       deals,
       hours: hours || [],
+      variants: variants || [],
+      addons: addons || [],
+      itemAddons: itemAddons || [],
     });
   } catch (e) {
     console.error(e);
@@ -80,6 +86,23 @@ router.post("/orders", async (req, res) => {
       await trx.rollback();
       return res.status(400).json({ error: "Missing required fields" });
     }
+
+    // Validate if any ordered item is out of stock / out of order
+    if (Array.isArray(lines) && lines.length) {
+      const itemIds = lines.map((l) => l.menu_item_id).filter(Boolean);
+      if (itemIds.length) {
+        const dbItems = await trx("menu_items").whereIn("id", itemIds);
+        for (const it of dbItems) {
+          if (it.is_available === false || (it.track_inventory && Number(it.stock_quantity || 0) <= 0)) {
+            await trx.rollback();
+            return res.status(400).json({
+              error: `Item "${it.name}" is currently out of order / out of stock and cannot be ordered.`,
+            });
+          }
+        }
+      }
+    }
+
     const [order] = await trx("orders")
       .insert({
         restaurant_id,

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { TrendingUp, TrendingDown, Phone, Clock, UserPlus, Target } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function Analytics() {
+  const { t } = useTranslation(["dashboard", "calls", "reports", "common"]);
   const [period, setPeriod] = useState<Period>("7d");
   const days = PERIOD_DAYS[period];
   const isHourly = period === "24h";
@@ -180,21 +182,21 @@ export default function Analytics() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-10">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
-          <p className="text-muted-foreground">Real-time performance metrics</p>
+          <h1 className="text-2xl font-bold text-foreground">{t("dashboard:analytics", "Analytics")}</h1>
+          <p className="text-muted-foreground">{t("reports:subtitle", "Real-time performance metrics")}</p>
         </div>
         <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
           <SelectTrigger className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="24h">Last 24 hours</SelectItem>
-            <SelectItem value="7d">Last 7 days</SelectItem>
-            <SelectItem value="30d">Last 30 days</SelectItem>
-            <SelectItem value="90d">Last 90 days</SelectItem>
+            <SelectItem value="24h">{t("reports:last24Hours", "Last 24 hours")}</SelectItem>
+            <SelectItem value="7d">{t("reports:last7Days", "Last 7 days")}</SelectItem>
+            <SelectItem value="30d">{t("reports:last30Days", "Last 30 days")}</SelectItem>
+            <SelectItem value="90d">{t("reports:last90Days", "Last 90 days")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -204,7 +206,7 @@ export default function Analytics() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Calls</p>
+                <p className="text-sm text-muted-foreground">{t("calls:totalCalls", "Total Calls")}</p>
                 <p className="text-2xl font-bold">{stats.totalCalls}</p>
                 <ChangeIndicator value={stats.callsChange} />
               </div>
@@ -218,7 +220,7 @@ export default function Analytics() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Avg Handle Time</p>
+                <p className="text-sm text-muted-foreground">{t("calls:averageDuration", "Avg Handle Time")}</p>
                 <p className="text-2xl font-bold">{fmtDuration(stats.avgDuration)}</p>
                 <ChangeIndicator value={stats.durChange} />
               </div>
@@ -232,7 +234,7 @@ export default function Analytics() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Completion Rate</p>
+                <p className="text-sm text-muted-foreground">{t("calls:successRate", "Completion Rate")}</p>
                 <p className="text-2xl font-bold">{stats.completionRate.toFixed(1)}%</p>
                 <ChangeIndicator value={stats.compRateChange} suffix="pp" />
               </div>
@@ -246,7 +248,7 @@ export default function Analytics() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">New Leads</p>
+                <p className="text-sm text-muted-foreground">{t("calls:newToday", "New Leads")}</p>
                 <p className="text-2xl font-bold">{stats.leadsCount}</p>
                 <ChangeIndicator value={stats.leadsChange} />
               </div>

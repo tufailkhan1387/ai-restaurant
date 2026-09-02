@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -120,8 +121,9 @@ async function fetchOwnerForRestaurant(restaurantId: string): Promise<{
     .from("restaurant_members")
     .select("user_id, member_role")
     .eq("restaurant_id", restaurantId);
-  if (mErr || !members?.length) return empty;
-  const userIds = [...new Set((members as { user_id: string }[]).map((m) => m.user_id))];
+  const memberList = (Array.isArray(members) ? members : []) as { user_id: string; member_role?: string }[];
+  if (mErr || !memberList.length) return empty;
+  const userIds = [...new Set(memberList.map((m) => m.user_id))];
   const [{ data: profiles }, { data: roles }] = await Promise.all([
     supabase.from("profiles").select("id, email, full_name").in("id", userIds),
     supabase.from("user_roles").select("user_id, role").in("user_id", userIds),
@@ -147,6 +149,7 @@ async function fetchOwnerForRestaurant(restaurantId: string): Promise<{
 }
 
 export default function Restaurants() {
+  const { t } = useTranslation(["superAdmin", "cuisines", "common"]);
   const { role } = useAuth();
   const { toast } = useToast();
   const [list, setList] = useState<Restaurant[]>([]);
@@ -544,16 +547,16 @@ export default function Restaurants() {
     <div className="space-y-6">
       <div className="flex justify-between items-start flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Store className="h-6 w-6" />Restaurants</h1>
-          <p className="text-muted-foreground text-sm">Each restaurant has one dashboard owner. Provision tenants and manage their login here.</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Store className="h-6 w-6" />{t("superAdmin:restaurants", "Restaurants")}</h1>
+          <p className="text-muted-foreground text-sm">{t("superAdmin:restaurantsSubtitle", "Each restaurant has one dashboard owner. Provision tenants and manage their login here.")}</p>
         </div>
         <Dialog open={!!mode} onOpenChange={(o) => { if (!o) closeDialog(); }}>
           <DialogTrigger asChild>
-            <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" />New restaurant</Button>
+            <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" />{t("superAdmin:newRestaurant", "New restaurant")}</Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{isEdit ? "Edit restaurant" : "Create restaurant"}</DialogTitle>
+              <DialogTitle>{isEdit ? t("superAdmin:editRestaurant", "Edit restaurant") : t("superAdmin:createRestaurant", "Create restaurant")}</DialogTitle>
             </DialogHeader>
             <DialogBody className="space-y-3">
               <div>
@@ -860,10 +863,10 @@ export default function Restaurants() {
       </div>
 
       {loading ? (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <p className="text-muted-foreground text-sm">{t("common:loading", "Loading…")}</p>
       ) : list.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">No restaurants yet</CardContent>
+          <CardContent className="py-10 text-center text-muted-foreground">{t("superAdmin:noRestaurants", "No restaurants yet")}</CardContent>
         </Card>
       ) : (
         <Card>
@@ -872,11 +875,11 @@ export default function Restaurants() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Owner login</TableHead>
-                    <TableHead>Cuisines</TableHead>
-                    <TableHead className="text-right w-[168px]">Actions</TableHead>
+                    <TableHead>{t("superAdmin:colName", "Name")}</TableHead>
+                    <TableHead>{t("common:status", "Status")}</TableHead>
+                    <TableHead>{t("superAdmin:colOwnerLogin", "Owner login")}</TableHead>
+                    <TableHead>{t("cuisines:title", "Cuisines")}</TableHead>
+                    <TableHead className="text-right w-[168px]">{t("common:actions", "Actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -891,7 +894,7 @@ export default function Restaurants() {
                           variant={r.is_active ? "default" : "secondary"}
                           className={cn(r.is_active ? "bg-green-500/10 text-green-600 border-green-500/20" : "")}
                         >
-                          {r.is_active ? "Active" : "Inactive"}
+                          {r.is_active ? t("common:active", "Active") : t("common:inactive", "Inactive")}
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-[140px] truncate text-muted-foreground text-xs" title={r.owner_login_email || undefined}>
@@ -905,7 +908,7 @@ export default function Restaurants() {
                             className="h-auto p-0 text-xs font-medium text-primary no-underline hover:no-underline"
                             onClick={() => setCuisinesView({ name: r.name, cuisines: r.cuisines ?? [] })}
                           >
-                            View Cuisines
+                            {t("cuisines:viewCuisines", "View Cuisines")}
                           </Button>
                         ) : (
                           <span className="text-muted-foreground text-xs">—</span>
@@ -918,18 +921,18 @@ export default function Restaurants() {
                             size="icon"
                             variant="ghost"
                             className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary"
-                            title="Details"
+                            title={t("common:details", "Details")}
                           >
                             <Link to={`/restaurants/${r.id}/details`}>
                               <Eye className="h-4 w-4" />
                             </Link>
                           </Button>
-                          <Button asChild size="icon" variant="ghost" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" title="Configure">
+                          <Button asChild size="icon" variant="ghost" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" title={t("common:configure", "Configure")}>
                             <Link to={`/restaurants/${r.id}/configuration`}>
                               <Settings className="h-4 w-4" />
                             </Link>
                           </Button>
-                          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(r)} title="Edit">
+                          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(r)} title={t("common:edit", "Edit")}>
                             <Pencil className="h-4 w-4" />
                           </Button>
                           <Button 
@@ -937,11 +940,11 @@ export default function Restaurants() {
                             variant="ghost" 
                             className="h-8 w-8 rounded-full"
                             onClick={() => toggleActive(r)} 
-                            title={r.is_active ? "Pause" : "Resume"}
+                            title={r.is_active ? t("common:pause", "Pause") : t("common:resume", "Resume")}
                           >
                             {r.is_active ? <Pause className="h-4 w-4 text-orange-500" /> : <Play className="h-4 w-4 text-green-500" />}
                           </Button>
-                          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10" onClick={() => removeRestaurant(r)} title="Delete">
+                          <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10" onClick={() => removeRestaurant(r)} title={t("common:delete", "Delete")}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>

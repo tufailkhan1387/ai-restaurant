@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -59,13 +60,12 @@ interface Restaurant {
   agent_system_prompt: string | null;
   agent_knowledge_doc_id: string | null;
   agent_menu_synced_at: string | null;
-  allows_delivery: boolean;
-  allows_pickup: boolean;
+  allows_delivery?: boolean;
+  allows_pickup?: boolean;
 }
 
 interface WorkingHour {
   id?: string;
-  restaurant_id: string;
   day_of_week: number;
   open_time: string;
   close_time: string;
@@ -74,19 +74,34 @@ interface WorkingHour {
 
 /** From `check-integration-status` — server `VOICE_ROUTING` + `PUBLIC_API_URL`. */
 interface VoiceIntegrationInfo {
-  routing: "twilio_webhook" | "elevenlabs_native" | "synthflow_telnyx";
-  public_api_base: string | null;
-  urls: {
-    twilio_inbound_webhook: string;
-    ai_place_order: string;
-    ai_order_status: string;
-    elevenlabs_post_call_webhook: string;
-    synthflow_post_call_webhook?: string;
-  } | null;
-  hints?: Record<string, string>;
+  synthflow_available: boolean;
+  telnyx_available: boolean;
+  elevenlabs_available: boolean;
+  elevenlabs_configured: boolean;
+  twilio_configured: boolean;
+  livekit_configured: boolean;
+  deepgram_configured: boolean;
 }
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const AGENT_LANGUAGES = [
+  { code: "en", label: "English (US / UK / Global)" },
+  { code: "es", label: "Spanish (Español)" },
+  { code: "fr", label: "French (Français)" },
+  { code: "de", label: "German (Deutsch)" },
+  { code: "it", label: "Italian (Italiano)" },
+  { code: "pt", label: "Portuguese (Português)" },
+  { code: "nl", label: "Dutch (Nederlands)" },
+  { code: "pl", label: "Polish (Polski)" },
+  { code: "ru", label: "Russian (Русский)" },
+  { code: "ar", label: "Arabic (العربية)" },
+  { code: "hi", label: "Hindi (हिन्दी)" },
+  { code: "ja", label: "Japanese (日本語)" },
+  { code: "ko", label: "Korean (한국어)" },
+  { code: "zh", label: "Chinese (中文)" },
+  { code: "tr", label: "Turkish (Türkçe)" },
+];
 
 function isEmpty(v: unknown): boolean {
   return v == null || String(v).trim() === "";
@@ -106,27 +121,11 @@ function mergeDisplaySettings(
   return out;
 }
 
-const LANGUAGES = [
-  { code: "en", label: "English" },
-  { code: "es", label: "Spanish (Español)" },
-  { code: "fr", label: "French (Français)" },
-  { code: "de", label: "German (Deutsch)" },
-  { code: "it", label: "Italian (Italiano)" },
-  { code: "pt", label: "Portuguese (Português)" },
-  { code: "nl", label: "Dutch (Nederlands)" },
-  { code: "pl", label: "Polish (Polski)" },
-  { code: "ar", label: "Arabic (العربية)" },
-  { code: "hi", label: "Hindi (हिन्दी)" },
-  { code: "ja", label: "Japanese (日本語)" },
-  { code: "ko", label: "Korean (한국어)" },
-  { code: "zh", label: "Chinese (中文)" },
-  { code: "tr", label: "Turkish (Türkçe)" },
-];
-
 const RESTAURANT_SELECT =
   "id, name, slug, phone, contact_email, address, logo_url, cover_image_url, twilio_phone_number, elevenlabs_agent_id, telnyx_phone_number, telnyx_phone_number_id, synthflow_agent_id, voice_provider, synthflow_synced_at, agent_language, agent_voice_id, agent_first_message, agent_system_prompt, agent_knowledge_doc_id, agent_menu_synced_at, allows_delivery, allows_pickup";
 
 export default function RestaurantSettings() {
+  const { t } = useTranslation(["restaurantSettings", "common"]);
   const { toast } = useToast();
   const { restaurantId, loading: activeRestaurantLoading } = useActiveRestaurant();
   const [s, setS] = useState<Record<string, unknown> | null>(null);

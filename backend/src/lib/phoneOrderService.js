@@ -60,6 +60,8 @@ export function parseOrderItemsText(raw) {
 export function matchMenuLines(menu, items) {
   const lines = [];
   const unmatched = [];
+  const outOfStock = [];
+
   for (const it of items) {
     const qty = Math.max(1, Number(it.quantity ?? 1) || 1);
     const needle = (it.name || "").trim().toLowerCase();
@@ -70,6 +72,14 @@ export function matchMenuLines(menu, items) {
       );
     }
     if (m) {
+      const isUnavailable =
+        m.is_available === false ||
+        (m.track_inventory && Number(m.stock_quantity || 0) <= 0);
+
+      if (isUnavailable) {
+        outOfStock.push(m.name);
+      }
+
       const price = Number(m.price);
       lines.push({
         menu_item_id: m.id,
@@ -79,6 +89,7 @@ export function matchMenuLines(menu, items) {
         line_total: price * qty,
         notes: it.notes ?? null,
         matched: true,
+        is_available: !isUnavailable,
       });
     } else {
       unmatched.push(it.name);
@@ -90,10 +101,11 @@ export function matchMenuLines(menu, items) {
         line_total: 0,
         notes: it.notes ?? null,
         matched: false,
+        is_available: true,
       });
     }
   }
-  return { lines, unmatched };
+  return { lines, unmatched, outOfStock };
 }
 
 /**
@@ -169,12 +181,20 @@ export async function createPhoneOrder(knex, input) {
 
   const [menu, settings] = await Promise.all([
     knex("menu_items")
-      .where({ restaurant_id: restaurantId, is_available: true })
-      .select("id", "name", "price"),
+      .where({ restaurant_id: restaurantId })
+      .select("id", "name", "price", "is_available", "track_inventory", "stock_quantity"),
     knex("restaurant_settings").where({ restaurant_id: restaurantId }).first(),
   ]);
 
-  const { lines, unmatched } = matchMenuLines(menu, parsedItems);
+  const { lines, unmatched, outOfStock } = matchMenuLines(menu, parsedItems);
+
+  if (outOfStock.length > 0) {
+    const err = new Error(`Item "${outOfStock.join(", ")}" is currently out of order / out of stock.`);
+    err.outOfStock = outOfStock;
+    err.isOutOfStock = true;
+    throw err;
+  }
+
   const subtotal = lines.reduce((s, l) => s + l.line_total, 0);
 
   const coupon = await applyCoupon(knex, {

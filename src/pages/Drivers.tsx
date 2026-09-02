@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,7 @@ async function syncDriverRestaurants(driverId: string, restaurantIds: string[]) 
 }
 
 export default function Drivers() {
+  const { t } = useTranslation(["drivers", "common"]);
   const { toast } = useToast();
   const { user } = useAuth();
   const { restaurantId } = useActiveRestaurant();
@@ -99,40 +101,52 @@ export default function Drivers() {
         .eq("restaurant_id", restaurantId);
       const ids = [...new Set((linkRes.data as { driver_id: string }[] | null)?.map((x) => x.driver_id) ?? [])];
 
-      let driverRows: Driver[] = [];
-      if (ids.length) {
-        const dRes = await supabase.from("drivers").select("*").in("id", ids).order("created_at", { ascending: false });
-        driverRows = (dRes.data as Driver[]) ?? [];
+      if (!ids.length) {
+        setDrivers([]);
+        setAssignmentsByDriver({});
+        setVehicles([]);
+        setProfiles([]);
+        return;
       }
 
-      const assignMap: Record<string, string[]> = {};
-      if (ids.length) {
-        const allRes = await supabase.from("driver_restaurants").select("driver_id, restaurant_id").in("driver_id", ids);
-        for (const row of (allRes.data as { driver_id: string; restaurant_id: string }[] | null) ?? []) {
-          if (!assignMap[row.driver_id]) assignMap[row.driver_id] = [];
-          assignMap[row.driver_id].push(row.restaurant_id);
-        }
+      const { data: dData, error: dError } = await supabase
+        .from("drivers")
+        .select("*")
+        .in("id", ids)
+        .order("created_at", { ascending: false });
+      if (dError) throw dError;
+      const driverList = (dData as Driver[]) || [];
+      setDrivers(driverList);
+
+      const allLinksRes = await supabase.from("driver_restaurants").select("driver_id, restaurant_id").in("driver_id", ids);
+      const byDriver: Record<string, string[]> = {};
+      for (const row of (allLinksRes.data as { driver_id: string; restaurant_id: string }[] | null) ?? []) {
+        if (!byDriver[row.driver_id]) byDriver[row.driver_id] = [];
+        byDriver[row.driver_id].push(row.restaurant_id);
       }
+      setAssignmentsByDriver(byDriver);
 
-      const ridList = myRestaurants.length ? myRestaurants.map((r) => r.id) : [restaurantId];
-      const vRes = await supabase
-        .from("vehicles")
-        .select("id, plate_number, vehicle_type, restaurant_id")
-        .in("restaurant_id", ridList);
+      const allRestaurantIds = [
+        ...new Set(
+          ((allLinksRes.data as { restaurant_id: string }[] | null) ?? []).map((x) => x.restaurant_id).concat(restaurantId),
+        ),
+      ];
+      const { data: vData } = await supabase.from("vehicles").select("id, plate_number, vehicle_type, restaurant_id").in("restaurant_id", allRestaurantIds);
+      setVehicles((vData as Vehicle[]) || []);
 
-      const pRes = await supabase.from("profiles").select("id, email, full_name");
-
-      setDrivers(driverRows);
-      setAssignmentsByDriver(assignMap);
-      setVehicles((vRes.data as Vehicle[]) ?? []);
-      setProfiles((pRes.data as Profile[]) ?? []);
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : "Load failed";
-      toast({ variant: "destructive", title: "Error", description: msg });
+      const userIds = [...new Set(driverList.map((d) => d.user_id).filter(Boolean))] as string[];
+      if (userIds.length) {
+        const { data: pData } = await supabase.from("profiles").select("id, email, full_name").in("id", userIds);
+        setProfiles((pData as Profile[]) || []);
+      } else {
+        setProfiles([]);
+      }
+    } catch (error: any) {
+      toast({ variant: "destructive", title: t("common:error", "Error"), description: error.message });
     } finally {
       setLoading(false);
     }
-  }, [restaurantId, user?.id, myRestaurants, toast]);
+  }, [restaurantId, user?.id, t, toast]);
 
   useEffect(() => {
     void load();
@@ -143,106 +157,82 @@ export default function Drivers() {
     restaurantIds: string[],
     cred?: { password: string; confirmPassword: string },
   ) => {
-    if (!user?.id) return;
-    if (!restaurantIds.length) {
-      toast({ variant: "destructive", title: "Restaurants required", description: "Select at least one restaurant." });
-      return;
-    }
+    if (!restaurantId) return;
 
-    const vRow = form.vehicle_id ? vehicles.find((v) => v.id === form.vehicle_id) : null;
-    const allowedVehicle = !form.vehicle_id || !!(vRow && restaurantIds.includes(vRow.restaurant_id));
-    if (!allowedVehicle) {
-      toast({
-        variant: "destructive",
-        title: "Invalid vehicle",
-        description: "Choose a vehicle that belongs to one of the selected restaurants, or clear the vehicle.",
-      });
-      return;
-    }
-
-    let userId: string | null = edit?.user_id ?? null;
-
-    if (!edit) {
-      const email = (form.email || "").trim().toLowerCase();
-      if (!email) {
-        toast({ variant: "destructive", title: "Email required", description: "Enter a login email for the new driver." });
+    if (!edit && cred) {
+      if (!form.email || !form.email.includes("@")) {
+        toast({ variant: "destructive", title: t("common:error", "Invalid email"), description: "Please enter a valid login email." });
         return;
       }
-      if (!cred?.password || cred.password.length < 8) {
-        toast({ variant: "destructive", title: "Password", description: "Password must be at least 8 characters." });
+      if (!cred.password || cred.password.length < 6) {
+        toast({ variant: "destructive", title: t("common:error", "Weak password"), description: "Password must be at least 6 characters." });
         return;
       }
       if (cred.password !== cred.confirmPassword) {
-        toast({ variant: "destructive", title: "Password", description: "Passwords do not match." });
-        return;
-      }
-      const token = getToken();
-      if (!token) {
-        toast({ variant: "destructive", title: "Not signed in", description: "Sign in again and retry." });
-        return;
-      }
-      const acRes = await fetch(`${getApiBase()}/api/auth/create-driver-user`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          email,
-          password: cred.password,
-          full_name: form.full_name || email.split("@")[0],
-        }),
-      });
-      const acJson = await acRes.json().catch(() => ({}));
-      if (!acRes.ok) {
-        toast({
-          variant: "destructive",
-          title: "Account not created",
-          description: typeof acJson.error === "string" ? acJson.error : acRes.statusText,
-        });
-        return;
-      }
-      userId = acJson.user_id as string;
-      if (!userId) {
-        toast({ variant: "destructive", title: "Failed", description: "Missing user id from server." });
+        toast({ variant: "destructive", title: t("common:error", "Password mismatch"), description: "Passwords do not match." });
         return;
       }
     }
 
+    if (!restaurantIds.length) {
+      toast({
+        variant: "destructive",
+        title: t("common:error", "Validation error"),
+        description: "Assign at least one restaurant to this driver.",
+      });
+      return;
+    }
+
     const payload = {
-      user_id: userId,
       full_name: form.full_name || "",
       phone: form.phone || "",
-      email: (form.email || "").trim() || null,
+      email: form.email || null,
       license_number: form.license_number || null,
       vehicle_id: form.vehicle_id || null,
       status: form.status || "offline",
       is_active: form.is_active ?? true,
       image_url: form.image_url || null,
+      restaurant_id: restaurantIds[0],
     };
 
     if (edit) {
       const res = await supabase.from("drivers").update(payload).eq("id", edit.id);
       if (res.error) {
-        toast({ variant: "destructive", title: "Failed", description: (res.error as { message?: string }).message });
+        toast({ variant: "destructive", title: t("common:error", "Update failed"), description: res.error.message });
         return;
       }
       await syncDriverRestaurants(edit.id, restaurantIds);
-    } else {
-      const res = await supabase.from("drivers").insert(payload).select().maybeSingle();
-      if (res.error) {
-        toast({ variant: "destructive", title: "Failed", description: (res.error as { message?: string }).message });
-        return;
-      }
-      const row = res.data as { id: string } | null;
-      if (!row?.id) {
-        toast({ variant: "destructive", title: "Failed", description: "Could not read new driver id." });
-        return;
-      }
-      await syncDriverRestaurants(row.id, restaurantIds);
+      toast({ title: t("drivers:driverSaved", "Driver updated successfully") });
+      setOpen(false);
+      setEdit(null);
+      void load();
+      return;
     }
 
-    toast({ title: "Driver saved successfully" });
-    setOpen(false);
-    setEdit(null);
-    void load();
+    try {
+      const token = getToken();
+      const res = await fetch(`${getApiBase()}/api/admin/create-driver`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          ...payload,
+          password: cred?.password,
+          restaurant_ids: restaurantIds,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create driver");
+
+      toast({ title: t("drivers:driverSaved", "Driver created successfully") });
+      setOpen(false);
+      setEdit(null);
+      void load();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: t("common:error", "Create failed"), description: err.message });
+    }
   };
 
   const vMap = Object.fromEntries(vehicles.map((v) => [v.id, v]));
@@ -269,16 +259,16 @@ export default function Drivers() {
   );
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto pb-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Drivers Management</h1>
-          <p className="text-muted-foreground mt-1">Drivers can be assigned to multiple restaurants. List shows drivers linked to the active restaurant.</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t("drivers:title", "Drivers Management")}</h1>
+          <p className="text-muted-foreground mt-1">{t("drivers:subtitle", "Drivers can be assigned to multiple restaurants. List shows drivers linked to the active restaurant.")}</p>
         </div>
         <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setEdit(null); }}>
           <DialogTrigger asChild>
             <Button className="gap-2 shadow-lg hover:shadow-primary/20">
-              <Plus className="h-4 w-4" /> Add Driver
+              <Plus className="h-4 w-4" /> {t("drivers:addDriver", "Add Driver")}
             </Button>
           </DialogTrigger>
           <Form
@@ -296,7 +286,7 @@ export default function Drivers() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search drivers by name or phone..."
+            placeholder={t("drivers:searchPlaceholder", "Search drivers by name or phone...")}
             className="pl-10 bg-background/50 border-none shadow-none focus-visible:ring-1"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -309,16 +299,16 @@ export default function Drivers() {
           <table className="w-full text-sm min-w-[980px]">
             <thead className="text-left bg-muted/50">
               <tr>
-                <th className="p-3 w-12">Photo</th>
-                <th className="p-3">Name</th>
-                <th className="p-3 whitespace-nowrap">Phone</th>
-                <th className="p-3">Email</th>
-                <th className="p-3 whitespace-nowrap">License</th>
-                <th className="p-3">Vehicle</th>
-                <th className="p-3">Restaurants</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Active</th>
-                <th className="p-3">Login email</th>
+                <th className="p-3 w-12">{t("drivers:colPhoto", "Photo")}</th>
+                <th className="p-3">{t("common:name", "Name")}</th>
+                <th className="p-3 whitespace-nowrap">{t("drivers:colPhone", "Phone")}</th>
+                <th className="p-3">{t("common:email", "Email")}</th>
+                <th className="p-3 whitespace-nowrap">{t("drivers:colLicense", "License")}</th>
+                <th className="p-3">{t("drivers:colVehicle", "Vehicle")}</th>
+                <th className="p-3">{t("drivers:colRestaurants", "Restaurants")}</th>
+                <th className="p-3">{t("common:status", "Status")}</th>
+                <th className="p-3">{t("drivers:colActive", "Active")}</th>
+                <th className="p-3">{t("drivers:colLoginEmail", "Login email")}</th>
                 <th className="p-3 w-[100px]" />
               </tr>
             </thead>
@@ -326,7 +316,7 @@ export default function Drivers() {
               {loading && (
                 <tr>
                   <td colSpan={10} className="p-10 text-center text-muted-foreground">
-                    Loading…
+                    {t("common:loading", "Loading…")}
                   </td>
                 </tr>
               )}

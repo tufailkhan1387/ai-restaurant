@@ -3,12 +3,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Users, UserPlus, Trash2, ShieldCheck, Mail, Pencil, Search, Loader2 } from "lucide-react";
+import { Users, UserPlus, Trash2, ShieldCheck, Mail, Search, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 interface Profile {
   id: string;
@@ -19,6 +20,7 @@ interface Profile {
 }
 
 export function UserManagement() {
+  const { t } = useTranslation(["settings", "common", "auth"]);
   const { toast } = useToast();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +28,6 @@ export function UserManagement() {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Form State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -35,7 +36,6 @@ export function UserManagement() {
   const load = async () => {
     setLoading(true);
     try {
-      // In standalone mode, we get profiles and roles separately or via a join if supported
       const { data: pData, error: pError } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
       if (pError) throw pError;
 
@@ -49,7 +49,7 @@ export function UserManagement() {
 
       setProfiles(profilesWithRoles);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      toast({ variant: "destructive", title: t("common:error", "Error"), description: error.message });
     } finally {
       setLoading(false);
     }
@@ -61,13 +61,12 @@ export function UserManagement() {
 
   const handleCreateUser = async () => {
     if (!email || !password) {
-      toast({ variant: "destructive", title: "Required fields", description: "Email and password are required." });
+      toast({ variant: "destructive", title: t("settings:requiredFields", "Required fields"), description: t("settings:emailPasswordRequired", "Email and password are required.") });
       return;
     }
 
     setSubmitting(true);
     try {
-      // Use the register endpoint via our compatClient
       const { data, error } = await (supabase.auth as any).signUp({
         email,
         password,
@@ -76,12 +75,11 @@ export function UserManagement() {
 
       if (error) throw error;
 
-      // After registration, update the role if it's not the default 'admin' assigned by backend
       if (data?.user?.id && role !== "admin") {
         await supabase.from("user_roles").update({ role }).eq("user_id", data.user.id);
       }
 
-      toast({ title: "User created successfully" });
+      toast({ title: t("settings:userCreatedSuccessfully", "User created successfully") });
       setOpen(false);
       setEmail("");
       setPassword("");
@@ -89,27 +87,27 @@ export function UserManagement() {
       setRole("agent");
       load();
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Failed", description: error.message });
+      toast({ variant: "destructive", title: t("common:failed", "Failed"), description: error.message });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this user? This will remove their profile and roles.")) return;
-    
+    if (!confirm(t("settings:confirmDeleteUser", "Are you sure you want to delete this user? This will remove their profile and roles."))) return;
+
     try {
       const { error } = await supabase.from("profiles").delete().eq("id", id);
       if (error) throw error;
-      toast({ title: "User deleted" });
+      toast({ title: t("settings:userDeleted", "User deleted") });
       load();
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Delete failed", description: error.message });
+      toast({ variant: "destructive", title: t("settings:deleteFailed", "Delete failed"), description: error.message });
     }
   };
 
-  const filteredProfiles = profiles.filter(p => 
-    p.email.toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filteredProfiles = profiles.filter(p =>
+    p.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -119,55 +117,55 @@ export function UserManagement() {
         <div>
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
-            System Users
+            {t("settings:systemUsers", "System Users")}
           </h2>
-          <p className="text-sm text-muted-foreground">Manage accounts and permissions for your staff.</p>
+          <p className="text-sm text-muted-foreground">{t("settings:systemUsersDesc", "Manage accounts and permissions for your staff.")}</p>
         </div>
-        
+
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2">
-              <UserPlus className="h-4 w-4" /> Add New User
+              <UserPlus className="h-4 w-4" /> {t("settings:addNewUser", "Add New User")}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Staff Account</DialogTitle>
+              <DialogTitle>{t("settings:createStaffAccount", "Create Staff Account")}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
+                <Label htmlFor="email">{t("common:emailAddress", "Email Address")}</Label>
                 <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="staff@example.com" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Initial Password</Label>
-                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 6 characters" />
+                <Label htmlFor="password">{t("settings:initialPassword", "Initial Password")}</Label>
+                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("settings:minSixChars", "Minimum 6 characters")} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="name">{t("auth:fullName", "Full Name")}</Label>
                 <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" />
               </div>
               <div className="space-y-2">
-                <Label>System Role</Label>
+                <Label>{t("settings:systemRole", "System Role")}</Label>
                 <Select value={role} onValueChange={setRole}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="super_admin">Super Admin</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="agent">Agent (Staff)</SelectItem>
-                    <SelectItem value="driver">Driver</SelectItem>
+                    <SelectItem value="super_admin">{t("settings:roleSuperAdmin", "Super Admin")}</SelectItem>
+                    <SelectItem value="admin">{t("settings:roleAdmin", "Admin")}</SelectItem>
+                    <SelectItem value="manager">{t("settings:roleManager", "Manager")}</SelectItem>
+                    <SelectItem value="agent">{t("settings:roleAgent", "Agent (Staff)")}</SelectItem>
+                    <SelectItem value="driver">{t("settings:roleDriver", "Driver")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setOpen(false)}>{t("common:cancel", "Cancel")}</Button>
               <Button onClick={handleCreateUser} disabled={submitting}>
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Create Account
+                {t("settings:createAccount", "Create Account")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -176,8 +174,8 @@ export function UserManagement() {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input 
-          placeholder="Search users by name or email..." 
+        <Input
+          placeholder={t("settings:searchUsers", "Search users by name or email...")}
           className="pl-10 bg-card/50"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -186,7 +184,7 @@ export function UserManagement() {
 
       <div className="grid gap-4">
         {loading ? (
-          <div className="py-12 text-center text-muted-foreground">Loading users...</div>
+          <div className="py-12 text-center text-muted-foreground">{t("settings:loadingUsers", "Loading users...")}</div>
         ) : filteredProfiles.map((p) => (
           <Card key={p.id} className="overflow-hidden border-none shadow-sm hover:shadow-md transition-shadow bg-card/50">
             <CardContent className="p-4 flex items-center justify-between">
@@ -196,7 +194,7 @@ export function UserManagement() {
                 </div>
                 <div>
                   <div className="font-semibold flex items-center gap-2">
-                    {p.full_name || "New User"}
+                    {p.full_name || t("settings:newUser", "New User")}
                     {p.roles?.map(r => (
                       <Badge key={r} variant="secondary" className="text-[9px] uppercase font-bold px-1.5 h-4">
                         {r.replace("_", " ")}

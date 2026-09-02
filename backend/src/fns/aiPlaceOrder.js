@@ -84,6 +84,14 @@ export async function aiPlaceOrder(req, res) {
     });
   } catch (e) {
     console.error("❌ Order Error:", e);
+    if (e.isOutOfStock || e.outOfStock?.length) {
+      const itemsList = (e.outOfStock || []).join(", ");
+      return res.status(200).json({
+        success: false,
+        out_of_stock: true,
+        message: `I am sorry, but ${itemsList} is currently out of order and unavailable. Would you like to order another item from our menu instead?`,
+      });
+    }
     return res.status(500).json({ error: e.message || "failed" });
   }
 }

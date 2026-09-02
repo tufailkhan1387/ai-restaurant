@@ -1,0 +1,17 @@
+{
+  "title": "Flotte de Véhicules",
+  "subtitle": "Gérez les véhicules et deux-roues de livraison",
+  "addVehicle": "Ajouter un véhicule",
+  "editVehicle": "Modifier le véhicule",
+  "deleteVehicle": "Supprimer le véhicule",
+  "plateNumber": "Immatriculation",
+  "vehicleType": "Type de véhicule",
+  "model": "Marque / Modèle",
+  "color": "Couleur",
+  "assignedDriver": "Livreur assigné",
+  "bike": "Scooter / Moto",
+  "car": "Voiture",
+  "van": "Fourgonnette",
+  "bicycle": "Vélo",
+  "noVehicles": "Aucun véhicule enregistré"
+}

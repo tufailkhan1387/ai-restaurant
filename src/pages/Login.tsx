@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   UtensilsCrossed,
   Eye,
@@ -17,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { getApiBase } from "@/lib/apiBase";
+import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
 import { cn } from "@/lib/utils";
 
 const DEMO_CREDENTIALS = [
@@ -39,6 +41,7 @@ const DEMO_CREDENTIALS = [
 type AuthView = "login" | "forgot" | "reset";
 
 export default function Login() {
+  const { t } = useTranslation(["auth", "common"]);
   const { user, loading, signIn } = useAuth();
   const { toast } = useToast();
   const [view, setView] = useState<AuthView>("login");
@@ -65,7 +68,7 @@ export default function Login() {
           <div className="w-12 h-12 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/30">
             <UtensilsCrossed className="h-6 w-6 text-primary-foreground" />
           </div>
-          <span className="text-sm font-medium text-muted-foreground">Loading…</span>
+          <span className="text-sm font-medium text-muted-foreground">{t("common:loading", "Loading…")}</span>
         </div>
       </div>
     );
@@ -80,6 +83,8 @@ export default function Login() {
     setIsSubmitting(true);
     try {
       await signIn(email, password);
+    } catch (err) {
+      // Error toast is handled inside signIn
     } finally {
       setIsSubmitting(false);
     }
@@ -96,42 +101,60 @@ export default function Login() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
-        demo_otp?: string;
-        success?: boolean;
+        message?: string;
+        debugOtp?: string;
       };
-      if (!res.ok) throw new Error(data.error || "Could not start reset");
 
-      setOtp(data.demo_otp || "123456");
-      setView("reset");
+      if (!res.ok) {
+        toast({
+          title: t("common:error", "Failed to send reset code"),
+          description: data?.error || "User not found or invalid email.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (data?.debugOtp) {
+        setOtp(data.debugOtp);
+      }
+
       toast({
-        title: "Demo OTP ready",
-        description: `Use OTP ${data.demo_otp || "123456"} for any account, then set a new password.`,
+        title: "Demo OTP Generated",
+        description: data?.debugOtp
+          ? `Use code: ${data.debugOtp}`
+          : "Check your email/SMS for code (using demo fallback if mail unconfigured).",
       });
-    } catch (err: unknown) {
+      setView("reset");
+    } catch {
       toast({
+        title: t("common:error", "Error"),
+        description: "Network error requesting password reset.",
         variant: "destructive",
-        title: "Request failed",
-        description: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleReset = async (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword.length < 8) {
+    if (!otp.trim()) {
+      toast({ title: "OTP required", description: "Please enter the OTP code", variant: "destructive" });
+      return;
+    }
+    if (newPassword.length < 6) {
       toast({
+        title: "Weak password",
+        description: "Password should be at least 6 characters.",
         variant: "destructive",
-        title: "Password too short",
-        description: "New password must be at least 8 characters.",
       });
       return;
     }
     if (newPassword !== confirmPassword) {
       toast({
+        title: "Password mismatch",
+        description: "New password and confirmation do not match.",
         variant: "destructive",
-        title: "Passwords do not match",
       });
       return;
     }
@@ -144,26 +167,30 @@ export default function Login() {
         body: JSON.stringify({
           email: email.trim(),
           otp: otp.trim(),
-          new_password: newPassword,
+          newPassword,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-      if (!res.ok) throw new Error(data.error || "Reset failed");
+      if (!res.ok) {
+        toast({
+          title: "Reset failed",
+          description: data?.error || "Invalid or expired OTP.",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      setPassword(newPassword);
-      setNewPassword("");
-      setConfirmPassword("");
-      setOtp("");
-      setView("login");
       toast({
-        title: "Password updated",
-        description: "You can sign in with your new password now.",
+        title: t("auth:passwordUpdated", "Password reset successful"),
+        description: "You can now sign in with your new password.",
       });
-    } catch (err: unknown) {
+      setPassword(newPassword);
+      setView("login");
+    } catch {
       toast({
+        title: t("common:error", "Error"),
+        description: "Network error resetting password.",
         variant: "destructive",
-        title: "Reset failed",
-        description: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setIsSubmitting(false);
@@ -172,10 +199,10 @@ export default function Login() {
 
   const heading =
     view === "login"
-      ? { title: "Welcome back", subtitle: "Sign in to access your dashboard" }
+      ? { title: t("auth:signIn", "Welcome back"), subtitle: t("auth:signInSubtitle", "Sign in to access your dashboard") }
       : view === "forgot"
-        ? { title: "Forgot password", subtitle: "Enter your account email to continue" }
-        : { title: "Reset password", subtitle: "Enter the demo OTP and choose a new password" };
+        ? { title: t("auth:forgotPassword", "Forgot password"), subtitle: "Enter your account email to continue" }
+        : { title: t("auth:changePassword", "Reset password"), subtitle: "Enter the OTP and choose a new password" };
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
@@ -214,11 +241,14 @@ export default function Login() {
           aria-hidden
         />
 
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-primary-foreground/15 backdrop-blur-sm border border-primary-foreground/20 flex items-center justify-center shadow-lg">
-            <UtensilsCrossed className="h-5 w-5" />
+        <div className="relative z-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-primary-foreground/15 backdrop-blur-sm border border-primary-foreground/20 flex items-center justify-center shadow-lg">
+              <UtensilsCrossed className="h-5 w-5" />
+            </div>
+            <span className="text-lg font-semibold tracking-tight">Royal Restaurant</span>
           </div>
-          <span className="text-lg font-semibold tracking-tight">Royal Restaurant</span>
+          <LanguageSwitcher variant="outline" className="bg-primary-foreground/15 text-primary-foreground border-primary-foreground/20 hover:bg-primary-foreground/25" />
         </div>
 
         <div className="relative z-10 max-w-md space-y-5">
@@ -250,14 +280,14 @@ export default function Login() {
         />
 
         <div className="relative w-full max-w-[400px] animate-fade-in">
-          <div className="flex lg:hidden items-center gap-3 mb-10 justify-center">
-            <div className="w-11 h-11 rounded-2xl gradient-primary flex items-center justify-center shadow-md shadow-primary/30">
-              <UtensilsCrossed className="h-5 w-5 text-primary-foreground" />
+          <div className="flex items-center justify-between mb-6 lg:hidden">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center shadow-md shadow-primary/30">
+                <UtensilsCrossed className="h-4 w-4 text-primary-foreground" />
+              </div>
+              <p className="text-base font-bold tracking-tight text-foreground">Royal Restaurant</p>
             </div>
-            <div>
-              <p className="text-lg font-bold tracking-tight text-foreground">Royal Restaurant</p>
-              <p className="text-xs text-muted-foreground">Management Dashboard</p>
-            </div>
+            <LanguageSwitcher />
           </div>
 
           <div className="mb-8 space-y-2 text-center lg:text-left">
@@ -268,7 +298,7 @@ export default function Login() {
                 className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Back
+                {t("common:back", "Back")}
               </button>
             ) : null}
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">{heading.title}</h2>
@@ -285,12 +315,12 @@ export default function Login() {
             >
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-foreground/80">
-                  Email
+                  {t("auth:emailLabel", "Email")}
                 </Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="admin@restaurant.com"
+                  placeholder={t("auth:emailPlaceholder", "admin@restaurant.com")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -302,21 +332,21 @@ export default function Login() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Label htmlFor="password" className="text-foreground/80">
-                    Password
+                    {t("auth:passwordLabel", "Password")}
                   </Label>
                   <button
                     type="button"
                     className="text-xs font-medium text-primary hover:underline underline-offset-2"
                     onClick={() => setView("forgot")}
                   >
-                    Forgot password?
+                    {t("auth:forgotPassword", "Forgot password?")}
                   </button>
                 </div>
                 <div className="relative">
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
+                    placeholder={t("auth:passwordPlaceholder", "••••••••")}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -346,11 +376,11 @@ export default function Login() {
                 className="w-full h-12 rounded-xl text-base font-semibold shadow-md shadow-primary/25 gap-2 group"
               >
                 {isSubmitting ? (
-                  "Signing in…"
+                  <span>{t("auth:signingIn", "Signing in...")}</span>
                 ) : (
                   <>
-                    Sign In
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                    <span>{t("auth:signIn", "Sign In")}</span>
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </>
                 )}
               </Button>
@@ -394,7 +424,7 @@ export default function Login() {
 
           {view === "reset" ? (
             <form
-              onSubmit={handleReset}
+              onSubmit={handleResetPassword}
               className={cn(
                 "rounded-3xl border border-border/60 bg-card/80 backdrop-blur-sm",
                 "shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-5",

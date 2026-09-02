@@ -18,10 +18,10 @@ export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
     keywords: ["users", "clients", "guests", "crm"],
   },
   {
-    label: "Restaurant owners",
-    href: "/users/restaurant-owners",
+    label: "Team members",
+    href: "/users/team-members",
     section: "Users",
-    keywords: ["users", "owners", "tenant", "membership"],
+    keywords: ["users", "team", "staff", "employees", "members", "permissions"],
   },
   { label: "Orders", href: "/orders", section: "Orders", keywords: ["all orders", "order list"] },
   { label: "New orders", href: "/orders/new", section: "Orders", keywords: ["new", "inbox", "pending"] },

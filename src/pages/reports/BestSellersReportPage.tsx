@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Award, Loader2, ShoppingCart, TrendingUp, DollarSign } from "lucide-react";
 import { getApiBase } from "@/lib/apiBase";
@@ -34,6 +35,7 @@ type BestSellersResponse = {
 };
 
 export default function BestSellersReportPage() {
+  const { t } = useTranslation(["reports", "common"]);
   const { data: meta, isLoading: metaLoading, error: metaError } = useReportRestaurants();
   const restaurants = meta?.restaurants ?? [];
   const [restaurantId, setRestaurantId] = useState("all");
@@ -84,21 +86,21 @@ export default function BestSellersReportPage() {
   if (metaError || restaurants.length === 0) {
     return (
       <div className="p-8 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-        <p className="font-bold">No restaurant access</p>
-        <p className="text-sm">Link your account to a restaurant to view best sellers.</p>
+        <p className="font-bold">{t("reports:noRestaurantAccess", "No restaurant access")}</p>
+        <p className="text-sm">{t("reports:linkAccountPrompt", "Link your account to a restaurant to view best sellers.")}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-6 animate-fade-in pb-10 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <Award className="h-8 w-8 text-primary" />
-            Best selling products
+            {t("reports:bestSellingProducts", "Best selling products")}
           </h1>
-          <p className="text-muted-foreground mt-1">Top menu items by revenue or units sold</p>
+          <p className="text-muted-foreground mt-1">{t("reports:bestSellingProductsDesc", "Top menu items by revenue or units sold")}</p>
         </div>
         <ReportFilters
           restaurants={restaurants}
@@ -124,8 +126,8 @@ export default function BestSellersReportPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="revenue">By revenue</SelectItem>
-                  <SelectItem value="quantity">By quantity</SelectItem>
+                  <SelectItem value="revenue">{t("reports:byRevenue", "By revenue")}</SelectItem>
+                  <SelectItem value="quantity">{t("reports:byQuantity", "By quantity")}</SelectItem>
                 </SelectContent>
               </Select>
             </>
@@ -135,30 +137,30 @@ export default function BestSellersReportPage() {
 
       {error ? (
         <div className="p-6 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-          <p className="font-bold">Error loading report</p>
+          <p className="font-bold">{t("common:error", "Error loading report")}</p>
           <p className="text-sm">{(error as Error).message}</p>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <StatCard
-              label="Top product"
+              label={t("reports:topProduct", "Top product")}
               value={isLoading ? "…" : topItem?.item_name ?? "—"}
               icon={Award}
               sub={topItem ? formatCurrency(topItem.revenue) : undefined}
             />
             <StatCard
-              label="Total revenue"
+              label={t("reports:totalRevenue", "Total revenue")}
               value={isLoading ? "…" : formatCurrency(summary?.total_revenue ?? 0)}
               icon={DollarSign}
             />
             <StatCard
-              label="Units sold"
+              label={t("reports:unitsSold", "Units sold")}
               value={isLoading ? "…" : String(summary?.total_units ?? 0)}
               icon={ShoppingCart}
             />
             <StatCard
-              label="Products ranked"
+              label={t("reports:productsRanked", "Products ranked")}
               value={isLoading ? "…" : String(rows.length)}
               icon={TrendingUp}
             />
@@ -166,9 +168,9 @@ export default function BestSellersReportPage() {
 
           <Card className="border-none bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
             <CardHeader>
-              <CardTitle>Rankings</CardTitle>
+              <CardTitle>{t("reports:rankings", "Rankings")}</CardTitle>
               <p className="text-sm text-muted-foreground font-normal">
-                Delivered and completed orders{periodDays !== "0" ? ` · last ${periodDays} days` : ""}.
+                {t("reports:deliveredAndCompletedOrders", "Delivered and completed orders")}{periodDays !== "0" ? ` · ${t("reports:lastDays", { count: parseInt(periodDays) }) || `last ${periodDays} days`}` : ""}.
               </p>
             </CardHeader>
             <CardContent className="p-0">
@@ -177,13 +179,13 @@ export default function BestSellersReportPage() {
                   <thead className="bg-muted/50 text-muted-foreground font-medium border-y">
                     <tr>
                       <th className="px-6 py-4 w-14">#</th>
-                      {showRestaurantCol && <th className="px-6 py-4">Restaurant</th>}
-                      <th className="px-6 py-4">Product</th>
-                      <th className="px-6 py-4">Category</th>
-                      <th className="px-6 py-4 text-right">Qty sold</th>
-                      <th className="px-6 py-4 text-right">Orders</th>
-                      <th className="px-6 py-4 text-right">Revenue</th>
-                      <th className="px-6 py-4 text-right">Share</th>
+                      {showRestaurantCol && <th className="px-6 py-4">{t("reports:colRestaurant", "Restaurant")}</th>}
+                      <th className="px-6 py-4">{t("reports:colProduct", "Product")}</th>
+                      <th className="px-6 py-4">{t("reports:colCategory", "Category")}</th>
+                      <th className="px-6 py-4 text-right">{t("reports:colQtySold", "Qty sold")}</th>
+                      <th className="px-6 py-4 text-right">{t("reports:colOrders", "Orders")}</th>
+                      <th className="px-6 py-4 text-right">{t("reports:colRevenue", "Revenue")}</th>
+                      <th className="px-6 py-4 text-right">{t("reports:colShare", "Share")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -220,7 +222,7 @@ export default function BestSellersReportPage() {
                     {!isLoading && rows.length === 0 && (
                       <tr>
                         <td colSpan={colSpan} className="px-6 py-8 text-center text-muted-foreground">
-                          No sales data for this period.
+                          {t("reports:noDataPeriod", "No sales data for this period.")}
                         </td>
                       </tr>
                     )}
@@ -261,3 +263,4 @@ function StatCard({
     </Card>
   );
 }
+

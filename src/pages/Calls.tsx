@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Phone, PhoneIncoming, PhoneOutgoing, Clock, Search, Filter, CheckCircle, XCircle, FileText, PlayCircle, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,26 +23,27 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { CallDetailDialog } from "@/components/calls/CallDetailDialog";
-import { format } from "date-fns";
+import { formatDate, formatTime } from "@/i18n/formatters";
 import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Call = Tables<"calls">;
 
-const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  queued: { label: "Queued", variant: "secondary" },
-  in_progress: { label: "In Progress", variant: "default" },
-  completed: { label: "Completed", variant: "outline" },
-  missed: { label: "Missed", variant: "destructive" },
-  transferred: { label: "Transferred", variant: "secondary" },
-};
-
 export default function Calls() {
+  const { t } = useTranslation(["calls", "common"]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [relevanceFilter, setRelevanceFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const queryClient = useQueryClient();
+
+  const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+    queued: { label: t("calls:statusQueued", "Queued"), variant: "secondary" },
+    in_progress: { label: t("calls:statusInProgress", "In Progress"), variant: "default" },
+    completed: { label: t("calls:statusCompleted", "Completed"), variant: "outline" },
+    missed: { label: t("calls:statusMissed", "Missed"), variant: "destructive" },
+    transferred: { label: t("calls:statusTransferred", "Transferred"), variant: "secondary" },
+  };
 
   // Sync mutation
   const syncMutation = useMutation({
@@ -98,6 +100,7 @@ export default function Calls() {
   const todayCalls = calls.filter(
     (c) => c.created_at && new Date(c.created_at) >= todayStart
   );
+
   const inboundCount = todayCalls.filter((c) => c.direction === "inbound").length;
   const outboundCount = todayCalls.filter((c) => c.direction === "outbound").length;
   const avgDuration = todayCalls.length > 0
@@ -114,12 +117,12 @@ export default function Calls() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-10">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Calls</h1>
-          <p className="text-muted-foreground">View and manage all call activity</p>
+          <h1 className="text-2xl font-bold text-foreground">{t("calls:title", "Calls")}</h1>
+          <p className="text-muted-foreground">{t("calls:subtitle", "View and manage all call activity")}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button 
@@ -128,11 +131,11 @@ export default function Calls() {
             disabled={syncMutation.isPending}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            {syncMutation.isPending ? "Syncing..." : "Sync from ElevenLabs"}
+            {syncMutation.isPending ? t("calls:syncing", "Syncing...") : t("calls:syncElevenLabs", "Sync from ElevenLabs")}
           </Button>
           <Button className="gradient-primary text-primary-foreground">
             <Phone className="h-4 w-4 mr-2" />
-            New Call
+            {t("calls:newCall", "New Call")}
           </Button>
         </div>
       </div>
@@ -143,7 +146,7 @@ export default function Calls() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Today's Calls</p>
+                <p className="text-sm text-muted-foreground">{t("calls:todayCalls", "Today's Calls")}</p>
                 <p className="text-2xl font-bold">{todayCalls.length}</p>
               </div>
               <Phone className="h-8 w-8 text-primary" />
@@ -154,10 +157,10 @@ export default function Calls() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Inbound</p>
+                <p className="text-sm text-muted-foreground">{t("calls:inbound", "Inbound")}</p>
                 <p className="text-2xl font-bold">{inboundCount}</p>
               </div>
-              <PhoneIncoming className="h-8 w-8 text-status-available" />
+              <PhoneIncoming className="h-8 w-8 text-emerald-600" />
             </div>
           </CardContent>
         </Card>
@@ -165,10 +168,10 @@ export default function Calls() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Outbound</p>
+                <p className="text-sm text-muted-foreground">{t("calls:outbound", "Outbound")}</p>
                 <p className="text-2xl font-bold">{outboundCount}</p>
               </div>
-              <PhoneOutgoing className="h-8 w-8 text-status-on-call" />
+              <PhoneOutgoing className="h-8 w-8 text-primary" />
             </div>
           </CardContent>
         </Card>
@@ -176,7 +179,7 @@ export default function Calls() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Avg Duration</p>
+                <p className="text-sm text-muted-foreground">{t("calls:averageDuration", "Avg Duration")}</p>
                 <p className="text-2xl font-bold">{formatDuration(avgDuration)}</p>
               </div>
               <Clock className="h-8 w-8 text-muted-foreground" />
@@ -188,39 +191,39 @@ export default function Calls() {
       {/* Calls Tabs */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Call Logs</CardTitle>
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <CardTitle>{t("calls:callLogs", "Call Logs")}</CardTitle>
+            <div className="flex items-center gap-4 flex-wrap">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search calls..."
-                  className="pl-10 w-[250px]"
+                  placeholder={t("calls:searchCallsPlaceholder", "Search calls...")}
+                  className="pl-10 w-[220px]"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
               <Select value={relevanceFilter} onValueChange={setRelevanceFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Relevance" />
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder={t("calls:relevance", "Relevance")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Calls</SelectItem>
-                  <SelectItem value="relevant">Relevant</SelectItem>
-                  <SelectItem value="irrelevant">Irrelevant</SelectItem>
+                  <SelectItem value="all">{t("calls:allCalls", "All Calls")}</SelectItem>
+                  <SelectItem value="relevant">{t("calls:relevant", "Relevant")}</SelectItem>
+                  <SelectItem value="irrelevant">{t("calls:irrelevant", "Irrelevant")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-[140px]">
                   <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Status" />
+                  <SelectValue placeholder={t("common:status", "Status")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="queued">Queued</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="missed">Missed</SelectItem>
+                  <SelectItem value="all">{t("common:all", "All Status")}</SelectItem>
+                  <SelectItem value="queued">{t("calls:statusQueued", "Queued")}</SelectItem>
+                  <SelectItem value="in_progress">{t("calls:statusInProgress", "In Progress")}</SelectItem>
+                  <SelectItem value="completed">{t("calls:statusCompleted", "Completed")}</SelectItem>
+                  <SelectItem value="missed">{t("calls:statusMissed", "Missed")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -233,20 +236,20 @@ export default function Calls() {
             </div>
           ) : filteredCalls.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No calls found
+              {t("calls:noCalls", "No calls found")}
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Phone Number</TableHead>
-                  <TableHead>Direction</TableHead>
-                  <TableHead>Relevance</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Recording</TableHead>
-                  <TableHead>Transcript</TableHead>
-                  <TableHead>Time</TableHead>
+                  <TableHead>{t("calls:colPhone", "Phone Number")}</TableHead>
+                  <TableHead>{t("calls:colDirection", "Direction")}</TableHead>
+                  <TableHead>{t("calls:colRelevance", "Relevance")}</TableHead>
+                  <TableHead>{t("common:status", "Status")}</TableHead>
+                  <TableHead>{t("calls:duration", "Duration")}</TableHead>
+                  <TableHead>{t("calls:recording", "Recording")}</TableHead>
+                  <TableHead>{t("calls:transcript", "Transcript")}</TableHead>
+                  <TableHead>{t("calls:colTime", "Time")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -260,23 +263,23 @@ export default function Calls() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {call.direction === "inbound" ? (
-                          <PhoneIncoming className="h-4 w-4 text-status-available" />
+                          <PhoneIncoming className="h-4 w-4 text-emerald-600" />
                         ) : (
-                          <PhoneOutgoing className="h-4 w-4 text-status-on-call" />
+                          <PhoneOutgoing className="h-4 w-4 text-primary" />
                         )}
-                        <span className="capitalize">{call.direction}</span>
+                        <span className="capitalize">{call.direction === "inbound" ? t("calls:inbound", "Inbound") : t("calls:outbound", "Outbound")}</span>
                       </div>
                     </TableCell>
                     <TableCell>
                       {call.lead_id ? (
                         <div className="flex items-center gap-1.5">
                           <CheckCircle className="h-4 w-4 text-green-500" />
-                          <span className="text-green-600 text-sm">Relevant</span>
+                          <span className="text-green-600 text-sm">{t("calls:relevant", "Relevant")}</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5">
                           <XCircle className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground text-sm">Irrelevant</span>
+                          <span className="text-muted-foreground text-sm">{t("calls:irrelevant", "Irrelevant")}</span>
                         </div>
                       )}
                     </TableCell>
@@ -292,25 +295,25 @@ export default function Calls() {
                       {call.recording_url ? (
                         <div className="flex items-center gap-1.5">
                           <PlayCircle className="h-4 w-4 text-primary" />
-                          <span className="text-primary text-sm">Available</span>
+                          <span className="text-primary text-sm">{t("common:available", "Available")}</span>
                         </div>
                       ) : (
-                        <span className="text-muted-foreground text-sm">None</span>
+                        <span className="text-muted-foreground text-sm">{t("common:none", "None")}</span>
                       )}
                     </TableCell>
                     <TableCell>
                       {call.transcript ? (
                         <div className="flex items-center gap-1.5">
                           <FileText className="h-4 w-4 text-primary" />
-                          <span className="text-primary text-sm">View</span>
+                          <span className="text-primary text-sm">{t("common:view", "View")}</span>
                         </div>
                       ) : (
-                        <span className="text-muted-foreground text-sm">None</span>
+                        <span className="text-muted-foreground text-sm">{t("common:none", "None")}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {call.created_at
-                        ? format(new Date(call.created_at), "MMM d, h:mm a")
+                        ? `${formatDate(call.created_at)} ${formatTime(call.created_at)}`
                         : "-"}
                     </TableCell>
                   </TableRow>
@@ -330,3 +333,4 @@ export default function Calls() {
     </div>
   );
 }
+

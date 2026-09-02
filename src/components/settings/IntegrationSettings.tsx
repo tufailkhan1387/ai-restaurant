@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { getApiBase } from "@/lib/apiBase";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 interface IntegrationStatus {
   configured: boolean;
@@ -19,6 +20,7 @@ interface IntegrationStatuses {
 }
 
 export function IntegrationSettings() {
+  const { t } = useTranslation(["settings", "common"]);
   const [statuses, setStatuses] = useState<IntegrationStatuses>({});
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -28,16 +30,14 @@ export function IntegrationSettings() {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("check-integration-status");
-      
       if (error) throw error;
-      
       setStatuses(data?.integrations || {});
     } catch (error) {
       console.error("Failed to fetch integration statuses:", error);
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Failed to check integration statuses",
+        title: t("common:error", "Error"),
+        description: t("settings:integrationCheckError", "Failed to check integration statuses"),
       });
     } finally {
       setLoading(false);
@@ -59,16 +59,20 @@ export function IntegrationSettings() {
 
       if (data?.success) {
         toast({
-          title: action === "push" ? "Knowledge Synced" : "Agent Info Retrieved",
-          description: data.message || `Successfully ${action === "push" ? "pushed" : "pulled"} knowledge`,
+          title: action === "push"
+            ? t("settings:knowledgeSynced", "Knowledge Synced")
+            : t("settings:agentInfoRetrieved", "Agent Info Retrieved"),
+          description: data.message || (action === "push"
+            ? t("settings:knowledgeSyncedDesc", "Successfully pushed knowledge")
+            : t("settings:agentInfoRetrievedDesc", "Successfully pulled knowledge")),
         });
       }
     } catch (error) {
       console.error("Sync failed:", error);
       toast({
         variant: "destructive",
-        title: "Sync Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
+        title: t("settings:syncFailed", "Sync Failed"),
+        description: error instanceof Error ? error.message : t("common:unknownError", "Unknown error"),
       });
     } finally {
       setSyncing(false);
@@ -80,12 +84,12 @@ export function IntegrationSettings() {
       {configured ? (
         <>
           <Check className="h-3 w-3" />
-          Connected
+          {t("settings:connected", "Connected")}
         </>
       ) : (
         <>
           <X className="h-3 w-3" />
-          Not configured
+          {t("settings:notConfigured", "Not configured")}
         </>
       )}
     </Badge>
@@ -95,14 +99,14 @@ export function IntegrationSettings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Integration Status</h3>
+          <h3 className="text-lg font-semibold">{t("settings:integrationStatus", "Integration Status")}</h3>
           <p className="text-sm text-muted-foreground">
-            View and manage your connected services
+            {t("settings:integrationStatusDesc", "View and manage your connected services")}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={fetchStatuses} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Refresh
+          {t("common:refresh", "Refresh")}
         </Button>
       </div>
 
@@ -121,7 +125,7 @@ export function IntegrationSettings() {
                 <StatusBadge configured={statuses.twilio?.configured} />
               )}
             </div>
-            <CardDescription>Voice calling and SMS integration</CardDescription>
+            <CardDescription>{t("settings:twilioDesc", "Voice calling and SMS integration")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -129,9 +133,9 @@ export function IntegrationSettings() {
                 <p className="text-sm text-muted-foreground">{statuses.twilio.details}</p>
               )}
               <div className="text-xs text-muted-foreground">
-                <p>• Handles inbound/outbound calls</p>
-                <p>• Status updates via webhook</p>
-                <p>• Connected to ElevenLabs for AI</p>
+                <p>• {t("settings:twilioFeature1", "Handles inbound/outbound calls")}</p>
+                <p>• {t("settings:twilioFeature2", "Status updates via webhook")}</p>
+                <p>• {t("settings:twilioFeature3", "Connected to ElevenLabs for AI")}</p>
               </div>
             </div>
           </CardContent>
@@ -151,7 +155,7 @@ export function IntegrationSettings() {
                 <StatusBadge configured={statuses.elevenlabs?.configured} />
               )}
             </div>
-            <CardDescription>AI voice synthesis & conversation</CardDescription>
+            <CardDescription>{t("settings:elevenlabsDesc", "AI voice synthesis & conversation")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -159,15 +163,15 @@ export function IntegrationSettings() {
                 <p className="text-sm text-muted-foreground">{statuses.elevenlabs.details}</p>
               )}
               <div className="text-xs text-muted-foreground mb-3">
-                <p>• Powers AI voice agent</p>
-                <p>• Native Twilio integration</p>
-                <p>• Automatic lead qualification</p>
+                <p>• {t("settings:elevenlabsFeature1", "Powers AI voice agent")}</p>
+                <p>• {t("settings:elevenlabsFeature2", "Native Twilio integration")}</p>
+                <p>• {t("settings:elevenlabsFeature3", "Automatic lead qualification")}</p>
               </div>
               {statuses.elevenlabs?.configured && (
                 <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => syncKnowledge("push")}
                     disabled={syncing}
                     className="flex-1"
@@ -177,11 +181,11 @@ export function IntegrationSettings() {
                     ) : (
                       <Upload className="h-4 w-4 mr-2" />
                     )}
-                    Sync Knowledge
+                    {t("settings:syncKnowledge", "Sync Knowledge")}
                   </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => syncKnowledge("pull")}
                     disabled={syncing}
                   >
@@ -207,13 +211,13 @@ export function IntegrationSettings() {
                 <StatusBadge configured={statuses.resend?.configured} />
               )}
             </div>
-            <CardDescription>Email sending integration</CardDescription>
+            <CardDescription>{t("settings:resendDesc", "Email sending integration")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-xs text-muted-foreground">
-              <p>• Mockup email delivery</p>
-              <p>• Follow-up automation</p>
-              <p>• Transactional emails</p>
+              <p>• {t("settings:resendFeature1", "Mockup email delivery")}</p>
+              <p>• {t("settings:resendFeature2", "Follow-up automation")}</p>
+              <p>• {t("settings:resendFeature3", "Transactional emails")}</p>
             </div>
           </CardContent>
         </Card>
@@ -221,19 +225,19 @@ export function IntegrationSettings() {
         {/* Webhook Info Card */}
         <Card className="border-dashed">
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Webhook URLs</CardTitle>
-            <CardDescription>Configure these in your ElevenLabs dashboard</CardDescription>
+            <CardTitle className="text-sm font-medium">{t("settings:webhookUrls", "Webhook URLs")}</CardTitle>
+            <CardDescription>{t("settings:webhookUrlsDesc", "Configure these in your ElevenLabs dashboard")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3 text-xs">
               <div>
-                <p className="font-medium text-muted-foreground">Conversation Webhook:</p>
+                <p className="font-medium text-muted-foreground">{t("settings:conversationWebhook", "Conversation Webhook")}:</p>
                 <code className="text-[10px] bg-muted px-1 py-0.5 rounded break-all">
                   {getApiBase()}/api/functions/elevenlabs-conversation-webhook
                 </code>
               </div>
               <div>
-                <p className="font-medium text-muted-foreground">Twilio Status Callback:</p>
+                <p className="font-medium text-muted-foreground">{t("settings:twilioStatusCallback", "Twilio Status Callback")}:</p>
                 <code className="text-[10px] bg-muted px-1 py-0.5 rounded break-all">
                   {getApiBase()}/api/functions/twilio-status-callback
                 </code>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Users,
@@ -34,9 +35,10 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { LeadDetailDialog } from "@/components/leads/LeadDetailDialog";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import type { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
+import { formatDate } from "@/i18n/formatters";
 
 type Lead = Tables<"leads">;
 
@@ -61,17 +63,8 @@ const statusColors: Record<string, string> = {
   lost: "bg-destructive text-white",
 };
 
-const statusLabels: Record<string, string> = {
-  new: "New",
-  contacted: "Contacted",
-  qualified: "Qualified",
-  proposal: "Proposal",
-  negotiation: "Negotiation",
-  won: "Won",
-  lost: "Lost",
-};
-
 export default function Leads() {
+  const { t } = useTranslation(["calls", "common"]);
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
@@ -332,12 +325,12 @@ export default function Leads() {
   }, [leads]);
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-10">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Leads</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t("calls:leadsTitle", "Leads")}</h1>
           <p className="text-muted-foreground">
-            Manage inbound and auto-dialer leads
+            {t("calls:leadsSubtitle", "Manage inbound and auto-dialer leads")}
           </p>
         </div>
       </div>
@@ -348,7 +341,7 @@ export default function Leads() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Leads</p>
+                <p className="text-sm text-muted-foreground">{t("calls:totalLeads", "Total Leads")}</p>
                 <p className="text-2xl font-bold">{leads.length}</p>
               </div>
               <Users className="h-8 w-8 text-primary" />
@@ -359,7 +352,7 @@ export default function Leads() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">New Today</p>
+                <p className="text-sm text-muted-foreground">{t("calls:newToday", "New Today")}</p>
                 <p className="text-2xl font-bold">{stats.newToday}</p>
               </div>
               <UserPlus className="h-8 w-8 text-primary" />
@@ -370,7 +363,7 @@ export default function Leads() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Contacted</p>
+                <p className="text-sm text-muted-foreground">{t("calls:contacted", "Contacted")}</p>
                 <p className="text-2xl font-bold">{stats.contacted}</p>
               </div>
               <PhoneCall className="h-8 w-8 text-primary" />
@@ -381,10 +374,10 @@ export default function Leads() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Interested</p>
+                <p className="text-sm text-muted-foreground">{t("calls:interested", "Interested")}</p>
                 <p className="text-2xl font-bold">{stats.interested}</p>
                 {stats.callbacks > 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">+{stats.callbacks} callbacks</p>
+                  <p className="text-xs text-muted-foreground mt-1">+{stats.callbacks} {t("calls:callbacks", "callbacks")}</p>
                 )}
               </div>
               <CheckCircle2 className="h-8 w-8 text-primary" />
@@ -397,12 +390,12 @@ export default function Leads() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>All Leads</CardTitle>
+            <CardTitle>{t("calls:allLeads", "All Leads")}</CardTitle>
             <div className="flex items-center gap-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search leads..."
+                  placeholder={t("calls:searchLeads", "Search leads...")}
                   className="pl-10 w-[250px]"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -411,52 +404,52 @@ export default function Leads() {
               <Select value={sourceFilter} onValueChange={setSourceFilter}>
                 <SelectTrigger className="w-[170px]">
                   <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Source" />
+                  <SelectValue placeholder={t("calls:leadSource", "Source")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Sources</SelectItem>
-                  <SelectItem value="inbound_call">Inbound Call</SelectItem>
-                  <SelectItem value="auto_dialer">Auto-Dialer (Hot)</SelectItem>
-                  <SelectItem value="outbound_campaign">Outbound Campaign</SelectItem>
+                  <SelectItem value="all">{t("calls:allSources", "All Sources")}</SelectItem>
+                  <SelectItem value="inbound_call">{t("calls:inboundCall", "Inbound Call")}</SelectItem>
+                  <SelectItem value="auto_dialer">{t("calls:autoDialerSource", "Auto-Dialer (Hot)")}</SelectItem>
+                  <SelectItem value="outbound_campaign">{t("calls:outboundCampaign", "Outbound Campaign")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[150px]">
                   <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Status" />
+                  <SelectValue placeholder={t("common:status", "Status")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="contacted">Contacted</SelectItem>
-                  <SelectItem value="qualified">Qualified</SelectItem>
-                  <SelectItem value="proposal">Proposal</SelectItem>
-                  <SelectItem value="negotiation">Negotiation</SelectItem>
-                  <SelectItem value="won">Won</SelectItem>
-                  <SelectItem value="lost">Lost</SelectItem>
+                  <SelectItem value="all">{t("calls:allStatus", "All Status")}</SelectItem>
+                  <SelectItem value="new">{t("calls:leadNew", "New")}</SelectItem>
+                  <SelectItem value="contacted">{t("calls:leadContacted", "Contacted")}</SelectItem>
+                  <SelectItem value="qualified">{t("calls:leadQualified", "Qualified")}</SelectItem>
+                  <SelectItem value="proposal">{t("calls:leadProposal", "Proposal")}</SelectItem>
+                  <SelectItem value="negotiation">{t("calls:leadNegotiation", "Negotiation")}</SelectItem>
+                  <SelectItem value="won">{t("calls:leadWon", "Won")}</SelectItem>
+                  <SelectItem value="lost">{t("calls:leadLost", "Lost")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={interestFilter} onValueChange={setInterestFilter}>
                 <SelectTrigger className="w-[160px]">
                   <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Interest" />
+                  <SelectValue placeholder={t("calls:interestNotes", "Interest")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Any interest</SelectItem>
-                  <SelectItem value="interested">Interested</SelectItem>
-                  <SelectItem value="callback">Callback</SelectItem>
-                  <SelectItem value="not_interested">Not interested</SelectItem>
-                  <SelectItem value="neutral">Neutral</SelectItem>
+                  <SelectItem value="all">{t("calls:anyInterest", "Any interest")}</SelectItem>
+                  <SelectItem value="interested">{t("calls:interestInterested", "Interested")}</SelectItem>
+                  <SelectItem value="callback">{t("calls:interestCallback", "Callback")}</SelectItem>
+                  <SelectItem value="not_interested">{t("calls:interestNotInterested", "Not interested")}</SelectItem>
+                  <SelectItem value="neutral">{t("calls:interestNeutral", "Neutral")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={relevanceFilter} onValueChange={setRelevanceFilter}>
                 <SelectTrigger className="w-[170px]">
                   <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Relevance" />
+                  <SelectValue placeholder={t("calls:relevance", "Relevance")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="engaged">Engaged only</SelectItem>
-                  <SelectItem value="all">Show all (incl. cold)</SelectItem>
+                  <SelectItem value="engaged">{t("calls:engagedOnly", "Engaged only")}</SelectItem>
+                  <SelectItem value="all">{t("calls:showAllCold", "Show all (incl. cold)")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -469,29 +462,38 @@ export default function Leads() {
             </div>
           ) : filteredLeads.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No leads found
+              {t("calls:noLeadsFound", "No leads found")}
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Lead ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Assigned Agent</TableHead>
-                  <TableHead>Last Contact</TableHead>
-                  <TableHead>Callback</TableHead>
-                  <TableHead>Interest / Notes</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t("calls:leadId", "Lead ID")}</TableHead>
+                  <TableHead>{t("common:name", "Name")}</TableHead>
+                  <TableHead>{t("common:phone", "Contact")}</TableHead>
+                  <TableHead>{t("calls:leadCompany", "Company")}</TableHead>
+                  <TableHead>{t("calls:assignedAgent", "Assigned Agent")}</TableHead>
+                  <TableHead>{t("calls:lastContact", "Last Contact")}</TableHead>
+                  <TableHead>{t("calls:callback", "Callback")}</TableHead>
+                  <TableHead>{t("calls:interestNotes", "Interest / Notes")}</TableHead>
+                  <TableHead>{t("common:status", "Status")}</TableHead>
+                  <TableHead>{t("calls:leadSource", "Source")}</TableHead>
+                  <TableHead>{t("common:date", "Created")}</TableHead>
+                  <TableHead>{t("common:actions", "Actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredLeads.map((lead) => {
                   const enrich = enrichmentMap[lead.id];
+                  const statusKeyMap: Record<string, string> = {
+                    new: t("calls:leadNew", "New"),
+                    contacted: t("calls:leadContacted", "Contacted"),
+                    qualified: t("calls:leadQualified", "Qualified"),
+                    proposal: t("calls:leadProposal", "Proposal"),
+                    negotiation: t("calls:leadNegotiation", "Negotiation"),
+                    won: t("calls:leadWon", "Won"),
+                    lost: t("calls:leadLost", "Lost"),
+                  };
                   return (
                   <TableRow
                     key={lead.id}
@@ -541,12 +543,12 @@ export default function Leads() {
                       {enrich?.agent_name ? (
                         <span>{enrich.agent_name}</span>
                       ) : (
-                        <span className="text-muted-foreground">Unassigned</span>
+                        <span className="text-muted-foreground">{t("calls:unassigned", "Unassigned")}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {enrich?.last_called_at ? (
-                        <span title={format(new Date(enrich.last_called_at), "PPpp")}>
+                        <span title={formatDate(enrich.last_called_at)}>
                           {formatDistanceToNow(new Date(enrich.last_called_at), { addSuffix: true })}
                         </span>
                       ) : (
@@ -556,10 +558,10 @@ export default function Leads() {
                     <TableCell>
                       {enrich?.callback_requested ? (
                         <div className="space-y-1">
-                          <Badge className="bg-yellow-500 text-white text-xs">Requested</Badge>
+                          <Badge className="bg-yellow-500 text-white text-xs">{t("calls:interestCallback", "Requested")}</Badge>
                           {enrich.callback_at && (
                             <p className="text-xs text-muted-foreground">
-                              {format(new Date(enrich.callback_at), "MMM d, h:mm a")}
+                              {formatDate(enrich.callback_at)}
                             </p>
                           )}
                         </div>
@@ -571,10 +573,10 @@ export default function Leads() {
                       {(() => {
                         const interest = getInterest(lead);
                         const interestLabel = {
-                          interested: { label: "Interested", cls: "bg-status-available text-white" },
-                          callback: { label: "Callback", cls: "bg-yellow-500 text-white" },
-                          not_interested: { label: "Not interested", cls: "bg-destructive text-white" },
-                          neutral: { label: "Neutral", cls: "bg-muted text-muted-foreground" },
+                          interested: { label: t("calls:interestInterested", "Interested"), cls: "bg-status-available text-white" },
+                          callback: { label: t("calls:interestCallback", "Callback"), cls: "bg-yellow-500 text-white" },
+                          not_interested: { label: t("calls:interestNotInterested", "Not interested"), cls: "bg-destructive text-white" },
+                          neutral: { label: t("calls:interestNeutral", "Neutral"), cls: "bg-muted text-muted-foreground" },
                         }[interest];
                         return (
                           <div className="space-y-1">
@@ -588,7 +590,7 @@ export default function Leads() {
                     </TableCell>
                     <TableCell>
                       <Badge className={statusColors[lead.status || "new"]}>
-                        {statusLabels[lead.status || "new"]}
+                        {statusKeyMap[lead.status || "new"] || lead.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="capitalize text-muted-foreground">
@@ -596,7 +598,7 @@ export default function Leads() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {lead.created_at
-                        ? format(new Date(lead.created_at), "MMM d, yyyy")
+                        ? formatDate(lead.created_at)
                         : "-"}
                     </TableCell>
                     <TableCell>
@@ -636,6 +638,7 @@ export default function Leads() {
           )}
         </CardContent>
       </Card>
+
 
       {/* Lead Detail Dialog */}
       <LeadDetailDialog

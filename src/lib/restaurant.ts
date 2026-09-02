@@ -1,3 +1,5 @@
+import { getActiveLocale } from "@/i18n/formatters";
+
 export const ORDER_STATUSES = [
   "pending",
   "confirmed",
@@ -46,7 +48,7 @@ export const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
 export function formatCurrency(amount: number | string | null | undefined, currency = "USD") {
   const n = typeof amount === "string" ? parseFloat(amount) : amount ?? 0;
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n || 0);
+    return new Intl.NumberFormat(getActiveLocale(), { style: "currency", currency }).format(n || 0);
   } catch {
     return `${currency} ${(n || 0).toFixed(2)}`;
   }

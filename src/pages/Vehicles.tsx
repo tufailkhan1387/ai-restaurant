@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,7 @@ interface Vehicle {
 }
 
 export default function Vehicles() {
+  const { t } = useTranslation(["vehicles", "common"]);
   const { toast } = useToast();
   const { restaurantId } = useActiveRestaurant();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -47,7 +49,7 @@ export default function Vehicles() {
       if (error) throw error;
       setVehicles(data as any || []);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      toast({ variant: "destructive", title: t("common:error", "Error"), description: error.message });
     } finally {
       setLoading(false);
     }
@@ -75,20 +77,12 @@ export default function Vehicles() {
       : await supabase.from("vehicles").insert(payload);
 
     if (res.error) {
-      toast({ variant: "destructive", title: "Failed", description: (res.error as any).message });
+      toast({ variant: "destructive", title: t("common:error", "Failed"), description: (res.error as any).message });
     } else {
-      toast({ title: "Vehicle saved successfully" });
+      toast({ title: t("vehicles:vehicleSaved", "Vehicle saved successfully") });
       setOpen(false);
       setEdit(null);
       load();
-    }
-  };
-
-  const getVehicleIcon = (type: string) => {
-    switch (type.toLowerCase()) {
-      case 'van': return <Truck className="h-4 w-4" />;
-      case 'car': return <Car className="h-4 w-4" />;
-      default: return <Bike className="h-4 w-4" />;
     }
   };
 
@@ -107,16 +101,16 @@ export default function Vehicles() {
   );
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto pb-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Vehicles Management</h1>
-          <p className="text-muted-foreground mt-1">Manage your delivery fleet and vehicle status.</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t("vehicles:title", "Vehicles Management")}</h1>
+          <p className="text-muted-foreground mt-1">{t("vehicles:subtitle", "Manage your delivery fleet and vehicle status.")}</p>
         </div>
         <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setEdit(null); }}>
           <DialogTrigger asChild>
             <Button className="gap-2 shadow-lg hover:shadow-primary/20">
-              <Plus className="h-4 w-4" /> Add Vehicle
+              <Plus className="h-4 w-4" /> {t("vehicles:addVehicle", "Add Vehicle")}
             </Button>
           </DialogTrigger>
           <Form initial={edit} onSubmit={save} />
@@ -127,7 +121,7 @@ export default function Vehicles() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input 
-            placeholder="Search by plate number or model..." 
+            placeholder={t("vehicles:searchPlaceholder", "Search by plate number or model...")} 
             className="pl-10 bg-background/50 border-none shadow-none focus-visible:ring-1"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -140,13 +134,13 @@ export default function Vehicles() {
           <table className="w-full text-sm min-w-[720px]">
             <thead className="text-left bg-muted/50">
               <tr>
-                <th className="p-3 w-16">Image</th>
-                <th className="p-3">Plate</th>
-                <th className="p-3">Model</th>
-                <th className="p-3">Type</th>
-                <th className="p-3 whitespace-nowrap">Capacity (kg)</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 max-w-[200px]">Notes</th>
+                <th className="p-3 w-16">{t("vehicles:colImage", "Image")}</th>
+                <th className="p-3">{t("vehicles:colPlate", "Plate")}</th>
+                <th className="p-3">{t("vehicles:colModel", "Model")}</th>
+                <th className="p-3">{t("vehicles:colType", "Type")}</th>
+                <th className="p-3 whitespace-nowrap">{t("vehicles:colCapacity", "Capacity (kg)")}</th>
+                <th className="p-3">{t("common:status", "Status")}</th>
+                <th className="p-3 max-w-[200px]">{t("vehicles:colNotes", "Notes")}</th>
                 <th className="p-3 w-[100px]" />
               </tr>
             </thead>
@@ -154,7 +148,7 @@ export default function Vehicles() {
               {loading && (
                 <tr>
                   <td colSpan={8} className="p-10 text-center text-muted-foreground">
-                    Loading…
+                    {t("common:loading", "Loading…")}
                   </td>
                 </tr>
               )}
@@ -200,7 +194,7 @@ export default function Vehicles() {
                         variant="ghost"
                         className="text-destructive hover:text-destructive"
                         onClick={async () => {
-                          if (confirm("Are you sure you want to delete this vehicle?")) {
+                          if (confirm(t("vehicles:deleteConfirm", "Are you sure you want to delete this vehicle?"))) {
                             await supabase.from("vehicles").delete().eq("id", v.id);
                             load();
                           }
@@ -215,8 +209,8 @@ export default function Vehicles() {
                 <tr>
                   <td colSpan={8} className="p-12 text-center text-muted-foreground">
                     <Car className="h-8 w-8 mx-auto mb-3 opacity-50" />
-                    <p className="font-medium text-foreground">No vehicles found</p>
-                    <p className="text-sm mt-1">Add your first delivery vehicle to get started.</p>
+                    <p className="font-medium text-foreground">{t("vehicles:noVehiclesFound", "No vehicles found")}</p>
+                    <p className="text-sm mt-1">{t("vehicles:noVehiclesSub", "Add your first delivery vehicle to get started.")}</p>
                   </td>
                 </tr>
               )}
@@ -229,6 +223,7 @@ export default function Vehicles() {
 }
 
 function Form({ initial, onSubmit }: { initial: Vehicle | null; onSubmit: (f: Partial<Vehicle>) => void }) {
+  const { t } = useTranslation(["vehicles", "common"]);
   const { toast } = useToast();
   const [form, setForm] = useState<Partial<Vehicle>>(initial || { plate_number: "", vehicle_type: "bike", status: "available" });
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -245,7 +240,7 @@ function Form({ initial, onSubmit }: { initial: Vehicle | null; onSubmit: (f: Pa
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        toast({ variant: "destructive", title: "File too large", description: "Maximum size is 5MB." });
+        toast({ variant: "destructive", title: t("common:error", "File too large"), description: "Maximum size is 5MB." });
         return;
       }
       setImageFile(file);
@@ -258,141 +253,139 @@ function Form({ initial, onSubmit }: { initial: Vehicle | null; onSubmit: (f: Pa
     try {
       let image_url = form.image_url || null;
       if (imageFile) {
+        const formData = new FormData();
+        formData.append("file", imageFile);
         const token = getToken();
-        const fd = new FormData();
-        fd.append("file", imageFile);
-        const res = await fetch(`${getApiBase()}/api/uploads/fleet-image`, {
+        const res = await fetch(`${getApiBase()}/api/media/upload`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: formData,
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Upload failed");
-        image_url = data.url;
+        if (!res.ok) throw new Error("Image upload failed");
+        const json = await res.json();
+        image_url = json.url;
       }
-      await onSubmit({ ...form, image_url });
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
+      onSubmit({ ...form, image_url });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: t("common:error", "Upload error"), description: e.message });
     } finally {
       setUploading(false);
     }
   };
 
-  const displayImage = preview || resolveMediaUrl(form.image_url) || null;
-
   return (
-    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+    <DialogContent className="max-w-md">
       <DialogHeader>
-        <DialogTitle>{initial ? "Edit Vehicle" : "Add New Vehicle"}</DialogTitle>
+        <DialogTitle>{initial ? t("vehicles:editVehicle", "Edit Vehicle") : t("vehicles:addVehicle", "Add Vehicle")}</DialogTitle>
       </DialogHeader>
-      <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-1 custom-scrollbar">
-        <div className="grid gap-2">
-          <Label>Vehicle Image</Label>
+      <div className="space-y-4 py-2">
+        <div className="space-y-2">
+          <Label>{t("vehicles:colImage", "Vehicle Image")}</Label>
           <div className="flex items-center gap-4">
-            <div className="relative group w-24 h-20 bg-muted rounded-lg border-2 border-dashed border-border flex items-center justify-center overflow-hidden shrink-0">
-              {displayImage ? (
-                <>
-                  <img src={displayImage} alt="Preview" className="w-full h-full object-cover" />
-                  <button 
-                    onClick={() => { setImageFile(null); setPreview(null); setForm({ ...form, image_url: null }); }}
-                    className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </>
+            <div className="relative w-20 h-16 rounded border bg-muted/30 overflow-hidden flex items-center justify-center">
+              {preview ? (
+                <img src={preview} alt="Preview" className="w-full h-full object-cover" />
+              ) : form.image_url ? (
+                <img src={resolveMediaUrl(form.image_url)} alt="Vehicle" className="w-full h-full object-cover" />
               ) : (
-                <div className="text-muted-foreground flex flex-col items-center gap-1">
-                  <Upload className="h-5 w-5" />
-                  <span className="text-[10px]">Add photo</span>
-                </div>
+                <Car className="h-6 w-6 text-muted-foreground opacity-40" />
               )}
-              <input 
-                type="file" 
-                accept="image/*" 
-                className="absolute inset-0 opacity-0 cursor-pointer" 
-                onChange={handleFileChange}
-                disabled={uploading}
-              />
+              {(preview || form.image_url) && (
+                <button
+                  type="button"
+                  onClick={() => { setImageFile(null); setPreview(null); setForm(f => ({ ...f, image_url: null })); }}
+                  className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5 hover:bg-black"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
-            <div className="text-xs text-muted-foreground">
-              <p>Upload a clear photo of the vehicle.</p>
-              <p className="mt-1">Max 5MB. JPEG/PNG/WebP.</p>
-            </div>
+            <label className="cursor-pointer border border-dashed hover:border-primary/50 text-xs px-3 py-2 rounded flex items-center gap-1.5 transition-colors">
+              <Upload className="h-3.5 w-3.5" />
+              <span>{preview || form.image_url ? t("common:change", "Change") : t("common:upload", "Upload")}</span>
+              <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+            </label>
           </div>
         </div>
 
-        <div className="grid gap-2">
-          <Label htmlFor="plate">Plate Number</Label>
-          <Input 
-            id="plate" 
-            placeholder="e.g. ABC-1234" 
-            className="font-mono uppercase"
-            value={form.plate_number || ""} 
-            onChange={(e) => setForm({ ...form, plate_number: e.target.value })} 
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label>{t("vehicles:colPlate", "Plate Number")} *</Label>
+            <Input 
+              placeholder="e.g. ABC-123" 
+              value={form.plate_number || ""} 
+              onChange={e => setForm(f => ({ ...f, plate_number: e.target.value }))} 
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>{t("vehicles:colModel", "Model")}</Label>
+            <Input 
+              placeholder="e.g. Honda Civic" 
+              value={form.model || ""} 
+              onChange={e => setForm(f => ({ ...f, model: e.target.value }))} 
+            />
+          </div>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="model">Model Name</Label>
-          <Input 
-            id="model" 
-            placeholder="e.g. Honda CD-70" 
-            value={form.model || ""} 
-            onChange={(e) => setForm({ ...form, model: e.target.value })} 
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="grid gap-2">
-            <Label>Vehicle Type</Label>
-            <Select value={form.vehicle_type || "bike"} onValueChange={(v) => setForm({ ...form, vehicle_type: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label>{t("vehicles:colType", "Vehicle Type")}</Label>
+            <Select 
+              value={form.vehicle_type || "bike"} 
+              onValueChange={v => setForm(f => ({ ...f, vehicle_type: v }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="bike">Bike</SelectItem>
-                <SelectItem value="scooter">Scooter</SelectItem>
-                <SelectItem value="car">Car</SelectItem>
-                <SelectItem value="van">Van</SelectItem>
+                <SelectItem value="bike">{t("vehicles:bike", "Bike / Scooter")}</SelectItem>
+                <SelectItem value="car">{t("vehicles:car", "Car")}</SelectItem>
+                <SelectItem value="van">{t("vehicles:van", "Van")}</SelectItem>
+                <SelectItem value="truck">{t("vehicles:truck", "Truck")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2">
-            <Label>Status</Label>
-            <Select value={form.status || "available"} onValueChange={(v) => setForm({ ...form, status: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="available">Available</SelectItem>
-                <SelectItem value="in_use">In Use</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-1">
+            <Label>{t("vehicles:colCapacity", "Capacity (kg)")}</Label>
+            <Input 
+              type="number" 
+              placeholder="e.g. 50" 
+              value={form.capacity_kg || ""} 
+              onChange={e => setForm(f => ({ ...f, capacity_kg: parseFloat(e.target.value) || null }))} 
+            />
           </div>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="capacity">Load Capacity (kg)</Label>
-          <Input 
-            id="capacity" 
-            type="number" 
-            step="0.1" 
-            value={form.capacity_kg || ""} 
-            onChange={(e) => setForm({ ...form, capacity_kg: parseFloat(e.target.value) || null })} 
-          />
+
+        <div className="space-y-1">
+          <Label>{t("common:status", "Status")}</Label>
+          <Select 
+            value={form.status || "available"} 
+            onValueChange={v => setForm(f => ({ ...f, status: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="available">{t("common:available", "Available")}</SelectItem>
+              <SelectItem value="in_use">{t("common:inUse", "In Use")}</SelectItem>
+              <SelectItem value="maintenance">{t("vehicles:maintenance", "Maintenance")}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="notes">Notes</Label>
+
+        <div className="space-y-1">
+          <Label>{t("vehicles:colNotes", "Notes")}</Label>
           <Input 
-            id="notes" 
-            placeholder="Any additional info..."
+            placeholder="e.g. Needs oil change soon" 
             value={form.notes || ""} 
-            onChange={(e) => setForm({ ...form, notes: e.target.value })} 
+            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} 
           />
         </div>
       </div>
       <DialogFooter>
-        <Button onClick={handleSave} className="w-full" disabled={uploading}>
-          {uploading ? (
-            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</>
-          ) : (
-            initial ? "Save Changes" : "Register Vehicle"
-          )}
+        <Button onClick={handleSave} disabled={uploading || !form.plate_number?.trim()}>
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          {initial ? t("common:saveChanges", "Save Changes") : t("vehicles:addVehicle", "Add Vehicle")}
         </Button>
       </DialogFooter>
     </DialogContent>

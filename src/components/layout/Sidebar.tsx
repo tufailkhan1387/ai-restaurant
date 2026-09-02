@@ -31,7 +31,8 @@ import {
   UserCircle,
   Crown,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -45,49 +46,8 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-const ordersChildren = [
-  { icon: Inbox, label: "New", href: "/orders/new" },
-  { icon: CheckCircle2, label: "Confirmed", href: "/orders/confirmed" },
-  { icon: ChefHat, label: "Preparing", href: "/orders/preparing" },
-  { icon: Truck, label: "Out for delivery", href: "/orders/out-for-delivery" },
-  { icon: PackageCheck, label: "Delivered", href: "/orders/delivered" },
-];
-
-const navigationItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/" },
-  { icon: Tag, label: "Deals & Offers", href: "/deals" },
-  { icon: Boxes, label: "Inventory", href: "/menu?tab=inventory" },
-  { icon: Ticket, label: "Coupon Code", href: "/coupons" },
-  { icon: Layers, label: "Cuisines", href: "/cuisines" },
-];
-
-const menuChildren = [
-  { icon: UtensilsCrossed, label: "Items", href: "/menu" },
-  { icon: LayoutGrid, label: "Categories", href: "/menu?tab=categories" },
-  { icon: ListTree, label: "Sub-categories", href: "/menu?tab=sub-categories" },
-  { icon: PlusSquare, label: "Add-ons", href: "/menu?tab=addons" },
-  { icon: Gauge, label: "Max Order", href: "/menu?tab=max-order" },
-];
-
-const reportsChildren = [
-  { icon: Store, label: "Restaurant report", href: "/reports/restaurant" },
-  { icon: Package, label: "Item report", href: "/reports/items" },
-  { icon: Award, label: "Best sellers", href: "/reports/best-sellers" },
-  { icon: Boxes, label: "Inventory report", href: "/reports/inventory" },
-  { icon: BarChart3, label: "Customer analytics", href: "/reports/customers" },
-];
-
-const usersChildren = [
-  { icon: UserCircle, label: "Customers", href: "/users/customers" },
-  { icon: Crown, label: "Restaurant owners", href: "/users/restaurant-owners" },
-];
-
-const managementItems = [
-  { icon: Store, label: "My Restaurant", href: "/restaurant-settings" },
-  { icon: Settings, label: "Settings", href: "/settings" },
-];
-
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const { t } = useTranslation(["sidebar", "common"]);
   const location = useLocation();
   const { role, profile, user } = useAuth();
   const { restaurantId } = useActiveRestaurant();
@@ -98,6 +58,66 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [menuOpen, setMenuOpen] = useState(location.pathname === "/menu");
   const [reportsOpen, setReportsOpen] = useState(location.pathname.startsWith("/reports"));
   const [usersOpen, setUsersOpen] = useState(location.pathname.startsWith("/users"));
+
+  const ordersChildren = useMemo(
+    () => [
+      { icon: Inbox, label: t("sidebar:newOrders", "New"), href: "/orders/new" },
+      { icon: CheckCircle2, label: t("sidebar:confirmed", "Confirmed"), href: "/orders/confirmed" },
+      { icon: ChefHat, label: t("sidebar:preparing", "Preparing"), href: "/orders/preparing" },
+      { icon: Truck, label: t("sidebar:outForDelivery", "Out for delivery"), href: "/orders/out-for-delivery" },
+      { icon: PackageCheck, label: t("sidebar:delivered", "Delivered"), href: "/orders/delivered" },
+    ],
+    [t]
+  );
+
+  const navigationItems = useMemo(
+    () => [
+      { icon: LayoutDashboard, label: t("sidebar:dashboard", "Dashboard"), href: "/" },
+      { icon: Tag, label: t("sidebar:dealsAndOffers", "Deals & Offers"), href: "/deals" },
+      { icon: Boxes, label: t("sidebar:inventory", "Inventory"), href: "/menu?tab=inventory" },
+      { icon: Ticket, label: t("sidebar:couponCode", "Coupon Code"), href: "/coupons" },
+      { icon: Layers, label: t("sidebar:cuisines", "Cuisines"), href: "/cuisines" },
+    ],
+    [t]
+  );
+
+  const menuChildren = useMemo(
+    () => [
+      { icon: UtensilsCrossed, label: t("sidebar:items", "Items"), href: "/menu" },
+      { icon: LayoutGrid, label: t("sidebar:categories", "Categories"), href: "/menu?tab=categories" },
+      { icon: ListTree, label: t("sidebar:subCategories", "Sub-categories"), href: "/menu?tab=sub-categories" },
+      { icon: PlusSquare, label: t("sidebar:addOns", "Add-ons"), href: "/menu?tab=addons" },
+      { icon: Gauge, label: t("sidebar:maxOrder", "Max Order"), href: "/menu?tab=max-order" },
+    ],
+    [t]
+  );
+
+  const reportsChildren = useMemo(
+    () => [
+      { icon: Store, label: t("sidebar:restaurantReport", "Restaurant report"), href: "/reports/restaurant" },
+      { icon: Package, label: t("sidebar:itemReport", "Item report"), href: "/reports/items" },
+      { icon: Award, label: t("sidebar:bestSellers", "Best sellers"), href: "/reports/best-sellers" },
+      { icon: Boxes, label: t("sidebar:inventoryReport", "Inventory report"), href: "/reports/inventory" },
+      { icon: BarChart3, label: t("sidebar:customerAnalytics", "Customer analytics"), href: "/reports/customers" },
+    ],
+    [t]
+  );
+
+  const usersChildren = useMemo(
+    () => [
+      { icon: UserCircle, label: t("sidebar:customers", "Customers"), href: "/users/customers" },
+      { icon: Users, label: t("sidebar:teamMembers", "Team Members"), href: "/users/team-members" },
+    ],
+    [t]
+  );
+
+  const managementItems = useMemo(
+    () => [
+      { icon: Store, label: t("sidebar:myRestaurant", "My Restaurant"), href: "/restaurant-settings" },
+      { icon: Settings, label: t("sidebar:settings", "Settings"), href: "/settings" },
+    ],
+    [t]
+  );
 
   useEffect(() => {
     if (location.pathname === "/menu") setMenuOpen(true);
@@ -134,8 +154,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const finalManagement =
     role === "super_admin"
       ? [
-          { icon: Store, label: "Restaurants", href: "/restaurants" },
-          { icon: Wallet, label: "Earnings", href: "/earnings" },
+          { icon: Store, label: t("sidebar:restaurants", "Restaurants"), href: "/restaurants" },
+          { icon: Wallet, label: t("sidebar:earnings", "Earnings"), href: "/earnings" },
           ...managementForRole,
         ]
       : managementItems;
@@ -178,6 +198,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           isActive &&
             "bg-sidebar-primary/15 text-sidebar-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--sidebar-primary))]",
+          collapsed && "justify-center px-0",
           indent && !collapsed && "pl-9 py-2"
         )}
       >
@@ -271,51 +292,53 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               "radial-gradient(ellipse 80% 120% at 0% 0%, hsl(168 65% 48% / 0.22), transparent 55%)",
           }}
         />
-        <div className="relative h-16 flex items-center justify-between px-4">
-          {!collapsed && (
-            <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
-              <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20">
-                <LogoIcon className="h-5 w-5 text-primary-foreground" />
+        <div className="relative h-16 flex items-center justify-between px-3.5">
+          {!collapsed ? (
+            <>
+              <div className="flex items-center gap-2.5 overflow-hidden min-w-0 pr-2">
+                <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20">
+                  <LogoIcon className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <span className="font-bold text-[15px] tracking-tight text-sidebar-accent-foreground truncate">
+                  {role === "super_admin" ? "Super Admin" : (restaurantName || "Royal Restaurant")}
+                </span>
               </div>
-              <span className="font-bold text-[15px] tracking-tight text-sidebar-accent-foreground truncate">
-                {restaurantName}
-              </span>
-            </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggle}
+                className="h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex-shrink-0 rounded-lg"
+                title={t("sidebar:collapse", "Collapse sidebar")}
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center mx-auto shadow-lg shadow-black/20 hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-primary"
+                  title={t("sidebar:expand", "Expand sidebar")}
+                  aria-label="Expand sidebar"
+                >
+                  <LogoIcon className="h-5 w-5 text-primary-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="ml-2">
+                <p className="font-medium">{role === "super_admin" ? "Super Admin" : (restaurantName || "Royal Restaurant")}</p>
+                <p className="text-[11px] text-muted-foreground">{t("sidebar:expand", "Click to expand")}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
-          {collapsed && (
-            <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center mx-auto shadow-lg shadow-black/20">
-              <LogoIcon className="h-5 w-5 text-primary-foreground" />
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggle}
-            className={cn(
-              "h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex-shrink-0",
-              collapsed && "hidden"
-            )}
-          >
-            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
         </div>
       </div>
-      {collapsed && (
-        <div className="px-2 pb-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggle}
-            className="h-8 w-8 w-full text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
 
       <nav className="flex-1 py-3 px-2.5 space-y-1 overflow-y-auto custom-scrollbar">
         <div className="space-y-0.5">
-          <NavItem icon={LayoutDashboard} label="Dashboard" href="/" />
+          <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
 
           {collapsed ? (
             usersChildren.map((item) => <NavItem key={item.href} {...item} />)
@@ -326,7 +349,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 onToggleOpen={() => setUsersOpen((v) => !v)}
                 active={usersGroupActive}
                 icon={Users}
-                label="Users"
+                label={t("sidebar:users", "Users")}
               />
               {usersOpen && (
                 <div className="space-y-0.5">
@@ -339,7 +362,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
 
           {collapsed ? (
-            <NavItem icon={ClipboardList} label="Orders" href="/orders" />
+            <NavItem icon={ClipboardList} label={t("sidebar:orders", "Orders")} href="/orders" />
           ) : (
             <>
               <GroupButton
@@ -347,11 +370,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 onToggleOpen={() => setOrdersOpen((v) => !v)}
                 active={ordersGroupActive}
                 icon={ClipboardList}
-                label="Orders"
+                label={t("sidebar:orders", "Orders")}
               />
               {ordersOpen && (
                 <div className="space-y-0.5">
-                  <NavItem icon={ClipboardList} label="All orders" href="/orders" indent />
+                  <NavItem icon={ClipboardList} label={t("sidebar:allOrders", "All orders")} href="/orders" indent />
                   {ordersChildren.map((c) => (
                     <NavItem key={c.href} {...c} indent />
                   ))}
@@ -369,7 +392,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 onToggleOpen={() => setMenuOpen((v) => !v)}
                 active={menuGroupActive}
                 icon={UtensilsCrossed}
-                label="Menu"
+                label={t("sidebar:menu", "Menu")}
               />
               {menuOpen && (
                 <div className="space-y-0.5">
@@ -397,7 +420,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               onToggleOpen={() => setReportsOpen((v) => !v)}
               active={reportsGroupActive}
               icon={FileBarChart}
-              label="Reports"
+              label={t("sidebar:reports", "Reports")}
             />
             {reportsOpen && (
               <div className="space-y-0.5 mt-0.5">
@@ -412,7 +435,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {!collapsed && (
           <div className="pt-4 mt-3 border-t border-sidebar-border space-y-0.5">
             <p className="px-3 text-[10px] font-bold text-sidebar-foreground/35 uppercase tracking-[0.16em] mb-2">
-              Management
+              {t("sidebar:management", "Management")}
             </p>
             {finalManagement.map((item) => (
               <NavItem key={item.href} {...item} />
@@ -443,14 +466,23 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       )}
       {collapsed && (
         <div className="p-2 border-t border-sidebar-border flex justify-center">
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={profile?.avatar_url || undefined} />
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
-              {initial}
-            </AvatarFallback>
-          </Avatar>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Avatar className="h-9 w-9 cursor-pointer ring-1 ring-sidebar-border">
+                <AvatarImage src={profile?.avatar_url || undefined} />
+                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
+                  {initial}
+                </AvatarFallback>
+              </Avatar>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="ml-2">
+              <p className="font-semibold">{displayName}</p>
+              <p className="text-xs text-muted-foreground capitalize">({roleLabel})</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       )}
     </aside>
   );
 }
+

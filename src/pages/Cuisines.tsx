@@ -1,75 +1,87 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { Layers, Plus, Save, Search } from "lucide-react";
+import { Layers, Plus, Save, Search, Store, Check, Trash2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 type Cuisine = { id: string; name: string };
-type Restaurant = { id: string; name: string };
-type RestaurantCuisine = { restaurant_id: string; cuisine_id: string };
+type RestaurantCuisine = { id?: string; restaurant_id: string; cuisine_id: string };
 
 export default function Cuisines() {
+  const { t } = useTranslation(["cuisines", "common"]);
   const { role } = useAuth();
+  const { restaurantId } = useActiveRestaurant();
   const { toast } = useToast();
+
   const [search, setSearch] = useState("");
   const [newCuisine, setNewCuisine] = useState("");
   const [savingCuisine, setSavingCuisine] = useState(false);
-  const [editCuisineId, setEditCuisineId] = useState<string | null>(null);
-  const [selectedRestaurantIds, setSelectedRestaurantIds] = useState<string[]>([]);
-  const [savingLinks, setSavingLinks] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const { data: cuisines = [], isLoading: cuisinesLoading, refetch: refetchCuisines } = useQuery({
+  // 1. Fetch all cuisines
+  const {
+    data: cuisines = [],
+    isLoading: cuisinesLoading,
+    refetch: refetchCuisines,
+  } = useQuery({
     queryKey: ["cuisines"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("cuisines").select("*").order("name", { ascending: true });
+      const { data, error } = await supabase
+        .from("cuisines")
+        .select("*")
+        .order("name", { ascending: true });
       if (error) throw error;
       return (data as Cuisine[]) ?? [];
     },
   });
 
-  const { data: restaurants = [], isLoading: restaurantsLoading } = useQuery({
-    queryKey: ["restaurants-basic"],
+  // 2. Fetch restaurant name
+  const { data: currentRestaurant } = useQuery({
+    queryKey: ["current-restaurant", restaurantId],
     queryFn: async () => {
-      const { data, error } = await supabase.from("restaurants").select("id,name").order("name", { ascending: true });
-      if (error) throw error;
-      return (data as Restaurant[]) ?? [];
+      if (!restaurantId) return null;
+      const { data } = await supabase
+        .from("restaurants")
+        .select("id, name")
+        .eq("id", restaurantId)
+        .maybeSingle();
+      return (data as { id: string; name: string } | null) ?? null;
     },
+    enabled: Boolean(restaurantId),
   });
 
-  const { data: links = [], isLoading: linksLoading, refetch: refetchLinks } = useQuery({
-    queryKey: ["restaurant-cuisines"],
+  // 3. Fetch linked cuisines for THIS active restaurant only
+  const {
+    data: activeLinks = [],
+    isLoading: linksLoading,
+    refetch: refetchLinks,
+  } = useQuery({
+    queryKey: ["restaurant-cuisines", restaurantId],
     queryFn: async () => {
-      const { data, error } = await supabase.from("restaurant_cuisines").select("restaurant_id,cuisine_id");
+      if (!restaurantId) return [];
+      const { data, error } = await supabase
+        .from("restaurant_cuisines")
+        .select("restaurant_id, cuisine_id")
+        .eq("restaurant_id", restaurantId);
       if (error) throw error;
       return (data as RestaurantCuisine[]) ?? [];
     },
+    enabled: Boolean(restaurantId),
   });
 
-  const cuisineToRestaurantNames = useMemo(() => {
-    const restaurantNameById = Object.fromEntries(restaurants.map((r) => [r.id, r.name]));
-    const map: Record<string, string[]> = {};
-    for (const link of links) {
-      const n = restaurantNameById[link.restaurant_id];
-      if (!n) continue;
-      if (!map[link.cuisine_id]) map[link.cuisine_id] = [];
-      map[link.cuisine_id].push(n);
-    }
-    return map;
-  }, [links, restaurants]);
+  const linkedCuisineIds = useMemo(() => {
+    return new Set(activeLinks.map((l) => l.cuisine_id));
+  }, [activeLinks]);
 
   const filteredCuisines = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -77,219 +89,253 @@ export default function Cuisines() {
     return cuisines.filter((c) => c.name.toLowerCase().includes(q));
   }, [cuisines, search]);
 
-  if (role !== "super_admin") {
-    return (
-      <div className="p-8 text-center">
-        <h1 className="text-xl font-semibold">Super admin only</h1>
-        <p className="text-muted-foreground text-sm mt-2">You do not have permission to manage cuisines.</p>
-      </div>
-    );
-  }
+  const toggleCuisineForRestaurant = async (cuisineId: string, currentlyLinked: boolean) => {
+    if (!restaurantId) {
+      toast({
+        variant: "destructive",
+        title: "No Active Restaurant",
+        description: "Please make sure a restaurant is selected.",
+      });
+      return;
+    }
 
-  const isLoading = cuisinesLoading || restaurantsLoading || linksLoading;
+    setTogglingId(cuisineId);
+    try {
+      if (currentlyLinked) {
+        // Unlink from this restaurant
+        const { error } = await supabase
+          .from("restaurant_cuisines")
+          .delete()
+          .eq("restaurant_id", restaurantId)
+          .eq("cuisine_id", cuisineId);
+        if (error) throw error;
+        toast({ title: "Cuisine removed from your restaurant" });
+      } else {
+        // Link to this restaurant
+        const { error } = await supabase
+          .from("restaurant_cuisines")
+          .insert({
+            restaurant_id: restaurantId,
+            cuisine_id: cuisineId,
+          });
+        if (error) throw error;
+        toast({ title: "Cuisine linked to your restaurant" });
+      }
+      await refetchLinks();
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: t("common:error", "Failed to update cuisine"),
+        description: e?.message ?? String(e),
+      });
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   async function addCuisine() {
     const name = newCuisine.trim().replace(/\s+/g, " ");
     if (!name) return;
+    if (!restaurantId) {
+      toast({ variant: "destructive", title: "No active restaurant" });
+      return;
+    }
+
     setSavingCuisine(true);
     try {
-      const { error } = await supabase.from("cuisines").upsert({ name }, { onConflict: "name" });
+      // 1. Insert into cuisines
+      const { data: newCuisineData, error } = await supabase
+        .from("cuisines")
+        .upsert({ name }, { onConflict: "name" })
+        .select("id, name")
+        .maybeSingle();
+
       if (error) throw error;
+
+      // 2. Automatically link to this active restaurant
+      const cId = (newCuisineData as any)?.id;
+      if (cId && restaurantId) {
+        await supabase
+          .from("restaurant_cuisines")
+          .upsert({ restaurant_id: restaurantId, cuisine_id: cId });
+      }
+
       setNewCuisine("");
-      await refetchCuisines();
-      toast({ title: "Cuisine saved" });
+      await Promise.all([refetchCuisines(), refetchLinks()]);
+      toast({ title: `✅ Added cuisine "${name}" to your restaurant!` });
     } catch (e: any) {
-      toast({ variant: "destructive", title: "Could not save cuisine", description: e?.message ?? String(e) });
+      toast({
+        variant: "destructive",
+        title: t("common:error", "Could not save cuisine"),
+        description: e?.message ?? String(e),
+      });
     } finally {
       setSavingCuisine(false);
     }
   }
 
-  function openManageRestaurants(cuisineId: string) {
-    const current = links.filter((l) => l.cuisine_id === cuisineId).map((l) => l.restaurant_id);
-    setSelectedRestaurantIds(current);
-    setEditCuisineId(cuisineId);
-  }
-
-  async function saveCuisineRestaurants() {
-    if (!editCuisineId) return;
-    setSavingLinks(true);
-    try {
-      const cuisineId = editCuisineId;
-      const { error: delErr } = await supabase.from("restaurant_cuisines").delete().eq("cuisine_id", cuisineId);
-      if (delErr) throw delErr;
-      if (selectedRestaurantIds.length) {
-        const payload = selectedRestaurantIds.map((restaurant_id) => ({ restaurant_id, cuisine_id: cuisineId }));
-        const { error: insErr } = await supabase.from("restaurant_cuisines").insert(payload);
-        if (insErr) throw insErr;
-      }
-      await refetchLinks();
-      setEditCuisineId(null);
-      setSelectedRestaurantIds([]);
-      toast({ title: "Cuisine links updated" });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Could not update links", description: e?.message ?? String(e) });
-    } finally {
-      setSavingLinks(false);
-    }
-  }
+  const isLoading = cuisinesLoading || linksLoading;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto pb-12">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Layers className="h-6 w-6 text-primary" />
-            Cuisines
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground flex items-center gap-2.5">
+            <Layers className="h-7 w-7 text-primary" />
+            {t("cuisines:title", "Cuisines")}
           </h1>
-          <p className="text-muted-foreground text-sm">Manage cuisine types and link them with restaurants.</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            {t(
+              "cuisines:subtitle",
+              "Manage cuisine types and food categories for your restaurant."
+            )}
+          </p>
         </div>
+
+        {currentRestaurant && (
+          <div className="flex items-center gap-2 bg-card px-3.5 py-1.5 rounded-xl border border-border/70 shadow-xs text-xs font-semibold text-foreground">
+            <Store className="h-4 w-4 text-primary" />
+            <span>{currentRestaurant.name}</span>
+          </div>
+        )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Add Cuisine</CardTitle>
+      {/* Add Cuisine Card */}
+      <Card className="border border-border/70 shadow-xs bg-card rounded-2xl">
+        <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/10">
+          <CardTitle className="text-sm font-bold">
+            {t("cuisines:addCuisine", "Add New Cuisine")}
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Create a cuisine (e.g. Italian, Fast Food, Chinese, Desi) and attach it to your restaurant menu.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-2">
-          <Input
-            value={newCuisine}
-            onChange={(e) => setNewCuisine(e.target.value)}
-            placeholder="e.g. Italian"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void addCuisine();
-              }
+        <CardContent className="p-6">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addCuisine();
             }}
-          />
-          <Button onClick={() => void addCuisine()} disabled={savingCuisine}>
-            <Plus className="h-4 w-4 mr-2" />
-            {savingCuisine ? "Saving..." : "Add"}
-          </Button>
+            className="flex flex-col sm:flex-row gap-3"
+          >
+            <Input
+              value={newCuisine}
+              onChange={(e) => setNewCuisine(e.target.value)}
+              placeholder="e.g. Fast Food, Italian, BBQ, Dessert..."
+              className="rounded-xl text-xs flex-1"
+            />
+            <Button
+              type="submit"
+              disabled={savingCuisine || !newCuisine.trim()}
+              className="gradient-primary text-primary-foreground font-semibold rounded-xl gap-2 min-w-[130px]"
+            >
+              {savingCuisine ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {savingCuisine ? t("common:saving", "Saving...") : t("common:add", "Add Cuisine")}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <CardTitle>All Cuisines</CardTitle>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-10 w-[260px]"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search cuisines..."
-              />
-            </div>
+      {/* Cuisines Table Card */}
+      <Card className="border border-border/70 shadow-xs bg-card rounded-2xl overflow-hidden">
+        <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-sm font-bold">
+              {t("cuisines:allCuisines", "Restaurant Cuisines")} ({filteredCuisines.length})
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Toggle cuisines to enable or disable them for your active restaurant.
+            </CardDescription>
+          </div>
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9 rounded-xl text-xs"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t("cuisines:searchCuisinesPlaceholder", "Search cuisines...")}
+            />
           </div>
         </CardHeader>
-        <CardContent>
+
+        <CardContent className="p-0">
           {isLoading ? (
-            <p className="text-muted-foreground text-sm">Loading...</p>
+            <div className="py-16 text-center text-muted-foreground flex items-center justify-center gap-2 text-sm">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <span>Loading cuisines...</span>
+            </div>
           ) : filteredCuisines.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No cuisines found.</p>
+            <div className="py-16 text-center text-muted-foreground space-y-2">
+              <Layers className="h-10 w-10 mx-auto text-muted-foreground/30" />
+              <p className="font-semibold text-sm">No cuisines found.</p>
+              <p className="text-xs">Add a new cuisine using the form above.</p>
+            </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Linked Restaurants</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCuisines.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {(cuisineToRestaurantNames[c.id] ?? []).slice(0, 5).map((name) => (
-                          <Badge key={`${c.id}-${name}`} variant="secondary">{name}</Badge>
-                        ))}
-                        {(cuisineToRestaurantNames[c.id] ?? []).length > 5 && (
-                          <Badge variant="outline">+{(cuisineToRestaurantNames[c.id] ?? []).length - 5} more</Badge>
-                        )}
-                        {(cuisineToRestaurantNames[c.id] ?? []).length === 0 && (
-                          <span className="text-muted-foreground text-xs">Not linked</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="outline" size="sm" onClick={() => openManageRestaurants(c.id)}>
-                        Manage restaurants
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border/50">
+                    <TableHead className="py-3.5 px-6 font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                      Cuisine Name
+                    </TableHead>
+                    <TableHead className="py-3.5 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                      Status for This Restaurant
+                    </TableHead>
+                    <TableHead className="py-3.5 px-6 text-right font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                      Action
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody className="divide-y divide-border/40">
+                  {filteredCuisines.map((c) => {
+                    const isLinked = linkedCuisineIds.has(c.id);
+                    const isBusy = togglingId === c.id;
+
+                    return (
+                      <TableRow key={c.id} className="hover:bg-muted/20 transition-colors">
+                        <TableCell className="py-4 px-6 font-bold text-xs text-foreground">
+                          {c.name}
+                        </TableCell>
+
+                        <TableCell className="py-4 px-4">
+                          {isLinked ? (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1 text-[11px]">
+                              <Check className="h-3 w-3" /> Active in Restaurant
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground text-[11px]">
+                              Not Linked
+                            </Badge>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="py-4 px-6 text-right">
+                          <Button
+                            variant={isLinked ? "outline" : "default"}
+                            size="sm"
+                            disabled={isBusy}
+                            onClick={() => toggleCuisineForRestaurant(c.id, isLinked)}
+                            className={cn(
+                              "h-8 text-xs font-semibold rounded-xl",
+                              !isLinked && "gradient-primary text-primary-foreground"
+                            )}
+                          >
+                            {isBusy ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                            ) : null}
+                            {isLinked ? "Remove from Restaurant" : "Add to Restaurant"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={!!editCuisineId} onOpenChange={(open) => !open && setEditCuisineId(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Link Restaurants</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-[50vh] overflow-y-auto space-y-2 py-4 pr-1">
-            {restaurants.length > 0 && (
-              <label className="flex items-center gap-2 rounded border border-primary/20 bg-background p-2 cursor-pointer sticky top-0 z-[1] shadow-sm">
-                <input
-                  type="checkbox"
-                  checked={restaurants.length > 0 && selectedRestaurantIds.length === restaurants.length}
-                  ref={(el) => {
-                    if (el) {
-                      el.indeterminate =
-                        selectedRestaurantIds.length > 0 &&
-                        selectedRestaurantIds.length < restaurants.length;
-                    }
-                  }}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedRestaurantIds(restaurants.map((r) => r.id));
-                    } else {
-                      setSelectedRestaurantIds([]);
-                    }
-                  }}
-                />
-                <span className="font-medium text-sm">Select All</span>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {selectedRestaurantIds.length}/{restaurants.length}
-                </span>
-              </label>
-            )}
-            {restaurants.map((r) => {
-              const checked = selectedRestaurantIds.includes(r.id);
-              return (
-                <label key={r.id} className="flex items-center gap-2 rounded border p-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedRestaurantIds((prev) => [...prev, r.id]);
-                      } else {
-                        setSelectedRestaurantIds((prev) => prev.filter((id) => id !== r.id));
-                      }
-                    }}
-                  />
-                  <span>{r.name}</span>
-                </label>
-              );
-            })}
-            {restaurants.length === 0 && <p className="text-muted-foreground text-sm">No restaurants available.</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditCuisineId(null)}>Cancel</Button>
-            <Button onClick={() => void saveCuisineRestaurants()} disabled={savingLinks}>
-              <Save className="h-4 w-4 mr-2" />
-              {savingLinks ? "Saving..." : "Save links"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { LucideIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,8 @@ interface StatsCardProps {
 }
 
 export function StatsCard({ title, value, change, icon: Icon, iconClassName }: StatsCardProps) {
+  const { t } = useTranslation(["dashboard", "common"]);
+
   return (
     <Card className="border-border/80 shadow-[0_1px_2px_rgba(31,41,55,0.05),0_10px_28px_-12px_rgba(249,115,22,0.16)] rounded-xl overflow-hidden hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_12px_32px_-12px_rgba(249,115,22,0.28)] transition-all duration-200">
       <CardContent className="p-5 relative">
@@ -31,7 +34,7 @@ export function StatsCard({ title, value, change, icon: Icon, iconClassName }: S
               >
                 {change.type === "increase" ? "+" : "-"}
                 {Math.abs(change.value)}%{" "}
-                <span className="text-muted-foreground font-normal">vs last week</span>
+                <span className="text-muted-foreground font-normal">{t("dashboard:vsLastWeek", "vs last week")}</span>
               </p>
             )}
           </div>
@@ -48,3 +51,4 @@ export function StatsCard({ title, value, change, icon: Icon, iconClassName }: S
     </Card>
   );
 }
+

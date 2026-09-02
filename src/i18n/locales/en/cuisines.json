@@ -1,0 +1,12 @@
+{
+  "title": "Cuisines",
+  "subtitle": "Manage cuisine classifications and specialty tags",
+  "addCuisine": "Add Cuisine",
+  "editCuisine": "Edit Cuisine",
+  "deleteCuisine": "Delete Cuisine",
+  "cuisineName": "Cuisine Name",
+  "cuisineImage": "Cuisine Image",
+  "cuisineDescription": "Description",
+  "noCuisines": "No cuisines found",
+  "viewCuisines": "View Cuisines"
+}

@@ -1,9 +1,10 @@
 import { Check, Circle, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   ORDER_FULFILLMENT_FLOW,
-  ORDER_STATUS_LABELS,
   OrderStatus,
 } from "@/lib/restaurant";
+import { getOrderStatusLabel, formatDate } from "@/i18n/formatters";
 import { cn } from "@/lib/utils";
 
 export type TimelineHistoryRow = {
@@ -47,16 +48,13 @@ function notesForStep(step: OrderStatus, history: TimelineHistoryRow[]): string 
 
 function fmtWhen(iso: string | null): string {
   if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+  return formatDate(iso, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 type Props = {
@@ -68,6 +66,7 @@ type Props = {
 };
 
 export function OrderFulfillmentTimeline({ order, history, className, orientation = "auto" }: Props) {
+  const { t } = useTranslation(["orders", "common"]);
   const rawStatus = order.status;
   // "assigned" is hidden from the visible timeline; treat progress as past Ready.
   const st =
@@ -91,16 +90,16 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
             <X className="h-4 w-4" />
           </div>
           <div>
-            <p className="font-semibold text-red-900">Order cancelled</p>
+            <p className="font-semibold text-red-900">{t("orders:orderCancelledAt", "Order cancelled")}</p>
             <p className="text-sm text-red-700/80 mt-0.5">
-              Fulfillment stopped. Status history below still shows prior progress.
+              {t("orders:orderCancelledAt", "Fulfillment stopped.")}
             </p>
             {history.length > 0 && (
               <ol className="mt-4 space-y-3 border-l-2 border-red-200 ml-1.5 pl-4">
                 {history.map((h) => (
                   <li key={h.id}>
                     <p className="text-sm font-medium text-red-900 capitalize">
-                      {(h.status || "").replace(/_/g, " ")}
+                      {getOrderStatusLabel(h.status, t)}
                     </p>
                     <p className="text-xs text-red-700/70">{fmtWhen(h.created_at)}</p>
                     {h.notes && <p className="text-xs text-red-800/80 mt-0.5">{h.notes}</p>}
@@ -156,12 +155,12 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
                   done || active ? "text-zinc-900" : "text-zinc-400",
                 )}
               >
-                {ORDER_STATUS_LABELS[step]}
+                {getOrderStatusLabel(step, t)}
               </p>
               {when ? (
                 <p className="mt-1 text-[11px] text-zinc-500 leading-snug">{fmtWhen(when)}</p>
               ) : (
-                <p className="mt-1 text-[11px] text-zinc-300">Pending</p>
+                <p className="mt-1 text-[11px] text-zinc-300">{t("orders:pending", "Pending")}</p>
               )}
               {notes && <p className="mt-1 text-[10px] text-zinc-500 line-clamp-2 max-w-[110px]">{notes}</p>}
             </li>
@@ -210,17 +209,17 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
                     done || active ? "text-zinc-900" : "text-zinc-400",
                   )}
                 >
-                  {ORDER_STATUS_LABELS[step]}
+                  {getOrderStatusLabel(step, t)}
                   {active && (
                     <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-primary">
-                      Current
+                      {t("common:active", "Current")}
                     </span>
                   )}
                 </p>
                 {when ? (
                   <p className="text-xs text-zinc-500 mt-0.5">{fmtWhen(when)}</p>
                 ) : (
-                  <p className="text-xs text-zinc-400 mt-0.5">Not reached yet</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">{t("orders:pending", "Pending")}</p>
                 )}
                 {notes && <p className="text-xs text-zinc-600 mt-1 bg-zinc-50 border border-zinc-200 rounded-md px-2 py-1">{notes}</p>}
               </div>
@@ -231,3 +230,4 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
     </div>
   );
 }
+

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Users, Search, Mail, Phone, Building2, TrendingUp, Plus, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,8 +28,9 @@ import {
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
+import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { formatDate } from "@/i18n/formatters";
 
 const AVATAR_TONES = [
   "bg-orange-100 text-orange-800",
@@ -49,7 +51,9 @@ const CARD_SHADOW =
   "rounded-xl border-border/80 shadow-[0_1px_2px_rgba(15,40,35,0.04),0_8px_24px_-12px_rgba(15,40,35,0.08)]";
 
 export default function Customers() {
+  const { t } = useTranslation(["users", "common"]);
   const { toast } = useToast();
+  const { restaurantId } = useActiveRestaurant();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -71,7 +75,7 @@ export default function Customers() {
     mutationFn: async () => {
       const phone = newPhone.trim();
       if (!phone) {
-        throw new Error("Phone number is required.");
+        throw new Error(t("users:phoneRequired", "Phone number is required."));
       }
       const { error } = await supabase.from("customers").insert({
         phone_number: phone,
@@ -79,19 +83,20 @@ export default function Customers() {
         email: newEmail.trim() || null,
         company: newCompany.trim() || null,
         notes: newNotes.trim() || null,
+        ...(restaurantId ? { restaurant_id: restaurantId } : {}),
       });
       if (error) throw error;
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["customers"] });
-      toast({ title: "Customer added" });
+      toast({ title: t("users:customerAdded", "Customer added") });
       setAddOpen(false);
       resetAddForm();
     },
     onError: (err: Error) => {
       toast({
         variant: "destructive",
-        title: "Could not add customer",
+        title: t("common:error", "Could not add customer"),
         description: err.message,
       });
     },
@@ -99,33 +104,37 @@ export default function Customers() {
 
   // Fetch customers from the customers table
   const { data: customers = [], isLoading: customersLoading } = useQuery({
-    queryKey: ["customers"],
+    queryKey: ["customers", restaurantId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("customers")
         .select("*")
         .order("created_at", { ascending: false });
+      if (restaurantId) {
+        q = q.eq("restaurant_id", restaurantId);
+      }
+      const { data, error } = await q;
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
-  // Fetch won leads (converted leads) as potential customers
+  // Fetch won leads to display alongside customers
   const { data: wonLeads = [], isLoading: leadsLoading } = useQuery({
-    queryKey: ["won-leads"],
+    queryKey: ["leads-customers"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("leads")
         .select("*")
-        .in("status", ["qualified", "proposal", "negotiation", "won"])
+        .in("status", ["won", "qualified"])
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
-  // Combine: direct customers + qualified/won leads (potential customers)
   const wonOnly = wonLeads.filter((l) => l.status === "won");
+
   const allCustomers = [
     ...customers.map((c) => ({
       id: c.id,
@@ -166,7 +175,7 @@ export default function Customers() {
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 animate-fade-in pb-4">
-      {/* Hero band — same language as Dashboard */}
+      {/* Hero band */}
       <section className="relative overflow-hidden rounded-2xl gradient-hero text-primary-foreground shadow-[0_20px_48px_-18px_rgba(249,115,22,0.45),0_8px_20px_-10px_rgba(31,41,55,0.5)] animate-rise">
         <div
           className="pointer-events-none absolute inset-0 opacity-40"
@@ -177,8 +186,8 @@ export default function Customers() {
         />
         <div className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-7">
           <div className="min-w-0 space-y-1.5">
-            <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Customers</h1>
-            <p className="max-w-xl text-sm text-white/75">View customers and converted leads</p>
+            <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">{t("users:customersTitle", "Customers")}</h1>
+            <p className="max-w-xl text-sm text-white/75">{t("users:customersSubtitle", "View customers and converted leads")}</p>
           </div>
           <Button
             type="button"
@@ -186,7 +195,7 @@ export default function Customers() {
             className="shrink-0 rounded-lg bg-white text-foreground hover:bg-white/90 shadow-sm"
           >
             <Plus className="h-4 w-4 mr-2" aria-hidden />
-            Add customer
+            {t("users:addCustomer", "Add customer")}
           </Button>
         </div>
       </section>
@@ -200,12 +209,12 @@ export default function Customers() {
       >
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold tracking-tight">Add customer</DialogTitle>
+            <DialogTitle className="text-lg font-bold tracking-tight">{t("users:addCustomer", "Add customer")}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2 pb-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label htmlFor="cust-phone">Phone number *</Label>
+                <Label htmlFor="cust-phone">{t("common:phone", "Phone number")} *</Label>
                 <Input
                   id="cust-phone"
                   placeholder="+1 555 0100"
@@ -216,7 +225,7 @@ export default function Customers() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="cust-name">Full name</Label>
+                <Label htmlFor="cust-name">{t("common:name", "Full name")}</Label>
                 <Input
                   id="cust-name"
                   placeholder="Jane Doe"
@@ -228,7 +237,7 @@ export default function Customers() {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label htmlFor="cust-email">Email</Label>
+                <Label htmlFor="cust-email">{t("common:email", "Email")}</Label>
                 <Input
                   id="cust-email"
                   type="email"
@@ -239,7 +248,7 @@ export default function Customers() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="cust-company">Company</Label>
+                <Label htmlFor="cust-company">{t("users:colCompany", "Company")}</Label>
                 <Input
                   id="cust-company"
                   placeholder="Acme Inc."
@@ -250,10 +259,10 @@ export default function Customers() {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="cust-notes">Notes</Label>
+              <Label htmlFor="cust-notes">{t("users:notes", "Notes")}</Label>
               <Textarea
                 id="cust-notes"
-                placeholder="Optional notes…"
+                placeholder={t("users:notesPlaceholder", "Optional notes…")}
                 value={newNotes}
                 onChange={(e) => setNewNotes(e.target.value)}
                 rows={3}
@@ -271,7 +280,7 @@ export default function Customers() {
                 resetAddForm();
               }}
             >
-              Cancel
+              {t("common:cancel", "Cancel")}
             </Button>
             <Button
               type="button"
@@ -279,13 +288,13 @@ export default function Customers() {
               disabled={addCustomer.isPending}
               onClick={() => addCustomer.mutate()}
             >
-              {addCustomer.isPending ? "Saving…" : "Save customer"}
+              {addCustomer.isPending ? t("common:saving", "Saving…") : t("users:saveCustomer", "Save customer")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Stats — Dashboard StatsCard language */}
+      {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {isLoading ? (
           <>
@@ -306,25 +315,25 @@ export default function Customers() {
         ) : (
           <>
             <StatsCard
-              title="Total Customers"
+              title={t("users:statTotalCustomers", "Total Customers")}
               value={allCustomers.length}
               icon={Users}
               iconClassName="bg-orange-50 text-orange-700"
             />
             <StatsCard
-              title="Direct Customers"
+              title={t("users:statDirectCustomers", "Direct Customers")}
               value={customers.length}
               icon={UserPlus}
               iconClassName="bg-amber-50 text-amber-800"
             />
             <StatsCard
-              title="Converted Leads"
+              title={t("users:statConvertedLeads", "Converted Leads")}
               value={convertedCount}
               icon={TrendingUp}
               iconClassName="bg-emerald-50 text-emerald-700"
             />
             <StatsCard
-              title="Potential (qualified)"
+              title={t("users:statPotentialQualified", "Potential (qualified)")}
               value={potentialCount}
               icon={TrendingUp}
               iconClassName="bg-slate-100 text-slate-700"
@@ -337,11 +346,11 @@ export default function Customers() {
       <Card className={cn(CARD_SHADOW, "overflow-hidden")}>
         <CardHeader className="flex flex-col gap-4 space-y-0 border-b border-border/60 pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle className="text-base font-bold tracking-tight">All Customers</CardTitle>
+            <CardTitle className="text-base font-bold tracking-tight">{t("users:allCustomers", "All Customers")}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
               {filteredCustomers.length}{" "}
-              {filteredCustomers.length === 1 ? "record" : "records"}
-              {searchQuery ? " matching your search" : ""}
+              {filteredCustomers.length === 1 ? t("users:record", "record") : t("users:records", "records")}
+              {searchQuery ? ` ${t("users:matchingSearch", "matching your search")}` : ""}
             </p>
           </div>
           <div className="relative w-full sm:w-[300px]">
@@ -350,7 +359,7 @@ export default function Customers() {
               aria-hidden
             />
             <Input
-              placeholder="Search customers..."
+              placeholder={t("users:searchCustomersPlaceholder", "Search customers...")}
               className="rounded-lg border-border/80 bg-muted/30 pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -367,9 +376,9 @@ export default function Customers() {
           ) : filteredCustomers.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 m-5 px-4 py-12 text-center">
               <Users className="mb-3 h-8 w-8 text-muted-foreground" aria-hidden />
-              <p className="text-sm font-medium text-foreground">No customers found</p>
+              <p className="text-sm font-medium text-foreground">{t("users:noCustomersFound", "No customers found")}</p>
               <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                Add a customer with the button above, or convert leads to see them here.
+                {t("users:noCustomersSub", "Add a customer with the button above, or convert leads to see them here.")}
               </p>
               <Button
                 type="button"
@@ -378,7 +387,7 @@ export default function Customers() {
                 onClick={() => setAddOpen(true)}
               >
                 <Plus className="mr-1.5 h-4 w-4" aria-hidden />
-                Add customer
+                {t("users:addCustomer", "Add customer")}
               </Button>
             </div>
           ) : (
@@ -387,19 +396,19 @@ export default function Customers() {
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-border/60">
                     <TableHead className="pl-5 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Customer
+                      {t("users:colCustomer", "Customer")}
                     </TableHead>
                     <TableHead className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Contact
+                      {t("users:colContact", "Contact")}
                     </TableHead>
                     <TableHead className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Company
+                      {t("users:colCompany", "Company")}
                     </TableHead>
                     <TableHead className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Source
+                      {t("users:colSource", "Source")}
                     </TableHead>
                     <TableHead className="pr-5 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Added
+                      {t("users:colAdded", "Added")}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -464,15 +473,15 @@ export default function Customers() {
                           )}
                         >
                           {customer.source === "converted_lead"
-                            ? "Converted Lead"
+                            ? t("users:convertedLead", "Converted Lead")
                             : customer.source === "potential"
-                              ? `Potential (${customer.status})`
-                              : "Direct"}
+                              ? `${t("users:potential", "Potential")} (${customer.status})`
+                              : t("users:direct", "Direct")}
                         </Badge>
                       </TableCell>
                       <TableCell className="pr-5 text-sm text-muted-foreground tabular-nums">
                         {customer.created_at
-                          ? format(new Date(customer.created_at), "MMM d, yyyy")
+                          ? formatDate(customer.created_at, { month: "short", day: "numeric", year: "numeric" })
                           : "-"}
                       </TableCell>
                     </TableRow>

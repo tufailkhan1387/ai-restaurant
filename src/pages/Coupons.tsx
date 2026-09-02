@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ interface Discount {
 }
 
 export default function Coupons() {
+  const { t } = useTranslation(["coupons", "common"]);
   const { toast } = useToast();
   const { restaurantId, loading: activeRestaurantLoading } = useActiveRestaurant();
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -48,11 +50,11 @@ export default function Coupons() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      toast({ variant: "destructive", title: "Failed to load", description: error.message });
+      toast({ variant: "destructive", title: t("common:error", "Failed to load"), description: error.message });
       return;
     }
     setDiscounts(data as Discount[]);
-  }, [restaurantId]);
+  }, [restaurantId, t, toast]);
 
   useEffect(() => {
     if (activeRestaurantLoading) return;
@@ -83,9 +85,9 @@ export default function Coupons() {
       : await supabase.from("discounts").insert(payload);
 
     if (res.error) {
-      toast({ variant: "destructive", title: "Failed to save", description: res.error.message });
+      toast({ variant: "destructive", title: t("common:error", "Failed to save"), description: res.error.message });
     } else {
-      toast({ title: "Discount code saved successfully" });
+      toast({ title: t("coupons:couponSaved", "Discount code saved successfully") });
       setDiscDialog(false);
       setEditDisc(null);
       load();
@@ -93,19 +95,19 @@ export default function Coupons() {
   };
 
   const deleteDiscount = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this coupon?")) return;
+    if (!confirm(t("coupons:deleteConfirm", "Are you sure you want to delete this coupon?"))) return;
     const { error } = await supabase.from("discounts").delete().eq("id", id);
     if (error) {
-      toast({ variant: "destructive", title: "Delete failed", description: error.message });
+      toast({ variant: "destructive", title: t("common:error", "Delete failed"), description: error.message });
     } else {
-      toast({ title: "Coupon deleted" });
+      toast({ title: t("coupons:couponDeleted", "Coupon deleted") });
       load();
     }
   };
 
   const filteredDiscounts = discounts.filter(d => 
     d.code.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    d.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    (d.description && d.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   if (activeRestaurantLoading) {
@@ -122,21 +124,21 @@ export default function Coupons() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 animate-fade-in pb-10 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <Ticket className="h-6 w-6 text-primary" />
-            Coupon Codes
+            {t("coupons:title", "Coupon Codes")}
           </h1>
-          <p className="text-muted-foreground text-sm">Manage promotional discounts and vouchers</p>
+          <p className="text-muted-foreground text-sm">{t("coupons:subtitle", "Manage promotional discounts and vouchers")}</p>
         </div>
         <div className="flex items-center gap-2">
           <DealsImportButton restaurantId={restaurantId} type="discounts" onImported={() => void load()} />
           <Dialog open={discDialog} onOpenChange={(o) => { setDiscDialog(o); if (!o) setEditDisc(null); }}>
             <DialogTrigger asChild>
               <Button onClick={() => setEditDisc(null)} className="gradient-primary">
-                <Plus className="h-4 w-4 mr-1" /> New Coupon
+                <Plus className="h-4 w-4 mr-1" /> {t("coupons:newCoupon", "New Coupon")}
               </Button>
             </DialogTrigger>
             <DiscountForm initial={editDisc} onSubmit={saveDiscount} />
@@ -149,7 +151,7 @@ export default function Coupons() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input 
-              placeholder="Search coupons..." 
+              placeholder={t("coupons:searchCouponsPlaceholder", "Search coupons...")}
               className="pl-10" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -164,13 +166,13 @@ export default function Coupons() {
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/50 text-muted-foreground font-medium border-y">
                 <tr>
-                  <th className="px-6 py-4">Code</th>
-                  <th className="px-6 py-4">Type</th>
-                  <th className="px-6 py-4 text-right">Value</th>
-                  <th className="px-6 py-4 text-right">Min Order</th>
-                  <th className="px-6 py-4 text-center">Usage</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
+                  <th className="px-6 py-4">{t("coupons:colCode", "Code")}</th>
+                  <th className="px-6 py-4">{t("coupons:colType", "Type")}</th>
+                  <th className="px-6 py-4 text-right">{t("coupons:colValue", "Value")}</th>
+                  <th className="px-6 py-4 text-right">{t("coupons:colMinOrder", "Min Order")}</th>
+                  <th className="px-6 py-4 text-center">{t("coupons:colUsage", "Usage")}</th>
+                  <th className="px-6 py-4">{t("common:status", "Status")}</th>
+                  <th className="px-6 py-4 text-right">{t("common:actions", "Actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -187,7 +189,7 @@ export default function Coupons() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 capitalize">{d.discount_type}</td>
+                    <td className="px-6 py-4 capitalize">{d.discount_type === "percentage" ? t("coupons:percentage", "Percentage") : t("coupons:fixedAmount", "Fixed Amount")}</td>
                     <td className="px-6 py-4 text-right font-bold">
                       {d.discount_type === "percentage" ? `${d.discount_value}%` : formatCurrency(d.discount_value)}
                     </td>
@@ -196,14 +198,14 @@ export default function Coupons() {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-xs font-medium">
-                        {d.used_count} {d.max_uses ? `/ ${d.max_uses}` : "uses"}
+                        {d.used_count} {d.max_uses ? `/ ${d.max_uses}` : t("coupons:uses", "uses")}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       {d.is_active ? (
-                        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">Active</Badge>
+                        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">{t("common:active", "Active")}</Badge>
                       ) : (
-                        <Badge variant="secondary" className="opacity-60">Disabled</Badge>
+                        <Badge variant="secondary" className="opacity-60">{t("common:disabled", "Disabled")}</Badge>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -235,8 +237,8 @@ export default function Coupons() {
                   <tr>
                     <td colSpan={7} className="px-6 py-20 text-center">
                       <Ticket className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-20" />
-                      <p className="text-lg font-medium text-foreground">No coupons found</p>
-                      <p className="text-sm text-muted-foreground mt-1">Create your first discount code to boost sales.</p>
+                      <p className="text-lg font-medium text-foreground">{t("coupons:noCouponsFound", "No coupons found")}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{t("coupons:noCouponsSub", "Create your first discount code to boost sales.")}</p>
                     </td>
                   </tr>
                 )}
@@ -250,6 +252,7 @@ export default function Coupons() {
 }
 
 function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmit: (f: Partial<Discount>) => void }) {
+  const { t } = useTranslation(["coupons", "common"]);
   const [form, setForm] = useState<Partial<Discount>>(
     initial || { code: "", discount_type: "percentage", discount_value: 0, min_order_amount: 0, is_active: true }
   );
@@ -261,12 +264,12 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
   return (
     <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
-        <DialogTitle>{initial ? "Edit Coupon" : "Create Coupon"}</DialogTitle>
+        <DialogTitle>{initial ? t("coupons:editCoupon", "Edit Coupon") : t("coupons:createCoupon", "Create Coupon")}</DialogTitle>
       </DialogHeader>
       <DialogBody className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="code" className="flex items-center gap-1.5">
-            <Hash className="h-3.5 w-3.5" /> Coupon Code
+            <Hash className="h-3.5 w-3.5" /> {t("coupons:couponCode", "Coupon Code")}
           </Label>
           <Input 
             id="code" 
@@ -278,10 +281,10 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="desc">Description (Optional)</Label>
+          <Label htmlFor="desc">{t("common:description", "Description")} ({t("common:optional", "Optional")})</Label>
           <Textarea 
             id="desc" 
-            placeholder="e.g. 50% off on first order" 
+            placeholder={t("coupons:descriptionPlaceholder", "e.g. 50% off on first order")} 
             value={form.description || ""} 
             onChange={(e) => setForm({ ...form, description: e.target.value })} 
           />
@@ -289,17 +292,17 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Discount Type</Label>
+            <Label>{t("coupons:discountType", "Discount Type")}</Label>
             <Select value={form.discount_type || "percentage"} onValueChange={(v) => setForm({ ...form, discount_type: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="percentage">Percentage (%)</SelectItem>
-                <SelectItem value="fixed">Fixed Amount ($)</SelectItem>
+                <SelectItem value="percentage">{t("coupons:percentage", "Percentage (%)")}</SelectItem>
+                <SelectItem value="fixed">{t("coupons:fixedAmount", "Fixed Amount ($)")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Value</Label>
+            <Label>{t("coupons:value", "Value")}</Label>
             <Input 
               type="number" 
               value={form.discount_value || ""} 
@@ -310,7 +313,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Min. Order Amount</Label>
+            <Label>{t("coupons:minOrderAmount", "Min. Order Amount")}</Label>
             <Input 
               type="number" 
               value={form.min_order_amount || ""} 
@@ -318,10 +321,10 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
             />
           </div>
           <div className="space-y-2">
-            <Label>Max Uses (Optional)</Label>
+            <Label>{t("coupons:maxUses", "Max Uses")} ({t("common:optional", "Optional")})</Label>
             <Input 
               type="number" 
-              placeholder="No limit"
+              placeholder={t("coupons:noLimit", "No limit")}
               value={form.max_uses || ""} 
               onChange={(e) => setForm({ ...form, max_uses: parseInt(e.target.value) || null })} 
             />
@@ -330,7 +333,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Starts At</Label>
+            <Label className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> {t("coupons:startsAt", "Starts At")}</Label>
             <Input 
               type="datetime-local" 
               value={form.starts_at ? form.starts_at.slice(0, 16) : ""} 
@@ -338,7 +341,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
             />
           </div>
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Ends At</Label>
+            <Label className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> {t("coupons:endsAt", "Ends At")}</Label>
             <Input 
               type="datetime-local" 
               value={form.ends_at ? form.ends_at.slice(0, 16) : ""} 
@@ -348,7 +351,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
         </div>
 
         <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
-          <Label htmlFor="active" className="cursor-pointer">Active and Redeemable</Label>
+          <Label htmlFor="active" className="cursor-pointer">{t("coupons:activeAndRedeemable", "Active and Redeemable")}</Label>
           <Switch 
             id="active" 
             checked={form.is_active ?? true} 
@@ -358,7 +361,7 @@ function DiscountForm({ initial, onSubmit }: { initial: Discount | null; onSubmi
       </DialogBody>
       <DialogFooter>
         <Button onClick={() => onSubmit(form)} className="w-full sm:w-auto">
-          {initial ? "Save Changes" : "Create Coupon"}
+          {initial ? t("common:saveChanges", "Save Changes") : t("coupons:createCoupon", "Create Coupon")}
         </Button>
       </DialogFooter>
     </DialogContent>

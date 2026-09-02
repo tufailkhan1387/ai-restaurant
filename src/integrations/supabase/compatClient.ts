@@ -40,6 +40,7 @@ async function apiQuery(body: Record<string, unknown>) {
   });
 
   if (!res) {
+    console.error("❌ [compatClient] Network error on query:", body, fetchError);
     return {
       data: null,
       error: { message: fetchError ?? "Failed to reach API" },
@@ -49,6 +50,7 @@ async function apiQuery(body: Record<string, unknown>) {
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    console.error("❌ [compatClient] API Error on query:", body.table, body.action, json?.error || json);
     return { data: null, error: { message: json?.error?.message || json?.error || res.statusText }, count: undefined as number | undefined };
   }
   return { data: json.data ?? null, error: json.error ?? null, count: json.count as number | undefined };

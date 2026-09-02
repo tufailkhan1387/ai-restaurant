@@ -11,9 +11,10 @@ import {
 
 interface AIChatTestProps {
   agentId: string;
+  restaurantName?: string;
 }
 
-export const AIChatTest: React.FC<AIChatTestProps> = ({ agentId }) => {
+export const AIChatTest: React.FC<AIChatTestProps> = ({ agentId, restaurantName }) => {
   useEffect(() => {
     // Load official ElevenLabs widget embed script
     const scriptId = "elevenlabs-convai-widget-embed";
@@ -42,7 +43,7 @@ export const AIChatTest: React.FC<AIChatTestProps> = ({ agentId }) => {
       </SheetTrigger>
       <SheetContent className="sm:max-w-md flex flex-col h-full overflow-hidden">
         <SheetHeader>
-          <SheetTitle>AI Agent Chat Test</SheetTitle>
+          <SheetTitle>AI Agent Chat Test{restaurantName ? ` - ${restaurantName}` : ""}</SheetTitle>
         </SheetHeader>
         
         <div className="flex-1 mt-8 flex items-center justify-center border rounded-xl bg-white shadow-inner relative overflow-hidden">

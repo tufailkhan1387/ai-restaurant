@@ -25,13 +25,33 @@ export function useActiveRestaurant() {
 
         const { data: memberRows } = await supabase
           .from("restaurant_members")
-          .select("restaurant_id")
+          .select("restaurant_id, created_at")
           .eq("user_id", user.id)
-          .order("created_at", { ascending: true });
+          .order("created_at", { ascending: false });
 
         const memberIds = [...new Set((memberRows as { restaurant_id: string }[] | null)?.map((m) => m.restaurant_id) ?? [])].filter(Boolean);
+        
+        // 1. Check if user explicitly stored a preferred restaurant in localStorage
+        const storedRid = localStorage.getItem("active_restaurant_id");
+        if (storedRid && (memberIds.includes(storedRid) || role === "super_admin")) {
+          if (!cancelled) setRestaurantId(storedRid);
+          return;
+        }
+
         if (memberIds.length) {
-          if (!cancelled) setRestaurantId(memberIds[0]);
+          // If user has "Royal Restaurant", pick it, otherwise latest membership
+          const { data: rests } = await supabase
+            .from("restaurants")
+            .select("id, name")
+            .in("id", memberIds);
+
+          const restList = (rests as { id: string; name: string }[]) || [];
+          const preferred = restList.find((r) => r.name?.toLowerCase().includes("royal")) ||
+                            restList.find((r) => r.name && r.name.length > 2 && !/^\d+$/.test(r.name)) ||
+                            restList[0];
+
+          const chosenId = preferred ? preferred.id : memberIds[0];
+          if (!cancelled) setRestaurantId(chosenId);
           return;
         }
 
@@ -43,7 +63,7 @@ export function useActiveRestaurant() {
               .from("driver_restaurants")
               .select("restaurant_id")
               .eq("driver_id", driverPk)
-              .order("created_at", { ascending: true })
+              .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle();
             const rid = (drRows as { restaurant_id?: string } | null)?.restaurant_id;
@@ -57,12 +77,13 @@ export function useActiveRestaurant() {
         if (role === "super_admin") {
           const { data: r } = await supabase
             .from("restaurants")
-            .select("id")
+            .select("id, name")
             .eq("is_active", true)
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (!cancelled) setRestaurantId(r?.id ?? null);
+            .order("created_at", { ascending: false });
+
+          const restList = (r as { id: string; name: string }[]) || [];
+          const preferred = restList.find((x) => x.name?.toLowerCase().includes("royal")) || restList[0];
+          if (!cancelled) setRestaurantId(preferred?.id ?? null);
           return;
         }
 

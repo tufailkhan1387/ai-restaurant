@@ -1,7 +1,8 @@
 // src/pages/reports/InventoryReportPage.tsx
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, Loader2, ExternalLink } from "lucide-react";
+import { Boxes, Loader2 } from "lucide-react";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +14,8 @@ import { ReportFilters } from "@/components/reports/ReportFilters";
 import { useReportRestaurants } from "@/hooks/useReportRestaurants";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
 import { syncRestaurantMenuToVoiceAgent } from "@/lib/syncRestaurantMenuToVoiceAgent";
+import { formatDate } from "@/i18n/formatters";
 
 // Types returned from the new backend endpoint
 type InventoryItem = {
@@ -34,6 +35,7 @@ type InventoryResponse = {
 };
 
 export default function InventoryReportPage() {
+  const { t } = useTranslation(["reports", "common"]);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
@@ -89,7 +91,7 @@ export default function InventoryReportPage() {
       if (error) throw error;
 
       toast({
-        title: "Stock updated",
+        title: t("reports:stockUpdated", "Stock updated"),
         description: `Successfully updated stock quantity to ${newStock}.`,
       });
 
@@ -102,7 +104,7 @@ export default function InventoryReportPage() {
     } catch (e: any) {
       toast({
         variant: "destructive",
-        title: "Update failed",
+        title: t("common:error", "Update failed"),
         description: e.message || "Failed to update stock quantity.",
       });
     } finally {
@@ -111,17 +113,11 @@ export default function InventoryReportPage() {
   };
 
   const handleBulkUpdateStock = async () => {
-    const value = prompt(`Enter new stock quantity for the ${selectedIds.length} selected items:`);
-    if (value === null) return;
-    const newStock = parseInt(value, 10);
-    if (isNaN(newStock) || newStock < 0) {
-      toast({
-        variant: "destructive",
-        title: "Invalid input",
-        description: "Please enter a valid non-negative number.",
-      });
-      return;
-    }
+    if (selectedIds.length === 0) return;
+    const input = prompt(t("reports:promptNewStock", "Enter new stock quantity for selected items:"));
+    if (input === null) return;
+    const val = parseInt(input, 10);
+    const newStock = Math.max(0, isNaN(val) ? 0 : val);
 
     try {
       const { error } = await supabase
@@ -135,7 +131,7 @@ export default function InventoryReportPage() {
       if (error) throw error;
 
       toast({
-        title: "Bulk stock updated",
+        title: t("reports:bulkStockUpdated", "Bulk stock updated"),
         description: `Successfully updated stock quantity to ${newStock} for ${selectedIds.length} items.`,
       });
 
@@ -148,7 +144,7 @@ export default function InventoryReportPage() {
     } catch (e: any) {
       toast({
         variant: "destructive",
-        title: "Bulk update failed",
+        title: t("common:error", "Bulk update failed"),
         description: e.message || "Failed to update stock quantity.",
       });
     }
@@ -166,66 +162,50 @@ export default function InventoryReportPage() {
   if (metaError || restaurants.length === 0) {
     return (
       <div className="p-8 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-        <p className="font-bold">No restaurant access</p>
+        <p className="font-bold">{t("reports:noRestaurantAccess", "No restaurant access")}</p>
         <p className="text-sm">
-          Link your account to a restaurant to view inventory data.
+          {t("reports:linkAccountPrompt", "Link your account to a restaurant to view inventory data.")}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-6 animate-fade-in pb-10 max-w-7xl mx-auto">
       {/* Header + Filters */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Boxes className="h-8 w-8 text-primary" /> Inventory Report
+            <Boxes className="h-8 w-8 text-primary" /> {t("reports:inventoryReport", "Inventory Report")}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Stock levels, sales, and remaining quantities for each tracked item.
+            {t("reports:inventoryReportDesc", "Stock levels, sales, and remaining quantities for each tracked item.")}
           </p>
         </div>
         <ReportFilters
           restaurants={restaurants}
           restaurantId={restaurantId}
           onRestaurantChange={setRestaurantId}
-          extra={
-            <>
-              {/* Simple limit selector – the backend already returns a paginated list */}
-              <select
-                value="100"
-                onChange={(e) => {
-                  // In a real app we would store this limit; for now we keep the default.
-                }}
-                className="rounded border px-2 py-1 text-sm bg-background"
-              >
-                <option value="50">Top 50</option>
-                <option value="100">Top 100</option>
-                <option value="200">Top 200</option>
-              </select>
-            </>
-          }
         />
       </div>
 
       {restaurantId === "all" && (
         <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-500 p-4 rounded-xl text-sm font-medium flex items-center gap-2">
           <span>⚠️</span>
-          <span>To update stock levels, please select a specific restaurant using the filter dropdown above.</span>
+          <span>{t("reports:selectSpecificRestaurantWarning", "To update stock levels, please select a specific restaurant using the filter dropdown above.")}</span>
         </div>
       )}
 
       {/* Error handling */}
       {error ? (
         <div className="p-6 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
-          <p className="font-bold">Error loading report</p>
+          <p className="font-bold">{t("common:error", "Error loading report")}</p>
           <p className="text-sm">{(error as Error).message}</p>
         </div>
       ) : (
         <Card className="border-none bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
           <CardHeader>
-            <CardTitle>Inventory Details</CardTitle>
+            <CardTitle>{t("reports:inventoryDetails", "Inventory Details")}</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -239,13 +219,13 @@ export default function InventoryReportPage() {
                     )}
                     <TableCell className="px-6 py-4 w-14">#</TableCell>
                     {showRestaurantCol && (
-                      <TableCell className="px-6 py-4">Restaurant</TableCell>
+                      <TableCell className="px-6 py-4">{t("reports:colRestaurant", "Restaurant")}</TableCell>
                     )}
-                    <TableCell className="px-6 py-4">Item</TableCell>
-                    <TableCell className="px-6 py-4 text-right">Stock</TableCell>
-                    <TableCell className="px-6 py-4 text-right">Sold</TableCell>
-                    <TableCell className="px-6 py-4 text-right">Remaining</TableCell>
-                    <TableCell className="px-6 py-4 text-right">Last Updated</TableCell>
+                    <TableCell className="px-6 py-4">{t("reports:colProduct", "Item")}</TableCell>
+                    <TableCell className="px-6 py-4 text-right">{t("reports:colStock", "Stock")}</TableCell>
+                    <TableCell className="px-6 py-4 text-right">{t("reports:colSold", "Sold")}</TableCell>
+                    <TableCell className="px-6 py-4 text-right">{t("reports:colRemaining", "Remaining")}</TableCell>
+                    <TableCell className="px-6 py-4 text-right">{t("reports:colLastUpdated", "Last Updated")}</TableCell>
                   </TableRow>
                 </TableHeader>
                 <tbody className="divide-y">
@@ -320,7 +300,7 @@ export default function InventoryReportPage() {
                           {item.remaining_quantity != null ? item.remaining_quantity : "—"}
                         </TableCell>
                         <TableCell className="px-6 py-4 text-right tabular-nums">
-                          {item.last_updated ? new Date(item.last_updated).toLocaleDateString() : "—"}
+                          {item.last_updated ? formatDate(item.last_updated) : "—"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -328,7 +308,7 @@ export default function InventoryReportPage() {
                   {!isLoading && items.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
-                        No inventory data for this period.
+                        {t("reports:noInventoryData", "No inventory data for this period.")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -342,7 +322,7 @@ export default function InventoryReportPage() {
                   className="rounded bg-primary px-4 py-2 text-white hover:bg-primary/90 font-medium transition-colors"
                   onClick={handleBulkUpdateStock}
                 >
-                  Update Selected
+                  {t("reports:updateSelected", "Update Selected")}
                 </button>
               </div>
             )}

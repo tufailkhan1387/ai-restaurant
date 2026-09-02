@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
   Clock,
@@ -66,6 +67,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 }
 
 export default function MenuItemDetail() {
+  const { t } = useTranslation(["menu", "common"]);
   const { itemId } = useParams<{ itemId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -215,7 +217,7 @@ export default function MenuItemDetail() {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={item.is_available ? "default" : "secondary"}>
-            {item.is_available ? "Available" : "Unavailable"}
+            {item.is_available ? t("menu:available", "Available") : t("menu:unavailable", "Unavailable")}
           </Badge>
           <Button
             variant="outline"
@@ -223,7 +225,7 @@ export default function MenuItemDetail() {
             onClick={() => navigate(`/menu?tab=items&editItem=${item.id}`)}
           >
             <Pencil className="mr-1 h-4 w-4" />
-            Edit
+            {t("common:edit", "Edit")}
           </Button>
         </div>
       </div>
@@ -253,30 +255,45 @@ export default function MenuItemDetail() {
                 <span className="rounded-md border px-2 py-1">Spice {item.spice_level}/5</span>
               ) : null}
             </div>
-            <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => void copyId()}>
-              <Copy className="mr-1 h-3.5 w-3.5" />
-              Copy ID
-            </Button>
+
+            <div className="pt-2 border-t space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Item ID</span>
+              <div className="flex items-center justify-between gap-1.5 p-2 rounded-lg bg-muted/60 border font-mono text-xs text-foreground">
+                <span className="truncate flex-1 select-all font-mono" title={item.id}>
+                  {item.id}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  onClick={() => void copyId()}
+                  title="Copy Item ID"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <div className="space-y-6">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Overview</CardTitle>
+              <CardTitle className="text-base">{t("common:overview", "Overview")}</CardTitle>
             </CardHeader>
             <CardContent>
               <dl className="divide-y divide-border/60">
-                <DetailRow label="Description">
+                <DetailRow label={t("common:description", "Description")}>
                   {item.description?.trim() ? (
                     <p className="leading-relaxed whitespace-pre-wrap">{item.description}</p>
                   ) : (
                     <span className="text-muted-foreground">No description</span>
                   )}
                 </DetailRow>
-                <DetailRow label="Category">{categoryName || "Uncategorized"}</DetailRow>
-                <DetailRow label="Sub-category">{subCategoryName || "—"}</DetailRow>
-                <DetailRow label="Prep time">
+                <DetailRow label={t("menu:category", "Category")}>{categoryName || t("common:uncategorized", "Uncategorized")}</DetailRow>
+                <DetailRow label={t("menu:subCategory", "Sub-category")}>{subCategoryName || "—"}</DetailRow>
+                <DetailRow label={t("menu:preparationTime", "Prep time")}>
                   {item.prep_time_minutes != null ? `${item.prep_time_minutes} minutes` : "—"}
                 </DetailRow>
                 <DetailRow label="Dietary tags">
@@ -301,71 +318,94 @@ export default function MenuItemDetail() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Inventory & ordering</CardTitle>
+              <CardTitle className="text-base">{t("menu:tabInventory", "Inventory & ordering")}</CardTitle>
             </CardHeader>
             <CardContent>
               <dl className="divide-y divide-border/60">
-                <DetailRow label="Track inventory">{item.track_inventory ? "Yes" : "No"}</DetailRow>
-                <DetailRow label="Stock">
+                <DetailRow label={t("menu:trackStock", "Track inventory")}>{item.track_inventory ? t("common:yes", "Yes") : t("common:no", "No")}</DetailRow>
+                <DetailRow label={t("menu:stock", "Stock")}>
                   {item.track_inventory
                     ? item.stock_quantity != null
                       ? String(item.stock_quantity)
                       : "0"
                     : "Not tracked"}
                 </DetailRow>
-                <DetailRow label="Max per order">
+                <DetailRow label={t("menu:maxOrderQuantity", "Max per order")}>
                   {item.max_order_quantity != null ? String(item.max_order_quantity) : "No limit"}
                 </DetailRow>
               </dl>
             </CardContent>
           </Card>
 
+
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Layers className="h-4 w-4" />
-                Variants
+            <CardHeader className="pb-3 border-b">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <Layers className="h-4 w-4 text-primary" />
+                Sizes / Variants {variants.length > 0 ? `(${variants.length})` : ""}
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-4">
               {variants.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No variants for this item.</p>
+                <p className="text-sm text-muted-foreground">None (Standard single size)</p>
               ) : (
-                <ul className="divide-y divide-border/60">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {variants.map((v) => (
-                    <li key={v.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                      <span className={cn("font-medium", !v.is_active && "text-muted-foreground line-through")}>
-                        {v.name}
+                    <div
+                      key={v.id}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-xl border bg-muted/30 transition-all",
+                        !v.is_active && "opacity-60 bg-muted/60"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="font-bold text-xs">
+                          {v.name}
+                        </Badge>
+                        {!v.is_active && <span className="text-[10px] text-muted-foreground">(Inactive)</span>}
+                      </div>
+                      <span className="font-extrabold text-foreground tabular-nums text-sm">
+                        {formatCurrency(v.price)}
                       </span>
-                      <span className="font-semibold tabular-nums">{formatCurrency(v.price)}</span>
-                    </li>
+                    </div>
                   ))}
-                </ul>
+                </div>
               )}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Add-ons</CardTitle>
+            <CardHeader className="pb-3 border-b">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <Package className="h-4 w-4 text-primary" />
+                Sauces & Add-ons {addons.length > 0 ? `(${addons.length})` : ""}
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-4">
               {addons.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No add-ons linked to this item.</p>
+                <p className="text-sm text-muted-foreground">None</p>
               ) : (
-                <ul className="divide-y divide-border/60">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {addons.map((a) => (
-                    <li key={a.id} className="flex items-start justify-between gap-3 py-2.5 text-sm">
-                      <div className="min-w-0">
-                        <div className={cn("font-medium", !a.is_active && "text-muted-foreground")}>{a.name}</div>
-                        {a.description ? (
-                          <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{a.description}</p>
-                        ) : null}
+                    <div
+                      key={a.id}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-xl border bg-muted/30 transition-all",
+                        !a.is_active && "opacity-60 bg-muted/60"
+                      )}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="font-semibold text-sm text-foreground truncate">{a.name}</p>
+                        {a.description && (
+                          <p className="text-xs text-muted-foreground truncate">{a.description}</p>
+                        )}
                       </div>
-                      <span className="shrink-0 font-semibold tabular-nums">+{formatCurrency(a.price)}</span>
-                    </li>
+                      <span className="font-bold text-primary tabular-nums text-xs shrink-0">
+                        +{formatCurrency(a.price)}
+                      </span>
+                    </div>
                   ))}
-                </ul>
+                </div>
               )}
             </CardContent>
           </Card>

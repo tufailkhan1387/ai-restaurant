@@ -1,0 +1,82 @@
+name: Deploy to Webuzo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-webuzo
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build frontend
+        env:
+          # Set secret VITE_API_URL in GitHub, or this default is used
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: |
+          if [ -z "$VITE_API_URL" ]; then
+            export VITE_API_URL="https://airestaurantbackend.toolkitpro.cloud"
+          fi
+          echo "Building with VITE_API_URL=$VITE_API_URL"
+          npm run build
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config << EOF
+          Host webuzo
+            HostName ${{ secrets.SSH_HOST }}
+            User ${{ secrets.SSH_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Deploy frontend (dist → public_html/airestaurant)
+        run: |
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude '.env' \
+            dist/ webuzo:/home/limiria/public_html/airestaurant/
+
+      - name: Deploy backend (backend → public_html/airestaurantbackend)
+        run: |
+          rsync -avz --delete \
+            --exclude 'node_modules' \
+            --exclude '.env' \
+            --exclude 'uploads' \
+            --exclude 'backend_log.txt' \
+            --exclude 'scratch' \
+            backend/ webuzo:/home/limiria/public_html/airestaurantbackend/
+
+      - name: Install backend deps + restart
+        run: |
+          ssh webuzo 'bash -s' << 'EOF'
+          set -e
+          cd /home/limiria/public_html/airestaurantbackend
+          npm ci --omit=dev || npm install --omit=dev
+          # Passenger / Node selector restart (harmless if unused)
+          mkdir -p tmp
+          touch tmp/restart.txt
+          # If you use PM2, uncomment and set the app name:
+          # pm2 restart airestaurant-api || true
+          echo "Backend deploy finished at $(date -u)"
+          EOF

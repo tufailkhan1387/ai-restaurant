@@ -1,0 +1,17 @@
+{
+  "title": "Vehicles Fleet",
+  "subtitle": "Manage transport vehicles and delivery bikes",
+  "addVehicle": "Add Vehicle",
+  "editVehicle": "Edit Vehicle",
+  "deleteVehicle": "Delete Vehicle",
+  "plateNumber": "License Plate",
+  "vehicleType": "Vehicle Type",
+  "model": "Make / Model",
+  "color": "Color",
+  "assignedDriver": "Assigned Driver",
+  "bike": "Scooter / Motorcycle",
+  "car": "Car",
+  "van": "Van",
+  "bicycle": "Bicycle",
+  "noVehicles": "No vehicles registered"
+}

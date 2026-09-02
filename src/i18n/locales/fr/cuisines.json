@@ -1,0 +1,12 @@
+{
+  "title": "Cuisines",
+  "subtitle": "Gérez les types de cuisines et spécialités culinaires",
+  "addCuisine": "Ajouter une cuisine",
+  "editCuisine": "Modifier la cuisine",
+  "deleteCuisine": "Supprimer la cuisine",
+  "cuisineName": "Nom de la cuisine",
+  "cuisineImage": "Image illustrative",
+  "cuisineDescription": "Description",
+  "noCuisines": "Aucune cuisine trouvée",
+  "viewCuisines": "Voir les cuisines"
+}

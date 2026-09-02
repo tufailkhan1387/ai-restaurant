@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Royal Restaurant">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="32" y2="32">
+      <stop offset="0%" stop-color="#7a1e2e"/>
+      <stop offset="100%" stop-color="#3d0f18"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <path
+    fill="#f0d78c"
+    d="M16 6l2.5 5 2.5-3 2 6H9l2-6 2.5 3L16 6zm-8 14h16v3H8v-3zm0 5h16v2H8v-2z"
+  />
+</svg>

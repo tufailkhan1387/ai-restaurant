@@ -47,6 +47,8 @@ import {
   Banknote,
   CreditCard,
   Globe,
+  PackageCheck,
+  RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -534,21 +536,31 @@ export default function OrderDetail() {
         <CardContent className="p-6">
           <OrderFulfillmentTimeline order={order} history={history} />
 
-          {/* 6 Timestamps Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-7 pt-5 border-t border-border/50">
+          {/* 5 Timestamps Grid (Est. Delivery hidden) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-7 pt-5 border-t border-border/50">
             {[
-              { label: "Placed", value: fmtWhen(order.created_at) },
-              { label: "Verified", value: fmtWhen(order.verified_at) },
-              { label: "Driver Assigned", value: fmtWhen(order.assigned_at) },
-              { label: "Est. Delivery", value: fmtWhen(order.estimated_delivery_at) },
-              { label: "Delivered", value: fmtWhen(order.delivered_at) },
-              { label: "Last Updated", value: fmtWhen(order.updated_at) },
-            ].map((m) => (
-              <div key={m.label} className="p-3 rounded-xl bg-muted/30 border border-border/40">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{m.label}</p>
-                <p className="mt-1 text-xs font-semibold text-foreground leading-snug">{m.value}</p>
-              </div>
-            ))}
+              { label: "Placed", value: fmtWhen(order.created_at), icon: ShoppingBag, color: "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 border-blue-200/50" },
+              { label: "Verified", value: fmtWhen(order.verified_at), icon: CheckCircle2, color: "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200/50" },
+              { label: "Driver Assigned", value: fmtWhen(order.assigned_at), icon: Truck, color: "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border-amber-200/50" },
+              { label: "Delivered", value: fmtWhen(order.delivered_at), icon: PackageCheck, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200/50" },
+              { label: "Last Updated", value: fmtWhen(order.updated_at), icon: RefreshCw, color: "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/50 border-purple-200/50" },
+            ].map((m) => {
+              const Icon = m.icon;
+              return (
+                <div
+                  key={m.label}
+                  className="p-3.5 rounded-xl bg-card border border-border/60 hover:border-border transition-colors flex items-start gap-3 shadow-2xs"
+                >
+                  <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border", m.color)}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">{m.label}</p>
+                    <p className="mt-0.5 text-xs font-semibold text-foreground leading-snug truncate">{m.value}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

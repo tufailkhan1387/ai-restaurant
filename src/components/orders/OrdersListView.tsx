@@ -448,8 +448,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* 1. Food Category Filter (Most Left) */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Layers className="h-3.5 w-3.5 text-primary" />
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block leading-5">
                   {t("orders:category", "Category")}
                 </label>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -469,8 +468,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
 
               {/* 2. Date Filter */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-primary" />
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block leading-5">
                   {t("orders:dateRange", "Date Range")}
                 </label>
                 <Select value={datePreset} onValueChange={setDatePreset}>
@@ -491,8 +489,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
 
               {/* 3. Sort By */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <ArrowUpDown className="h-3.5 w-3.5 text-primary" />
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block leading-5">
                   {t("orders:sortBy", "Sort By")}
                 </label>
                 <Select value={sortBy} onValueChange={setSortBy}>
@@ -535,11 +532,11 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
 
             {/* Advanced / Secondary Filters Row */}
             {showAdvancedFilters && (
-              <div className="pt-3 border-t border-border/60 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-fade-in">
+              <div className="pt-3 border-t border-border/60 grid grid-cols-1 sm:grid-cols-3 gap-3 animate-fade-in">
                 {/* 5. Order Status (for all orders view) */}
                 {isAllOrdersPage && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block leading-5">
                       {t("common:status", "Order Status")}
                     </label>
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -560,46 +557,9 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                   </div>
                 )}
 
-                {/* 6. Payment Status Filter */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                    <DollarSign className="h-3.5 w-3.5 text-primary" />
-                    {t("orders:paymentStatus", "Payment Status")}
-                  </label>
-                  <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                    <SelectTrigger className="h-9.5">
-                      <SelectValue placeholder={t("orders:paymentStatus", "All Payment Statuses")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("common:all", "All Payment Statuses")}</SelectItem>
-                      <SelectItem value="paid">{t("orders:paid", "Paid")}</SelectItem>
-                      <SelectItem value="pending">{t("orders:unpaid", "Unpaid / Pending")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* 7. Payment Method Filter */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                    {t("orders:paymentMethod", "Payment Method")}
-                  </label>
-                  <Select value={paymentMethodFilter} onValueChange={setPaymentMethodFilter}>
-                    <SelectTrigger className="h-9.5">
-                      <SelectValue placeholder={t("orders:paymentMethod", "All Payment Methods")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("common:all", "All Payment Methods")}</SelectItem>
-                      <SelectItem value="cod">{t("orders:cashOnDelivery", "Cash on Delivery (COD)")}</SelectItem>
-                      <SelectItem value="card">{t("orders:creditCard", "Card / Stripe")}</SelectItem>
-                      <SelectItem value="wallet">Online / Wallet</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 {/* 8. Driver Filter */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                    <Truck className="h-3.5 w-3.5 text-primary" />
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block leading-5">
                     {t("drivers:title", "Rider / Driver")}
                   </label>
                   <Select value={driverFilter} onValueChange={setDriverFilter}>

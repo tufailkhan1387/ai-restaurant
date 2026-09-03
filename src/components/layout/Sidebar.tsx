@@ -183,23 +183,28 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     label,
     href,
     indent,
+    activeOverride,
   }: {
     icon: any;
     label: string;
     href: string;
     indent?: boolean;
+    activeOverride?: boolean;
   }) => {
-    const isActive = hrefIsActive(href);
+    const isActive = activeOverride !== undefined ? activeOverride : hrefIsActive(href);
     const content = (
       <Link
         to={href}
         className={cn(
-          "group relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+          "group relative flex items-center rounded-lg transition-colors duration-150 overflow-hidden",
           "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          collapsed
+            ? "h-10 w-10 mx-auto justify-center p-0"
+            : cn("gap-3 px-3 py-2.5 w-full", indent && "pl-9 py-2"),
           isActive &&
-            "bg-sidebar-primary/15 text-sidebar-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--sidebar-primary))]",
-          collapsed && "justify-center px-0",
-          indent && !collapsed && "pl-9 py-2"
+            (collapsed
+              ? "bg-sidebar-primary/20 text-sidebar-primary ring-1 ring-sidebar-primary/40 font-semibold"
+              : "bg-sidebar-primary/15 text-sidebar-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--sidebar-primary))]")
         )}
       >
         <Icon
@@ -209,7 +214,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
         />
         {!collapsed && (
-          <span className={cn("text-sm font-medium tracking-tight", isActive && "text-sidebar-accent-foreground")}>
+          <span className={cn("text-sm font-medium tracking-tight truncate whitespace-nowrap flex-1 text-left", isActive && "text-sidebar-accent-foreground")}>
             {label}
           </span>
         )}
@@ -219,7 +224,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       return (
         <Tooltip>
           <TooltipTrigger asChild>{content}</TooltipTrigger>
-          <TooltipContent side="right" className="ml-2">
+          <TooltipContent side="right" className="ml-2 font-medium text-xs">
             {label}
           </TooltipContent>
         </Tooltip>
@@ -245,7 +250,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       type="button"
       onClick={onToggleOpen}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 overflow-hidden",
         "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         active && !open && "bg-sidebar-accent text-sidebar-accent-foreground"
       )}
@@ -256,10 +261,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           active ? "text-sidebar-primary" : "text-sidebar-foreground/55"
         )}
       />
-      <span className="text-sm font-medium tracking-tight flex-1 text-left">{label}</span>
+      <span className="text-sm font-medium tracking-tight flex-1 text-left truncate whitespace-nowrap">{label}</span>
       <ChevronDown
         className={cn(
-          "h-4 w-4 text-sidebar-foreground/40 transition-transform duration-200",
+          "h-4 w-4 text-sidebar-foreground/40 transition-transform duration-200 flex-shrink-0",
           open && "rotate-180"
         )}
       />
@@ -279,8 +284,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 h-screen bg-sidebar text-sidebar-foreground flex flex-col transition-all duration-300 z-40",
-        "border-r border-sidebar-border",
+        "fixed left-0 top-0 h-screen bg-sidebar text-sidebar-foreground flex flex-col transition-[width] duration-300 ease-in-out z-40 overflow-hidden",
+        "border-r border-sidebar-border select-none",
         collapsed ? "w-16" : "w-64"
       )}
     >
@@ -292,56 +297,63 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               "radial-gradient(ellipse 80% 120% at 0% 0%, hsl(168 65% 48% / 0.22), transparent 55%)",
           }}
         />
-        <div className="relative h-16 flex items-center justify-between px-3.5">
-          {!collapsed ? (
-            <>
-              <div className="flex items-center gap-2.5 overflow-hidden min-w-0 pr-2">
-                <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20">
-                  <LogoIcon className="h-5 w-5 text-primary-foreground" />
-                </div>
-                <span className="font-bold text-[15px] tracking-tight text-sidebar-accent-foreground truncate">
-                  {role === "super_admin" ? "Super Admin" : (restaurantName || "Royal Restaurant")}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggle}
-                className="h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex-shrink-0 rounded-lg"
-                title={t("sidebar:collapse", "Collapse sidebar")}
-                aria-label="Collapse sidebar"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-            </>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={onToggle}
-                  className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center mx-auto shadow-lg shadow-black/20 hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-primary"
-                  title={t("sidebar:expand", "Expand sidebar")}
-                  aria-label="Expand sidebar"
-                >
-                  <LogoIcon className="h-5 w-5 text-primary-foreground" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="ml-2">
-                <p className="font-medium">{role === "super_admin" ? "Super Admin" : (restaurantName || "Royal Restaurant")}</p>
-                <p className="text-[11px] text-muted-foreground">{t("sidebar:expand", "Click to expand")}</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
+        <div className="relative h-16 flex items-center px-3.5 overflow-hidden">
+          <div className="flex items-center gap-2.5 overflow-hidden min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={collapsed ? onToggle : undefined}
+              className={cn(
+                "w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20 focus:outline-none",
+                collapsed ? "cursor-pointer hover:opacity-90 focus-visible:ring-2 focus-visible:ring-sidebar-primary" : "cursor-default"
+              )}
+              title={collapsed ? t("sidebar:expand", "Click to expand") : undefined}
+              aria-label={collapsed ? "Expand sidebar" : "Sidebar logo"}
+            >
+              <LogoIcon className="h-5 w-5 text-primary-foreground" />
+            </button>
+            <span
+              className={cn(
+                "font-bold text-[15px] tracking-tight text-sidebar-accent-foreground truncate whitespace-nowrap transition-opacity duration-200",
+                collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
+              )}
+            >
+              {role === "super_admin" ? "Super Admin" : (restaurantName || "Royal Restaurant")}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className={cn(
+              "h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex-shrink-0 rounded-lg transition-opacity duration-200",
+              collapsed ? "opacity-0 pointer-events-none hidden" : "opacity-100"
+            )}
+            title={t("sidebar:collapse", "Collapse sidebar")}
+            aria-label="Collapse sidebar"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
-      <nav className="flex-1 py-3 px-2.5 space-y-1 overflow-y-auto custom-scrollbar">
+      <nav
+        className={cn(
+          "flex-1 py-3 space-y-1 overflow-y-auto overflow-x-hidden",
+          collapsed
+            ? "px-2 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            : "px-2.5 custom-scrollbar"
+        )}
+      >
         <div className="space-y-0.5">
           <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
 
           {collapsed ? (
-            usersChildren.map((item) => <NavItem key={item.href} {...item} />)
+            <NavItem
+              icon={Users}
+              label={t("sidebar:users", "Users")}
+              href="/users/customers"
+              activeOverride={usersGroupActive}
+            />
           ) : (
             <div className="space-y-0.5">
               <GroupButton
@@ -362,7 +374,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
 
           {collapsed ? (
-            <NavItem icon={ClipboardList} label={t("sidebar:orders", "Orders")} href="/orders" />
+            <NavItem
+              icon={ClipboardList}
+              label={t("sidebar:orders", "Orders")}
+              href="/orders"
+              activeOverride={ordersGroupActive}
+            />
           ) : (
             <>
               <GroupButton
@@ -384,7 +401,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
 
           {collapsed ? (
-            menuChildren.map((item) => <NavItem key={item.href} {...item} />)
+            <NavItem
+              icon={UtensilsCrossed}
+              label={t("sidebar:menu", "Menu")}
+              href="/menu"
+              activeOverride={menuGroupActive}
+            />
           ) : (
             <>
               <GroupButton
@@ -412,7 +434,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
 
         {collapsed ? (
-          reportsChildren.map((item) => <NavItem key={item.href} {...item} />)
+          <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">
+            <NavItem
+              icon={FileBarChart}
+              label={t("sidebar:reports", "Reports")}
+              href="/reports/restaurant"
+              activeOverride={reportsGroupActive}
+            />
+          </div>
         ) : (
           <div className="pt-4 mt-3 border-t border-sidebar-border">
             <GroupButton
@@ -432,33 +461,33 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         )}
 
-        {!collapsed && (
-          <div className="pt-4 mt-3 border-t border-sidebar-border space-y-0.5">
+        <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
+          {!collapsed && (
             <p className="px-3 text-[10px] font-bold text-sidebar-foreground/35 uppercase tracking-[0.16em] mb-2">
               {t("sidebar:management", "Management")}
             </p>
-            {finalManagement.map((item) => (
-              <NavItem key={item.href} {...item} />
-            ))}
-          </div>
-        )}
+          )}
+          {finalManagement.map((item) => (
+            <NavItem key={item.href} {...item} />
+          ))}
+        </div>
       </nav>
 
       {!collapsed && (
-        <div className="p-3 border-t border-sidebar-border">
-          <div className="rounded-xl bg-sidebar-accent/80 border border-sidebar-border p-3">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10 ring-2 ring-sidebar-primary/30">
+        <div className="p-3 border-t border-sidebar-border overflow-hidden">
+          <div className="rounded-xl bg-sidebar-accent/80 border border-sidebar-border p-3 overflow-hidden">
+            <div className="flex items-center gap-3 min-w-0">
+              <Avatar className="h-10 w-10 ring-2 ring-sidebar-primary/30 flex-shrink-0">
                 <AvatarImage src={profile?.avatar_url || undefined} />
                 <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-sm font-semibold">
                   {initial}
                 </AvatarFallback>
               </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-sidebar-accent-foreground truncate leading-tight">
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <p className="text-sm font-semibold text-sidebar-accent-foreground truncate whitespace-nowrap leading-tight">
                   {displayName}
                 </p>
-                <p className="text-xs text-sidebar-foreground/50 capitalize">({roleLabel})</p>
+                <p className="text-xs text-sidebar-foreground/50 capitalize truncate whitespace-nowrap">({roleLabel})</p>
               </div>
             </div>
           </div>

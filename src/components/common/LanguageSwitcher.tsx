@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { changeAppLanguage } from "@/i18n";
 import { SUPPORTED_LANGUAGES, getActiveLanguage } from "@/i18n/formatters";
@@ -40,9 +41,12 @@ export function LanguageSwitcher({
       title={`Current: ${currentLangObj.name}. Click to switch to ${currentLang === "fr" ? "English" : "Français"}`}
       aria-label="Toggle Language"
     >
-      <span className="font-semibold text-foreground text-xs sm:text-sm">
-        {currentLangObj.name}
-      </span>
+      <Globe className="h-4 w-4 text-primary shrink-0" />
+      {showLabel && (
+        <span className="font-semibold text-foreground text-xs sm:text-sm">
+          {currentLangObj.name}
+        </span>
+      )}
     </Button>
   );
 }

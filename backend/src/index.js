@@ -92,7 +92,7 @@ async function start() {
     console.warn("DATABASE_URL not set — skipping migrations.");
   }
 
-  app.listen(PORT, () => {
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`API listening on http://127.0.0.1:${PORT}`);
   });
 }

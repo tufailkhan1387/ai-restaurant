@@ -1,4 +1,13 @@
-import { Check, Circle, X } from "lucide-react";
+import {
+  Check,
+  X,
+  ShoppingBag,
+  CheckCircle2,
+  ChefHat,
+  UtensilsCrossed,
+  Truck,
+  PackageCheck,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   ORDER_FULFILLMENT_FLOW,
@@ -22,6 +31,16 @@ export type TimelineOrderSnap = {
   delivered_at: string | null;
 };
 
+const STEP_ICONS: Record<string, any> = {
+  pending: ShoppingBag,
+  confirmed: CheckCircle2,
+  preparing: ChefHat,
+  ready: UtensilsCrossed,
+  assigned: Truck,
+  out_for_delivery: Truck,
+  delivered: PackageCheck,
+};
+
 function firstHistoryAt(history: TimelineHistoryRow[], status: string): TimelineHistoryRow | null {
   const hits = history.filter((h) => h.status === status);
   if (hits.length === 0) return null;
@@ -38,12 +57,29 @@ function timestampForStep(
   if (step === "pending") return order.created_at;
   if (step === "confirmed") return order.verified_at;
   if (step === "assigned") return order.assigned_at;
+  if (step === "out_for_delivery" && order.assigned_at) return order.assigned_at;
   if (step === "delivered") return order.delivered_at;
   return null;
 }
 
 function notesForStep(step: OrderStatus, history: TimelineHistoryRow[]): string | null {
   return firstHistoryAt(history, step)?.notes ?? null;
+}
+
+function formatStepTime(iso: string | null): { time: string; date: string } | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { time: iso, date: "" };
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const date = d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  return { time, date };
 }
 
 function fmtWhen(iso: string | null): string {
@@ -81,28 +117,29 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
   const cancelled = st === "cancelled";
   const flowIdx = cancelled ? -1 : ORDER_FULFILLMENT_FLOW.indexOf(st);
   const assignedHidden = rawStatus === "assigned";
+  const isDelivered = st === "delivered";
 
   if (cancelled) {
     return (
-      <div className={cn("rounded-lg border border-red-200 bg-red-50 px-4 py-4", className)}>
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
-            <X className="h-4 w-4" />
+      <div className={cn("rounded-xl border border-red-200/80 bg-red-50/60 dark:bg-red-950/20 px-5 py-4", className)}>
+        <div className="flex items-start gap-3.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 shadow-sm">
+            <X className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-semibold text-red-900">{t("orders:orderCancelledAt", "Order cancelled")}</p>
-            <p className="text-sm text-red-700/80 mt-0.5">
+            <p className="font-bold text-red-900 dark:text-red-300">{t("orders:orderCancelledAt", "Order cancelled")}</p>
+            <p className="text-xs text-red-700/80 dark:text-red-400/80 mt-0.5">
               {t("orders:orderCancelledAt", "Fulfillment stopped.")}
             </p>
             {history.length > 0 && (
-              <ol className="mt-4 space-y-3 border-l-2 border-red-200 ml-1.5 pl-4">
+              <ol className="mt-4 space-y-3 border-l-2 border-red-200 dark:border-red-900/60 ml-2 pl-4">
                 {history.map((h) => (
                   <li key={h.id}>
-                    <p className="text-sm font-medium text-red-900 capitalize">
+                    <p className="text-xs font-semibold text-red-900 dark:text-red-300 capitalize">
                       {getOrderStatusLabel(h.status, t)}
                     </p>
-                    <p className="text-xs text-red-700/70">{fmtWhen(h.created_at)}</p>
-                    {h.notes && <p className="text-xs text-red-800/80 mt-0.5">{h.notes}</p>}
+                    <p className="text-[11px] text-red-700/70 dark:text-red-400/70">{fmtWhen(h.created_at)}</p>
+                    {h.notes && <p className="text-xs text-red-800/80 dark:text-red-300/80 mt-0.5">{h.notes}</p>}
                   </li>
                 ))}
               </ol>
@@ -115,113 +152,188 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
 
   return (
     <div className={cn(className)}>
-      {/* Desktop: horizontal stepper */}
+      {/* Desktop: Modern horizontal stepper */}
       <ol
         className={cn(
           orientation === "vertical" ? "hidden" : "hidden lg:grid",
-          "grid-cols-6 gap-0",
+          "grid-cols-6 gap-2",
         )}
       >
         {ORDER_FULFILLMENT_FLOW.map((step, idx) => {
-          const done = flowIdx >= 0 && (assignedHidden ? idx <= flowIdx : idx < flowIdx);
-          const active = flowIdx >= 0 && !assignedHidden && idx === flowIdx;
+          const done = flowIdx >= 0 && (isDelivered || assignedHidden ? idx <= flowIdx : idx < flowIdx);
+          const active = !isDelivered && flowIdx >= 0 && !assignedHidden && idx === flowIdx;
           const when = timestampForStep(step, order, history);
+          const formatted = formatStepTime(when);
           const notes = notesForStep(step, history);
+          const StepIcon = STEP_ICONS[step] || ShoppingBag;
+
           return (
             <li key={step} className="relative flex flex-col items-center text-center px-1">
+              {/* Connecting Bar */}
               {idx < ORDER_FULFILLMENT_FLOW.length - 1 && (
                 <div
                   className={cn(
-                    "absolute top-4 left-[calc(50%+16px)] right-[calc(-50%+16px)] h-0.5",
-                    done || active ? "bg-primary" : "bg-zinc-200",
-                    done && "bg-emerald-500",
+                    "absolute top-5 left-[calc(50%+22px)] right-[calc(-50%+22px)] h-[3px] rounded-full transition-colors duration-300",
+                    done
+                      ? "bg-emerald-500"
+                      : active
+                        ? "bg-gradient-to-r from-orange-500 to-border/70"
+                        : "bg-muted dark:bg-muted/40",
                   )}
                   aria-hidden
                 />
               )}
+
+              {/* Node Circle */}
               <div
                 className={cn(
-                  "relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-semibold",
-                  done && "border-emerald-500 bg-emerald-500 text-white",
-                  active && "border-primary bg-primary text-white ring-4 ring-primary/15",
-                  !done && !active && "border-zinc-300 bg-white text-zinc-400",
+                  "relative z-10 flex h-10 w-10 items-center justify-center rounded-xl border-2 transition-all duration-300",
+                  done &&
+                    "border-emerald-500 bg-emerald-500 text-white shadow-md shadow-emerald-500/25 ring-4 ring-emerald-50 dark:ring-emerald-950/40",
+                  active &&
+                    "border-primary bg-primary text-white shadow-lg shadow-primary/30 ring-4 ring-primary/20 scale-105",
+                  !done &&
+                    !active &&
+                    "border-border/70 bg-card text-muted-foreground/50 shadow-2xs",
                 )}
               >
-                {done ? <Check className="h-4 w-4" /> : idx + 1}
+                {done ? (
+                  <Check className="h-5 w-5 stroke-[2.5]" />
+                ) : (
+                  <StepIcon className="h-4.5 w-4.5" />
+                )}
               </div>
+
+              {/* Step Title */}
               <p
                 className={cn(
-                  "mt-2.5 text-xs font-semibold leading-tight",
-                  done || active ? "text-zinc-900" : "text-zinc-400",
+                  "mt-3 text-xs sm:text-[13px] font-bold tracking-tight leading-tight",
+                  done
+                    ? "text-foreground"
+                    : active
+                      ? "text-primary"
+                      : "text-muted-foreground/70",
                 )}
               >
                 {getOrderStatusLabel(step, t)}
               </p>
-              {when ? (
-                <p className="mt-1 text-[11px] text-zinc-500 leading-snug">{fmtWhen(when)}</p>
+
+              {/* Step Time / Badge */}
+              {formatted ? (
+                <div className="mt-1.5 flex flex-col items-center">
+                  <span className="text-xs font-semibold text-foreground leading-snug">
+                    {formatted.time}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-medium leading-tight">
+                    {formatted.date}
+                  </span>
+                </div>
+              ) : done ? (
+                <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200/60 shadow-2xs">
+                  <Check className="h-2.5 w-2.5" />
+                  {t("common:completed", "Completed")}
+                </span>
+              ) : active ? (
+                <span className="mt-1.5 inline-flex items-center gap-1.5 text-[10px] font-bold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full border border-primary/25 shadow-2xs animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  {t("orders:inProgress", "In progress")}
+                </span>
               ) : (
-                <p className="mt-1 text-[11px] text-zinc-300">{t("orders:pending", "Pending")}</p>
+                <span className="mt-1.5 text-[11px] font-medium text-muted-foreground/45">
+                  {t("orders:pending", "Pending")}
+                </span>
               )}
-              {notes && <p className="mt-1 text-[10px] text-zinc-500 line-clamp-2 max-w-[110px]">{notes}</p>}
+
+              {/* Notes */}
+              {notes && (
+                <p className="mt-1 text-[10px] text-muted-foreground bg-muted/40 border border-border/40 rounded-md px-2 py-0.5 line-clamp-2 max-w-[110px]">
+                  {notes}
+                </p>
+              )}
             </li>
           );
         })}
       </ol>
 
-      {/* Mobile / vertical */}
+      {/* Mobile: Modern vertical stepper */}
       <ol className={cn(orientation === "vertical" ? "block" : "lg:hidden", "space-y-0")}>
         {ORDER_FULFILLMENT_FLOW.map((step, idx) => {
-          const done = flowIdx >= 0 && (assignedHidden ? idx <= flowIdx : idx < flowIdx);
-          const active = flowIdx >= 0 && !assignedHidden && idx === flowIdx;
+          const done = flowIdx >= 0 && (isDelivered || assignedHidden ? idx <= flowIdx : idx < flowIdx);
+          const active = !isDelivered && flowIdx >= 0 && !assignedHidden && idx === flowIdx;
           const when = timestampForStep(step, order, history);
+          const formatted = formatStepTime(when);
           const notes = notesForStep(step, history);
           const isLast = idx === ORDER_FULFILLMENT_FLOW.length - 1;
+          const StepIcon = STEP_ICONS[step] || ShoppingBag;
+
           return (
-            <li key={step} className="flex gap-3">
+            <li key={step} className="flex gap-3.5">
               <div className="flex flex-col items-center">
                 <div
                   className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2",
-                    done && "border-emerald-500 bg-emerald-500 text-white",
-                    active && "border-primary bg-primary text-white ring-4 ring-primary/15",
-                    !done && !active && "border-zinc-300 bg-white text-zinc-400",
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 transition-all",
+                    done &&
+                      "border-emerald-500 bg-emerald-500 text-white shadow-sm shadow-emerald-500/20 ring-3 ring-emerald-50 dark:ring-emerald-950/40",
+                    active &&
+                      "border-primary bg-primary text-white shadow-md shadow-primary/25 ring-3 ring-primary/20",
+                    !done &&
+                      !active &&
+                      "border-border/70 bg-card text-muted-foreground/50",
                   )}
                 >
                   {done ? (
-                    <Check className="h-4 w-4" />
-                  ) : active ? (
-                    <Circle className="h-3 w-3 fill-current" />
+                    <Check className="h-4.5 w-4.5 stroke-[2.5]" />
                   ) : (
-                    <span className="text-xs font-semibold">{idx + 1}</span>
+                    <StepIcon className="h-4 w-4" />
                   )}
                 </div>
                 {!isLast && (
                   <div
-                    className={cn("w-0.5 flex-1 min-h-[28px]", done ? "bg-emerald-400" : "bg-zinc-200")}
+                    className={cn(
+                      "w-[2.5px] flex-1 min-h-[30px] rounded-full my-1",
+                      done ? "bg-emerald-500" : "bg-border/60",
+                    )}
                     aria-hidden
                   />
                 )}
               </div>
               <div className={cn("pb-5 min-w-0 flex-1", isLast && "pb-0")}>
-                <p
-                  className={cn(
-                    "text-sm font-semibold",
-                    done || active ? "text-zinc-900" : "text-zinc-400",
-                  )}
-                >
-                  {getOrderStatusLabel(step, t)}
-                  {active && (
-                    <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-primary">
-                      {t("common:active", "Current")}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p
+                    className={cn(
+                      "text-sm font-bold",
+                      done
+                        ? "text-foreground"
+                        : active
+                          ? "text-primary"
+                          : "text-muted-foreground/70",
+                    )}
+                  >
+                    {getOrderStatusLabel(step, t)}
+                  </p>
+                  {formatted ? (
+                    <span className="text-xs font-semibold text-foreground">
+                      {formatted.time} <span className="text-muted-foreground font-normal">({formatted.date})</span>
+                    </span>
+                  ) : done ? (
+                    <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+                      {t("common:completed", "Completed")}
+                    </span>
+                  ) : active ? (
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2.5 py-0.5 rounded-full border border-primary/25">
+                      {t("orders:inProgress", "In progress")}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/50">
+                      {t("orders:pending", "Pending")}
                     </span>
                   )}
-                </p>
-                {when ? (
-                  <p className="text-xs text-zinc-500 mt-0.5">{fmtWhen(when)}</p>
-                ) : (
-                  <p className="text-xs text-zinc-400 mt-0.5">{t("orders:pending", "Pending")}</p>
+                </div>
+                {notes && (
+                  <p className="text-xs text-muted-foreground mt-1 bg-muted/40 border border-border/40 rounded-md px-2.5 py-1">
+                    {notes}
+                  </p>
                 )}
-                {notes && <p className="text-xs text-zinc-600 mt-1 bg-zinc-50 border border-zinc-200 rounded-md px-2 py-1">{notes}</p>}
               </div>
             </li>
           );

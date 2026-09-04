@@ -126,13 +126,13 @@ function fmtWhen(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime())
     ? iso
     : d.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
 }
 
 function getItemImage(name: string, imageUrl?: string | null): string {
@@ -409,8 +409,8 @@ export default function OrderDetail() {
                     st === "delivered"
                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
                       : st === "ready"
-                      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400"
-                      : "bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400"
+                        : "bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400"
                   )}
                 >
                   {getOrderStatusLabel(st, t)}
@@ -747,9 +747,9 @@ export default function OrderDetail() {
               {/* Customer Footer */}
               <div className="flex items-center justify-between pt-3 border-t border-border/40 text-xs text-muted-foreground">
                 <span>Customer Since: {formatDate(order.created_at, { month: "short", day: "numeric", year: "numeric" })}</span>
-                <span className="font-semibold text-foreground hover:text-primary cursor-pointer flex items-center gap-0.5">
+                {/* <span className="font-semibold text-foreground hover:text-primary cursor-pointer flex items-center gap-0.5">
                   View Customer Profile <ChevronRight className="h-3.5 w-3.5" />
-                </span>
+                </span> */}
               </div>
             </CardContent>
           </Card>

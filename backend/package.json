@@ -7,13 +7,14 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "db:migrate": "node scripts/migrate.js",
-    "db:seed:admin": "node scripts/create-super-admin.js",
+    "db:seed:admin": "node scripts/seed-admin.js",
+    "seed:admin": "node scripts/seed-admin.js",
+    "seed:super-admin": "node scripts/seed-admin.js",
     "db:seed": "node scripts/seed-dashboard.js",
     "db:seed:restaurant": "node scripts/seed-restaurant.js",
     "db:seed:cuisines": "node scripts/seed-cuisines.js",
     "db:seed:royal": "node scripts/seed-royal-admin.js",
-    "db:setup": "npm run db:migrate && npm run db:seed:admin && npm run db:seed:cuisines && npm run db:seed:restaurant && npm run db:seed:royal",
-    "seed:super-admin": "npm run db:seed:admin"
+    "db:setup": "npm run db:migrate && npm run db:seed:admin && npm run db:seed:cuisines && npm run db:seed:restaurant && npm run db:seed:royal"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

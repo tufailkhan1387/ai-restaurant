@@ -105,6 +105,10 @@ jobs:
           # Prefer full install so new deps (pm2) land even if lock is stale
           npm install --omit=dev
 
+          # Run migrations and seed admin user
+          node scripts/migrate.js || true
+          node scripts/seed-admin.js || true
+
           # Use local pm2 only (parent public_html has a broken pm2 on PATH)
           PM2="./node_modules/.bin/pm2"
           if [ ! -x "$PM2" ]; then

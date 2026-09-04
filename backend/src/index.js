@@ -1,6 +1,7 @@
 import { envFilePath } from "./loadEnv.js";
 import express from "express";
 import { runMigrations } from "./db/runMigrations.js";
+import { seedAdminUser } from "./db/seedAdmin.js";
 import cors from "cors";
 import authRoutes from "./routes/auth.js";
 import queryRoutes from "./routes/query.js";
@@ -84,6 +85,7 @@ async function start() {
     try {
       const count = await runMigrations(process.env.DATABASE_URL);
       console.log(`Database migrations ok (${count} file(s)).`);
+      await seedAdminUser(process.env.DATABASE_URL);
     } catch (err) {
       console.error("Database migration failed:", err.message || err);
       process.exit(1);

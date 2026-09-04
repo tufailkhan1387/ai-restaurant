@@ -1,7 +1,3 @@
-/**
- * Creates or updates the super admin user.
- * Delegates to seedAdminUser in src/db/seedAdmin.js.
- */
 import "../src/loadEnv.js";
 import { seedAdminUser } from "../src/db/seedAdmin.js";
 
@@ -12,13 +8,14 @@ async function main() {
     process.exit(1);
   }
 
+  console.log("Seeding admin user (admin@admin.com)...");
   const result = await seedAdminUser(url);
   if (result) {
-    console.log("Super admin seeded:", result);
+    console.log("Admin seeded successfully:", result);
   }
 }
 
 main().catch((err) => {
-  console.error("Super admin seed failed:", err.message || err);
+  console.error("Admin seed failed:", err.message || err);
   process.exit(1);
 });

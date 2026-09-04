@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ActiveRestaurantProvider } from "@/hooks/useActiveRestaurant";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import Login from "@/pages/Login";
@@ -57,76 +58,78 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/track/:code" element={<Track />} />
-            <Route path="/order" element={<Order />} />
-            <Route
-              path="/driver"
-              element={
-                <ProtectedRoute>
-                  <DriverPortal />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <DashboardLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<Dashboard />} />
-              <Route path="calls" element={<Calls />} />
-              
-              <Route path="customers" element={<Navigate to="/users/customers" replace />} />
-              <Route path="users" element={<Navigate to="/users/team-members" replace />} />
-              <Route path="users/customers" element={<Customers />} />
-              <Route path="users/team-members" element={<TeamMembersPage />} />
-              <Route path="users/restaurant-owners" element={<Navigate to="/users/team-members" replace />} />
-              <Route path="leads" element={<Leads />} />
-              <Route path="agents" element={<Agents />} />
-              <Route path="analytics" element={<Analytics />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="integrations" element={<IntegrationConfig />} />
-              <Route path="outbound" element={<OutboundCalls />} />
-              <Route path="auto-dialer" element={<AutoDialer />} />
-              <Route path="live-queue" element={<LiveQueue />} />
-              <Route path="menu" element={<Menu />} />
-              <Route path="menu/items/:itemId" element={<MenuItemDetail />} />
-              <Route path="inventory" element={<Menu />} />
-              <Route path="deals" element={<Deals />} />
-              <Route path="orders" element={<Orders />} />
-              <Route path="orders/new" element={<OrdersNew />} />
-              <Route path="orders/confirmed" element={<OrdersConfirmed />} />
-              <Route path="orders/preparing" element={<OrdersPreparing />} />
-              <Route path="orders/out-for-delivery" element={<OrdersOutForDelivery />} />
-              <Route path="orders/delivered" element={<OrdersDelivered />} />
-              <Route path="orders/:orderId" element={<OrderDetail />} />
-              <Route path="vehicles" element={<Vehicles />} />
-              <Route path="drivers" element={<Drivers />} />
-              <Route path="restaurant-settings" element={<RestaurantSettings />} />
-              <Route path="restaurants" element={<Restaurants />} />
-              <Route path="restaurants/:id/details" element={<RestaurantDetails />} />
-              <Route path="restaurants/:id/configuration" element={<RestaurantConfiguration />} />
-              <Route path="earnings" element={<Earnings />} />
-              <Route path="reports" element={<Navigate to="/reports/restaurant" replace />} />
-              <Route path="reports/restaurant" element={<RestaurantReportPage />} />
-              <Route path="reports/items" element={<ItemReportPage />} />
-              <Route path="reports/best-sellers" element={<BestSellersReportPage />} />
-              <Route path="reports/inventory" element={<InventoryReportPage />} />
-              <Route path="reports/customers" element={<CustomerAnalyticsPage />} />
-              <Route path="coupons" element={<Coupons />} />
-              <Route path="cuisines" element={<Cuisines />} />
-              <Route path="profile" element={<Profile />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+        <ActiveRestaurantProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/track/:code" element={<Track />} />
+              <Route path="/order" element={<Order />} />
+              <Route
+                path="/driver"
+                element={
+                  <ProtectedRoute>
+                    <DriverPortal />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <DashboardLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Dashboard />} />
+                <Route path="calls" element={<Calls />} />
+                
+                <Route path="customers" element={<Navigate to="/users/customers" replace />} />
+                <Route path="users" element={<Navigate to="/users/team-members" replace />} />
+                <Route path="users/customers" element={<Customers />} />
+                <Route path="users/team-members" element={<TeamMembersPage />} />
+                <Route path="users/restaurant-owners" element={<Navigate to="/users/team-members" replace />} />
+                <Route path="leads" element={<Leads />} />
+                <Route path="agents" element={<Agents />} />
+                <Route path="analytics" element={<Analytics />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="integrations" element={<IntegrationConfig />} />
+                <Route path="outbound" element={<OutboundCalls />} />
+                <Route path="auto-dialer" element={<AutoDialer />} />
+                <Route path="live-queue" element={<LiveQueue />} />
+                <Route path="menu" element={<Menu />} />
+                <Route path="menu/items/:itemId" element={<MenuItemDetail />} />
+                <Route path="inventory" element={<Menu />} />
+                <Route path="deals" element={<Deals />} />
+                <Route path="orders" element={<Orders />} />
+                <Route path="orders/new" element={<OrdersNew />} />
+                <Route path="orders/confirmed" element={<OrdersConfirmed />} />
+                <Route path="orders/preparing" element={<OrdersPreparing />} />
+                <Route path="orders/out-for-delivery" element={<OrdersOutForDelivery />} />
+                <Route path="orders/delivered" element={<OrdersDelivered />} />
+                <Route path="orders/:orderId" element={<OrderDetail />} />
+                <Route path="vehicles" element={<Vehicles />} />
+                <Route path="drivers" element={<Drivers />} />
+                <Route path="restaurant-settings" element={<RestaurantSettings />} />
+                <Route path="restaurants" element={<Restaurants />} />
+                <Route path="restaurants/:id/details" element={<RestaurantDetails />} />
+                <Route path="restaurants/:id/configuration" element={<RestaurantConfiguration />} />
+                <Route path="earnings" element={<Earnings />} />
+                <Route path="reports" element={<Navigate to="/reports/restaurant" replace />} />
+                <Route path="reports/restaurant" element={<RestaurantReportPage />} />
+                <Route path="reports/items" element={<ItemReportPage />} />
+                <Route path="reports/best-sellers" element={<BestSellersReportPage />} />
+                <Route path="reports/inventory" element={<InventoryReportPage />} />
+                <Route path="reports/customers" element={<CustomerAnalyticsPage />} />
+                <Route path="coupons" element={<Coupons />} />
+                <Route path="cuisines" element={<Cuisines />} />
+                <Route path="profile" element={<Profile />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </ActiveRestaurantProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>

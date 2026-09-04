@@ -72,6 +72,8 @@ interface RestaurantOption {
 export default function TeamMembersPage() {
   const { t } = useTranslation(["users", "common", "settings"]);
   const { toast } = useToast();
+  const { role: authRole } = useAuth();
+  const isSuperAdmin = authRole === "super_admin";
   const { restaurantId: activeRestaurantId } = useActiveRestaurant();
 
   const [members, setMembers] = useState<TeamMemberRow[]>([]);
@@ -100,6 +102,8 @@ export default function TeamMembersPage() {
 
       if (activeRestaurantId) {
         membersQuery = membersQuery.eq("restaurant_id", activeRestaurantId);
+      } else if (!isSuperAdmin) {
+        membersQuery = membersQuery.eq("restaurant_id", "00000000-0000-0000-0000-000000000000");
       }
 
       const { data: mData, error: mErr } = await membersQuery;
@@ -108,7 +112,6 @@ export default function TeamMembersPage() {
 
       // 2. Fetch profiles, restaurants, and user_roles in parallel
       const userIds = [...new Set(mRows.map((m) => m.user_id).filter(Boolean))];
-      const restIds = [...new Set(mRows.map((m) => m.restaurant_id).filter(Boolean))];
 
       const [{ data: pData }, { data: rData }, { data: rolesData }] = await Promise.all([
         userIds.length > 0
@@ -422,6 +425,27 @@ export default function TeamMembersPage() {
                 />
               </div>
 
+              {/* Assign to Restaurant (Visible for Super Admin when not pre-scoped) */}
+              {isSuperAdmin && !activeRestaurantId && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">
+                    {t("users:restaurant", "Assign To Restaurant")} <span className="text-destructive">*</span>
+                  </Label>
+                  <Select value={targetRestaurantId} onValueChange={setTargetRestaurantId}>
+                    <SelectTrigger className="rounded-xl text-xs">
+                      <SelectValue placeholder="Select a restaurant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {restaurants.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">
                   {t("users:role", "Member Role & Permissions")}
@@ -460,7 +484,7 @@ export default function TeamMembersPage() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-card p-4 rounded-2xl border border-border/70 shadow-xs">
+      <div className="bg-card p-4 rounded-2xl border border-border/70 shadow-xs flex flex-col sm:flex-row items-center gap-3 justify-between">
         <div className="relative w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -470,6 +494,25 @@ export default function TeamMembersPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
+
+        {/* Multi-restaurant filter for Super Admin in global mode */}
+        {isSuperAdmin && !activeRestaurantId && (
+          <div className="w-full sm:w-64">
+            <Select value={selectedRestaurantFilter} onValueChange={setSelectedRestaurantFilter}>
+              <SelectTrigger className="rounded-xl text-xs h-9.5">
+                <SelectValue placeholder="All Restaurants" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Restaurants ({restaurants.length})</SelectItem>
+                {restaurants.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Table Card */}

@@ -28,8 +28,11 @@ import {
   ArrowUpDown,
   DollarSign,
   X,
+  Store,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { cn } from "@/lib/utils";
 import {
   ORDER_STATUS_COLORS,
@@ -103,6 +106,9 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
   const { t } = useTranslation(["orders", "common"]);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { restaurantId } = useActiveRestaurant();
+  const { role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
 
   // Raw data
   const [orders, setOrders] = useState<Order[]>([]);
@@ -110,6 +116,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItemRecord[]>([]);
+  const [restaurantsMap, setRestaurantsMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   // Filter States
@@ -139,13 +146,19 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
       .limit(300);
 
     if (statuses) q = q.in("status", statuses);
+    if (restaurantId) {
+      q = q.eq("restaurant_id", restaurantId);
+    } else if (!isSuperAdmin) {
+      q = q.eq("restaurant_id", "00000000-0000-0000-0000-000000000000");
+    }
 
-    const [o, i, d, c, m] = await Promise.all([
+    const [o, i, d, c, m, r] = await Promise.all([
       q,
       supabase.from("order_items").select("*"),
       supabase.from("drivers").select("id, full_name, phone, status").eq("is_active", true),
       supabase.from("menu_categories").select("id, name").order("name"),
       supabase.from("menu_items").select("id, name, category_id"),
+      supabase.from("restaurants").select("id, name"),
     ]);
 
     if (o.data) setOrders(o.data as any);
@@ -153,13 +166,20 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
     if (d.data) setDrivers(d.data as any);
     if (c.data) setCategories(c.data as any);
     if (m.data) setMenuItems(m.data as any);
+    if (r.data) {
+      const map: Record<string, string> = {};
+      (r.data as { id: string; name: string }[]).forEach((res) => {
+        map[res.id] = res.name;
+      });
+      setRestaurantsMap(map);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(statuses)]);
+  }, [JSON.stringify(statuses), restaurantId]);
 
   // Realtime
   useEffect(() => {
@@ -171,7 +191,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
       supabase.removeChannel(ch);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(statuses)]);
+  }, [JSON.stringify(statuses), restaurantId]);
 
   const itemCategoryMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -647,6 +667,12 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                         <span className="text-lg font-bold font-mono text-foreground tracking-tight">
                           {o.order_number}
                         </span>
+                        {isSuperAdmin && !restaurantId && o.restaurant_id && restaurantsMap[o.restaurant_id] && (
+                          <Badge variant="outline" className="bg-primary/10 text-primary border-primary/25 text-xs font-semibold">
+                            <Store className="h-3 w-3 mr-1" />
+                            {restaurantsMap[o.restaurant_id]}
+                          </Badge>
+                        )}
                         <Badge
                           className={cn("text-xs font-semibold px-2.5 py-0.5", ORDER_STATUS_COLORS[o.status])}
                           variant="outline"

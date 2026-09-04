@@ -146,17 +146,22 @@ export default function Dashboard() {
   });
 
   const { data: recentOrders, isPending: ordersLoading } = useQuery({
-    queryKey: ["dashboard-recent-orders", restaurantId],
-    enabled: !!restaurantId,
+    queryKey: ["dashboard-recent-orders", restaurantId, isSuperAdmin],
+    enabled: !!restaurantId || isSuperAdmin,
     queryFn: async () => {
-      const { data } = await supabase
+      let q = supabase
         .from("orders")
         .select(
           "id,order_number,tracking_code,customer_name,customer_phone,customer_email,delivery_address,total_amount,subtotal,tax_amount,delivery_fee,status,created_at,payment_method,payment_status,source,estimated_delivery_at"
         )
-        .eq("restaurant_id", restaurantId!)
         .order("created_at", { ascending: false })
         .limit(10);
+
+      if (restaurantId) {
+        q = q.eq("restaurant_id", restaurantId);
+      }
+
+      const { data } = await q;
       return (data || []) as RecentOrderRow[];
     },
     refetchInterval: 15000,

@@ -50,8 +50,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { t } = useTranslation(["sidebar", "common"]);
   const location = useLocation();
   const { role, profile, user } = useAuth();
-  const { restaurantId } = useActiveRestaurant();
-  const [restaurantName, setRestaurantName] = useState("Royal Restaurant");
+  const { restaurantId, activeRestaurant } = useActiveRestaurant();
+  const [restaurantName, setRestaurantName] = useState("");
   const [ordersOpen, setOrdersOpen] = useState(
     location.pathname === "/orders" || location.pathname.startsWith("/orders/")
   );
@@ -134,7 +134,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const menuGroupActive = location.pathname === "/menu";
 
   useEffect(() => {
-    if (restaurantId) {
+    if (activeRestaurant?.name) {
+      setRestaurantName(activeRestaurant.name);
+    } else if (restaurantId) {
       supabase
         .from("restaurants")
         .select("name")
@@ -143,8 +145,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         .then(({ data }) => {
           if (data?.name) setRestaurantName(data.name);
         });
+    } else {
+      setRestaurantName("");
     }
-  }, [restaurantId]);
+  }, [restaurantId, activeRestaurant]);
 
   const managementForRole =
     role === "super_admin"
@@ -278,7 +282,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const displayName = profile?.full_name || user?.email || "User";
   const roleLabel =
-    role === "super_admin" ? "Admin" : role ? role.replace("_", " ") : "User";
+    role === "super_admin" ? "Super Admin" : role ? role.replace("_", " ") : "User";
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
@@ -317,7 +321,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
               )}
             >
-              {role === "super_admin" ? "Super Admin" : (restaurantName || "Royal Restaurant")}
+              {role === "super_admin"
+                ? activeRestaurant
+                  ? `Super Admin • ${activeRestaurant.name}`
+                  : "Super Admin"
+                : restaurantName || "Restaurant"}
             </span>
           </div>
           <Button

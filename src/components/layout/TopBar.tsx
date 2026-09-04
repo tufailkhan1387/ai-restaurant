@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, LogOut, User, ChevronDown } from "lucide-react";
+import { Search, LogOut, User, ChevronDown, Store, Globe, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { OrderNotificationBell } from "@/components/notifications/OrderNotificationBell";
 import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
 import { filterSidebarNavItems } from "@/config/sidebarNav";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 export function TopBar() {
   const { t } = useTranslation(["sidebar", "common", "auth"]);
   const { user, profile, signOut, role } = useAuth();
+  const { restaurantId, activeRestaurant, restaurants, setRestaurantId } = useActiveRestaurant();
   const navigate = useNavigate();
   const isSuperAdmin = role === "super_admin";
   const listId = useId();
@@ -120,6 +122,56 @@ export function TopBar() {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
+          {/* Super Admin Restaurant Context Switcher */}
+          {isSuperAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="h-10 gap-2 rounded-lg border-border/80 bg-card/80 px-3 hover:bg-card text-xs font-semibold shadow-xs"
+                >
+                  <Store className="h-4 w-4 text-primary shrink-0" />
+                  <span className="hidden sm:inline truncate max-w-[130px]">
+                    {activeRestaurant ? activeRestaurant.name : "All Restaurants"}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60 rounded-xl">
+                <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+                  Filter by Restaurant
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setRestaurantId(null)}
+                  className={cn(
+                    "cursor-pointer text-xs font-medium gap-2 py-2",
+                    !restaurantId && "font-bold text-primary bg-primary/10"
+                  )}
+                >
+                  <Globe className="h-4 w-4 shrink-0" />
+                  <span className="flex-1">All Restaurants (Global)</span>
+                  {!restaurantId && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {restaurants.map((r) => (
+                  <DropdownMenuItem
+                    key={r.id}
+                    onClick={() => setRestaurantId(r.id)}
+                    className={cn(
+                      "cursor-pointer text-xs font-medium gap-2 py-2",
+                      restaurantId === r.id && "font-bold text-primary bg-primary/10"
+                    )}
+                  >
+                    <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="flex-1 truncate">{r.name}</span>
+                    {restaurantId === r.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           <LanguageSwitcher />
 
           <div className="[&_button]:rounded-lg [&_button]:bg-card [&_button]:border [&_button]:border-border/80 [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:shadow-sm">
@@ -163,4 +215,5 @@ export function TopBar() {
     </header>
   );
 }
+
 

@@ -67,47 +67,14 @@ jobs:
 
       - name: Test SSH connection
         run: |
-          set -x
-          # Do not fail the job if keyscan cannot reach the host from GitHub IPs
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan -T 10 -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/tmp/keyscan.err || true
-          if [ -s /tmp/keyscan.err ]; then
-            echo "ssh-keyscan warning (ignored):"
-            cat /tmp/keyscan.err
-          fi
-
-          # Retry SSH connection up to 3 times in case of transient latency or slow handshake
-          CONNECTED=false
-          for i in 1 2 3; do
-            echo "Attempting SSH connection (attempt $i/3)..."
-            if ssh -p "$SSH_PORT" \
-                   -o StrictHostKeyChecking=accept-new \
-                   -o ConnectTimeout=30 \
-                   -o ServerAliveInterval=10 \
-                   -o ServerAliveCountMax=3 \
-                   -o BatchMode=yes \
-                   "${SSH_USER}@${SSH_HOST}" "echo SSH_OK && pwd && whoami"; then
-              CONNECTED=true
-              break
-            fi
-            echo "Attempt $i failed. Retrying in 5 seconds..."
-            sleep 5
-          done
-
-          if [ "$CONNECTED" != "true" ]; then
-            echo "::error::Failed to connect to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} after 3 attempts."
-            echo "Troubleshooting:"
-            echo "  1. If Webuzo uses a custom SSH port (e.g. 2222), add the SSH_PORT secret in GitHub repository settings."
-            echo "  2. Ensure the server firewall (CSF / iptables / Security Group) allows inbound SSH from GitHub IPs or is not blocking port $SSH_PORT."
-            echo "  3. Verify SSH_HOST ($SSH_HOST) and SSH_USER ($SSH_USER) in GitHub Secrets."
-            exit 1
-          fi
+          SSH_OPTS="-p ${SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes"
+          echo "Attempting SSH connection to ${SSH_USER}@${SSH_HOST}:${SSH_PORT}..."
+          ssh $SSH_OPTS "${SSH_USER}@${SSH_HOST}" 'echo "SSH_OK - connected as $(whoami) on $(hostname) at $(date -u)"'
 
       - name: Deploy frontend (dist → public_html/airestaurant)
         run: |
           rsync -avz --delete \
-            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30" \
+            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=30" \
             --exclude '.git' \
             --exclude '.env' \
             dist/ "${SSH_USER}@${SSH_HOST}:/home/limiria/public_html/airestaurant/"
@@ -115,7 +82,7 @@ jobs:
       - name: Deploy backend (backend → public_html/airestaurantbackend)
         run: |
           rsync -avz --delete \
-            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30" \
+            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes -o ConnectTimeout=30" \
             --exclude 'node_modules' \
             --exclude '.env' \
             --exclude 'uploads' \
@@ -126,7 +93,9 @@ jobs:
       - name: Install backend deps + PM2 start/restart
         run: |
           ssh -p "$SSH_PORT" \
-            -o StrictHostKeyChecking=accept-new \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o LogLevel=ERROR \
             -o BatchMode=yes \
             -o ConnectTimeout=30 \
             "${SSH_USER}@${SSH_HOST}" 'bash -s' << 'EOF'

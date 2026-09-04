@@ -16,6 +16,7 @@ jobs:
       # Trim accidental whitespace/newlines from secrets
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,8 +46,11 @@ jobs:
         run: |
           SSH_HOST="$(echo -n "$SSH_HOST" | tr -d '\r\n ')"
           SSH_USER="$(echo -n "$SSH_USER" | tr -d '\r\n ')"
+          SSH_PORT="${SSH_PORT:-22}"
+          SSH_PORT="$(echo -n "$SSH_PORT" | tr -d '\r\n ')"
           echo "SSH_HOST length: ${#SSH_HOST}"
           echo "SSH_USER length: ${#SSH_USER}"
+          echo "SSH_PORT: $SSH_PORT"
           echo "HAS_SSH_KEY: $HAS_SSH_KEY"
           if [ -z "$SSH_HOST" ]; then echo "::error::SSH_HOST secret is empty"; exit 1; fi
           if [ -z "$SSH_USER" ]; then echo "::error::SSH_USER secret is empty"; exit 1; fi
@@ -54,6 +58,7 @@ jobs:
           echo "Secrets present. Continuing."
           echo "SSH_HOST=$SSH_HOST" >> "$GITHUB_ENV"
           echo "SSH_USER=$SSH_USER" >> "$GITHUB_ENV"
+          echo "SSH_PORT=$SSH_PORT" >> "$GITHUB_ENV"
 
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.1
@@ -66,21 +71,43 @@ jobs:
           # Do not fail the job if keyscan cannot reach the host from GitHub IPs
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          ssh-keyscan -T 10 -p 22 "$SSH_HOST" >> ~/.ssh/known_hosts 2>/tmp/keyscan.err || true
+          ssh-keyscan -T 10 -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/tmp/keyscan.err || true
           if [ -s /tmp/keyscan.err ]; then
             echo "ssh-keyscan warning (ignored):"
             cat /tmp/keyscan.err
           fi
-          # Accept new host keys; identity comes from ssh-agent
-          ssh -o StrictHostKeyChecking=accept-new \
-              -o ConnectTimeout=20 \
-              -o BatchMode=yes \
-              "${SSH_USER}@${SSH_HOST}" "echo SSH_OK && pwd && whoami"
+
+          # Retry SSH connection up to 3 times in case of transient latency or slow handshake
+          CONNECTED=false
+          for i in 1 2 3; do
+            echo "Attempting SSH connection (attempt $i/3)..."
+            if ssh -p "$SSH_PORT" \
+                   -o StrictHostKeyChecking=accept-new \
+                   -o ConnectTimeout=30 \
+                   -o ServerAliveInterval=10 \
+                   -o ServerAliveCountMax=3 \
+                   -o BatchMode=yes \
+                   "${SSH_USER}@${SSH_HOST}" "echo SSH_OK && pwd && whoami"; then
+              CONNECTED=true
+              break
+            fi
+            echo "Attempt $i failed. Retrying in 5 seconds..."
+            sleep 5
+          done
+
+          if [ "$CONNECTED" != "true" ]; then
+            echo "::error::Failed to connect to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} after 3 attempts."
+            echo "Troubleshooting:"
+            echo "  1. If Webuzo uses a custom SSH port (e.g. 2222), add the SSH_PORT secret in GitHub repository settings."
+            echo "  2. Ensure the server firewall (CSF / iptables / Security Group) allows inbound SSH from GitHub IPs or is not blocking port $SSH_PORT."
+            echo "  3. Verify SSH_HOST ($SSH_HOST) and SSH_USER ($SSH_USER) in GitHub Secrets."
+            exit 1
+          fi
 
       - name: Deploy frontend (dist → public_html/airestaurant)
         run: |
           rsync -avz --delete \
-            -e "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes" \
+            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30" \
             --exclude '.git' \
             --exclude '.env' \
             dist/ "${SSH_USER}@${SSH_HOST}:/home/limiria/public_html/airestaurant/"
@@ -88,7 +115,7 @@ jobs:
       - name: Deploy backend (backend → public_html/airestaurantbackend)
         run: |
           rsync -avz --delete \
-            -e "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes" \
+            -e "ssh -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30" \
             --exclude 'node_modules' \
             --exclude '.env' \
             --exclude 'uploads' \
@@ -98,7 +125,10 @@ jobs:
 
       - name: Install backend deps + PM2 start/restart
         run: |
-          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+          ssh -p "$SSH_PORT" \
+            -o StrictHostKeyChecking=accept-new \
+            -o BatchMode=yes \
+            -o ConnectTimeout=30 \
             "${SSH_USER}@${SSH_HOST}" 'bash -s' << 'EOF'
           set -e
           cd /home/limiria/public_html/airestaurantbackend

@@ -241,14 +241,11 @@ export default function Login() {
           aria-hidden
         />
 
-        <div className="relative z-10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-primary-foreground/15 backdrop-blur-sm border border-primary-foreground/20 flex items-center justify-center shadow-lg">
-              <UtensilsCrossed className="h-5 w-5" />
-            </div>
-            <span className="text-lg font-semibold tracking-tight">Royal Restaurant</span>
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-primary-foreground/15 backdrop-blur-sm border border-primary-foreground/20 flex items-center justify-center shadow-lg">
+            <UtensilsCrossed className="h-5 w-5" />
           </div>
-          <LanguageSwitcher variant="outline" className="bg-primary-foreground/15 text-primary-foreground border-primary-foreground/20 hover:bg-primary-foreground/25" />
+          <span className="text-lg font-semibold tracking-tight">Royal Restaurant</span>
         </div>
 
         <div className="relative z-10 max-w-md space-y-5">
@@ -269,7 +266,12 @@ export default function Login() {
         </p>
       </aside>
 
-      <main className="relative flex items-center justify-center p-6 sm:p-10">
+      <main className="relative flex min-h-screen flex-col items-center justify-center p-6 sm:p-10">
+        {/* Language switcher on sign-in side */}
+        <div className="absolute top-5 right-5 sm:top-8 sm:right-8 z-20">
+          <LanguageSwitcher />
+        </div>
+
         <div
           className="pointer-events-none absolute inset-0 opacity-60 lg:opacity-100"
           style={{
@@ -279,15 +281,12 @@ export default function Login() {
           aria-hidden
         />
 
-        <div className="relative w-full max-w-[400px] animate-fade-in">
-          <div className="flex items-center justify-between mb-6 lg:hidden">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center shadow-md shadow-primary/30">
-                <UtensilsCrossed className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <p className="text-base font-bold tracking-tight text-foreground">Royal Restaurant</p>
+        <div className="relative w-full max-w-[400px] animate-fade-in my-auto">
+          <div className="flex items-center gap-2 mb-6 lg:hidden">
+            <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center shadow-md shadow-primary/30">
+              <UtensilsCrossed className="h-4 w-4 text-primary-foreground" />
             </div>
-            <LanguageSwitcher />
+            <p className="text-base font-bold tracking-tight text-foreground">Royal Restaurant</p>
           </div>
 
           <div className="mb-8 space-y-2 text-center lg:text-left">

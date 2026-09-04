@@ -23,15 +23,13 @@ import { cn } from "@/lib/utils";
 
 const DEMO_CREDENTIALS = [
   {
-    label: "Super Admin",
-    description: "Full platform access",
+    key: "superAdmin",
     email: "admin@admin.com",
     password: "11223344",
     icon: Shield,
   },
   {
-    label: "Royal Restaurant",
-    description: "Restaurant admin",
+    key: "royalAdmin",
     email: "royal@gmail.com",
     password: "11223344",
     icon: Store,
@@ -201,8 +199,8 @@ export default function Login() {
     view === "login"
       ? { title: t("auth:signIn", "Welcome back"), subtitle: t("auth:signInSubtitle", "Sign in to access your dashboard") }
       : view === "forgot"
-        ? { title: t("auth:forgotPassword", "Forgot password"), subtitle: "Enter your account email to continue" }
-        : { title: t("auth:changePassword", "Reset password"), subtitle: "Enter the OTP and choose a new password" };
+        ? { title: t("auth:forgotPassword", "Forgot password"), subtitle: t("auth:forgotPasswordSubtitle", "Enter your account email to continue") }
+        : { title: t("auth:changePassword", "Reset password"), subtitle: t("auth:resetPasswordSubtitle", "Enter the OTP and choose a new password") };
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
@@ -251,13 +249,13 @@ export default function Login() {
         <div className="relative z-10 max-w-md space-y-5">
           <p className="inline-flex items-center gap-2 text-sm font-medium text-primary-foreground/80">
             <Sparkles className="h-4 w-4" aria-hidden />
-            AI Ordering System
+            {t("auth:aiOrderingSystem", "AI Ordering System")}
           </p>
           <h1 className="text-4xl xl:text-5xl font-bold leading-[1.1] tracking-tight">
-            Run your kitchen from one calm dashboard.
+            {t("auth:heroTitle", "Run your kitchen from one calm dashboard.")}
           </h1>
           <p className="text-base xl:text-lg text-primary-foreground/75 leading-relaxed max-w-sm">
-            Orders, menu, fleet, and reports — signed in and ready when you are.
+            {t("auth:heroSubtitle", "Orders, menu, fleet, and reports — signed in and ready when you are.")}
           </p>
         </div>
 
@@ -395,10 +393,11 @@ export default function Login() {
               )}
             >
               <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs text-muted-foreground">
-                Demo mode: OTP for every account is <span className="font-mono font-semibold text-foreground">123456</span>
+                {t("auth:demoOtpNotice", "Demo mode: OTP for every account is")}{" "}
+                <span className="font-mono font-semibold text-foreground">123456</span>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="forgot-email">Account email</Label>
+                <Label htmlFor="forgot-email">{t("auth:accountEmail", "Account email")}</Label>
                 <Input
                   id="forgot-email"
                   type="email"
@@ -411,10 +410,10 @@ export default function Login() {
                 />
               </div>
               <Button type="submit" disabled={isSubmitting} className="w-full h-12 rounded-xl gap-2">
-                {isSubmitting ? "Sending…" : (
+                {isSubmitting ? t("auth:sending", "Sending…") : (
                   <>
                     <KeyRound className="h-4 w-4" />
-                    Continue with OTP
+                    {t("auth:continueWithOtp", "Continue with OTP")}
                   </>
                 )}
               </Button>
@@ -430,14 +429,14 @@ export default function Login() {
               )}
             >
               <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs text-muted-foreground">
-                Demo OTP: <span className="font-mono font-semibold text-foreground">123456</span>
+                {t("auth:demoOtpNotice", "Demo OTP:")} <span className="font-mono font-semibold text-foreground">123456</span>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="reset-email">Email</Label>
+                <Label htmlFor="reset-email">{t("auth:accountEmail", "Email")}</Label>
                 <Input id="reset-email" type="email" value={email} disabled className="h-12 bg-muted/40" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="otp">OTP</Label>
+                <Label htmlFor="otp">{t("auth:otpLabel", "OTP")}</Label>
                 <Input
                   id="otp"
                   inputMode="numeric"
@@ -449,7 +448,7 @@ export default function Login() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="new-password">New password</Label>
+                <Label htmlFor="new-password">{t("auth:newPassword", "New password")}</Label>
                 <div className="relative">
                   <Input
                     id="new-password"
@@ -459,7 +458,7 @@ export default function Login() {
                     required
                     autoComplete="new-password"
                     className="h-12 pr-11"
-                    placeholder="At least 8 characters"
+                    placeholder={t("auth:passwordMinLength", "At least 6 characters")}
                   />
                   <Button
                     type="button"
@@ -477,7 +476,7 @@ export default function Login() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm password</Label>
+                <Label htmlFor="confirm-password">{t("auth:confirmPassword", "Confirm password")}</Label>
                 <Input
                   id="confirm-password"
                   type="password"
@@ -489,7 +488,7 @@ export default function Login() {
                 />
               </div>
               <Button type="submit" disabled={isSubmitting} className="w-full h-12 rounded-xl">
-                {isSubmitting ? "Updating…" : "Reset password"}
+                {isSubmitting ? t("auth:updating", "Updating…") : t("auth:resetPasswordBtn", "Reset password")}
               </Button>
             </form>
           ) : null}
@@ -497,11 +496,18 @@ export default function Login() {
           {view === "login" ? (
             <div className="mt-6 space-y-3">
               <p className="text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Demo login credentials
+                {t("auth:demoCredentialsTitle", "Demo login credentials")}
               </p>
               <div className="grid gap-2">
                 {DEMO_CREDENTIALS.map((cred) => {
                   const Icon = cred.icon;
+                  const label = cred.key === "superAdmin"
+                    ? t("auth:superAdminRole", "Super Admin")
+                    : "Royal Restaurant";
+                  const description = cred.key === "superAdmin"
+                    ? t("auth:superAdminDesc", "Full platform access")
+                    : t("auth:restaurantAdminDesc", "Restaurant admin");
+
                   return (
                     <button
                       key={cred.email}
@@ -519,10 +525,10 @@ export default function Login() {
                         </span>
                         <span className="min-w-0 flex-1 space-y-0.5">
                           <span className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-semibold text-foreground">{cred.label}</span>
-                            <span className="text-[11px] text-muted-foreground">Click to fill</span>
+                            <span className="text-sm font-semibold text-foreground">{label}</span>
+                            <span className="text-[11px] text-muted-foreground">{t("auth:clickToFill", "Click to fill")}</span>
                           </span>
-                          <span className="block text-xs text-muted-foreground">{cred.description}</span>
+                          <span className="block text-xs text-muted-foreground">{description}</span>
                           <span className="block font-mono text-xs text-foreground/80 pt-1">
                             {cred.email}
                             <span className="text-muted-foreground"> · </span>
@@ -538,7 +544,7 @@ export default function Login() {
           ) : null}
 
           <p className="text-center text-sm text-muted-foreground mt-8 lg:mt-10">
-            Powered by AI Ordering System
+            {t("auth:poweredBy", "Powered by AI Ordering System")}
           </p>
         </div>
       </main>

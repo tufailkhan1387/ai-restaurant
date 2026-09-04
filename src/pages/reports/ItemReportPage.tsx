@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { UtensilsCrossed, Loader2, DollarSign, ShoppingCart } from "lucide-react";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/restaurant";
@@ -31,7 +32,9 @@ interface ItemReportResponse {
 
 export default function ItemReportPage() {
   const { t } = useTranslation(["reports", "common"]);
-  const [restaurantId, setRestaurantId] = useState("all");
+  const { role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
+  const [restaurantId, setRestaurantId] = useState("");
 
   const { data: earningsMeta, isLoading: metaLoading, error: metaError } = useQuery<EarningStats>({
     queryKey: ["restaurant-reports"],
@@ -46,6 +49,14 @@ export default function ItemReportPage() {
     refetchInterval: 30000,
   });
 
+  const restaurants = earningsMeta?.restaurants || [];
+
+  useEffect(() => {
+    if (restaurants.length > 0 && (!restaurantId || !restaurants.some((r) => r.restaurant_id === restaurantId))) {
+      setRestaurantId(restaurants[0].restaurant_id);
+    }
+  }, [restaurants, restaurantId]);
+
   const {
     data: itemData,
     isLoading: itemsLoading,
@@ -55,7 +66,7 @@ export default function ItemReportPage() {
     queryFn: async () => {
       const token = getToken();
       const params = new URLSearchParams();
-      if (restaurantId !== "all") {
+      if (restaurantId) {
         params.set("restaurant_id", restaurantId);
       }
       const qs = params.toString();
@@ -66,10 +77,10 @@ export default function ItemReportPage() {
       if (!res.ok) throw new Error("Failed to fetch item reports");
       return res.json();
     },
+    enabled: Boolean(restaurantId),
     refetchInterval: 30000,
   });
 
-  const restaurants = earningsMeta?.restaurants || [];
   const itemRows = itemData?.items || [];
   const itemTotals = useMemo(
     () =>
@@ -84,8 +95,8 @@ export default function ItemReportPage() {
     [itemRows]
   );
 
-  const showRestaurantCol = restaurantId === "all";
-  const itemTableColSpan = showRestaurantCol ? 5 : 4;
+  const showRestaurantCol = false;
+  const itemTableColSpan = 4;
 
   if (metaLoading) {
     return (
@@ -114,19 +125,20 @@ export default function ItemReportPage() {
           </h1>
           <p className="text-muted-foreground mt-1">{t("reports:itemReportDesc", "Menu item sales from completed deliveries")}</p>
         </div>
-        <Select value={restaurantId} onValueChange={setRestaurantId}>
-          <SelectTrigger className="w-full md:w-[280px]">
-            <SelectValue placeholder={t("reports:filterByRestaurant", "Filter by restaurant")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("reports:allRestaurants", "All Restaurants")}</SelectItem>
-            {restaurants.map((r) => (
-              <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
-                {r.restaurant_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {isSuperAdmin && restaurants.length > 1 && (
+          <Select value={restaurantId} onValueChange={setRestaurantId}>
+            <SelectTrigger className="w-full md:w-[280px]">
+              <SelectValue placeholder={t("reports:filterByRestaurant", "Filter by restaurant")} />
+            </SelectTrigger>
+            <SelectContent>
+              {restaurants.map((r) => (
+                <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
+                  {r.restaurant_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {itemsError ? (

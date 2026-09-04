@@ -581,13 +581,24 @@ export default function Menu() {
 
   const saveSubCategory = async (form: Partial<SubCategory> & { restaurant_id?: string }) => {
     const targetRestaurantId = form.restaurant_id || restaurantId;
-    if (!targetRestaurantId) return;
+    if (!targetRestaurantId) {
+      toast({ variant: "destructive", title: "Restaurant required", description: "Please select a restaurant." });
+      return;
+    }
+    if (!form.name?.trim()) {
+      toast({ variant: "destructive", title: "Name required", description: "Please enter a sub-category name." });
+      return;
+    }
+    if (!form.category_id) {
+      toast({ variant: "destructive", title: "Category required", description: "Please select a parent category." });
+      return;
+    }
     setIsSaving(true);
     const payload = {
       category_id: form.category_id,
-      name: form.name || "",
-      description: form.description || null,
-      sort_order: form.sort_order || 0,
+      name: form.name.trim(),
+      description: form.description?.trim() || null,
+      sort_order: Number(form.sort_order) || 0,
       is_active: form.is_active ?? true,
       restaurant_id: targetRestaurantId
     };

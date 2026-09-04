@@ -87,6 +87,8 @@ export async function seedAdminUser(connectionString) {
        VALUES ($1, 'super_admin')`,
       [superAdminId]
     );
+    // Ensure Super Admin is not listed as a restaurant member for any restaurant
+    await client.query("DELETE FROM restaurant_members WHERE user_id = $1", [superAdminId]);
     console.log(`[seedAdmin] Assigned role super_admin to ${superAdminEmail}`);
 
     // 3. Setup Dedicated Royal Restaurant Admin (royal@gmail.com)

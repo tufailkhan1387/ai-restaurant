@@ -61,79 +61,131 @@ export async function createRestaurantAgent(req, res) {
   try {
     const knex = getKnex();
     const { restaurant_id } = req.body || {};
-    if (!restaurant_id) throw new Error("restaurant_id is required");
+    if (!restaurant_id) return res.status(400).json({ error: "restaurant_id is required" });
 
     const r = await knex("restaurants").where({ id: restaurant_id }).first();
-    if (!r) throw new Error("Restaurant not found");
+    if (!r) return res.status(404).json({ error: "Restaurant not found" });
 
     const API_KEY = r.elevenlabs_api_key || process.env.ELEVENLABS_API_KEY;
-    if (!API_KEY) throw new Error("ElevenLabs API Key not found for this restaurant");
-
     const systemPrompt = (r.agent_system_prompt || "").trim() || defaultPrompt(r.name);
     const firstMessage = (r.agent_first_message || "").trim() || defaultFirstMessage(r.name);
 
-    // 1. Create Tools (or find if they exist)
-    console.log("🛠️ Syncing tools to ElevenLabs...");
-    const toolIds = [];
-    const ngrokUrl = process.env.PUBLIC_URL || "YOUR_NGROK_URL"; // Should be passed or in env
+    let elAgentId = r.elevenlabs_agent_id;
+    let action = "skipped";
+    let warning = null;
 
-    for (const toolSpec of TOOLS_CONFIG) {
-      const endpoint = toolSpec.name === "place_order" ? "ai-place-order" : "ai-order-status";
-      const webhookUrl = `${ngrokUrl}/api/functions/${endpoint}`;
-      
-      const resp = await fetch(`${EL_API}/v1/convai/tools`, {
-        method: "POST",
-        headers: { "xi-api-key": API_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: toolSpec.name,
-          description: toolSpec.description,
-          api_schema: {
-            request_body_schema: toolSpec.parameters,
-            url: webhookUrl,
-            method: "POST"
+    if (!API_KEY) {
+      warning = "ELEVENLABS_API_KEY not configured — saved agent prompt locally; no ElevenLabs agent created.";
+      action = "skipped";
+    } else {
+      try {
+        // 1. Create Tools (or find if they exist)
+        const toolIds = [];
+        const ngrokUrl = process.env.PUBLIC_URL || "";
+
+        if (ngrokUrl && ngrokUrl !== "YOUR_NGROK_URL") {
+          for (const toolSpec of TOOLS_CONFIG) {
+            const endpoint = toolSpec.name === "place_order" ? "ai-place-order" : "ai-order-status";
+            const webhookUrl = `${ngrokUrl}/api/functions/${endpoint}`;
+            
+            try {
+              const resp = await fetch(`${EL_API}/v1/convai/tools`, {
+                method: "POST",
+                headers: { "xi-api-key": API_KEY, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: toolSpec.name,
+                  description: toolSpec.description,
+                  api_schema: {
+                    request_body_schema: toolSpec.parameters,
+                    url: webhookUrl,
+                    method: "POST"
+                  }
+                }),
+              });
+              
+              const data = await resp.json();
+              if (resp.ok && data.tool_id) {
+                toolIds.push(data.tool_id);
+              }
+            } catch (tErr) {
+              console.warn(`Tool setup notice for ${toolSpec.name}:`, tErr.message);
+            }
           }
-        }),
-      });
-      
-      const data = await resp.json();
-      if (resp.ok) {
-        toolIds.push(data.tool_id);
-        console.log(`✅ Tool created: ${toolSpec.name} (${data.tool_id})`);
-      } else {
-        // If it already exists, ElevenLabs might return an error, we should handle that or list tools to find ID
-        console.log(`⚠️ Tool creation failed for ${toolSpec.name}:`, data);
+        }
+
+        // 2. Create or Update Agent
+        const conversation_config = {
+          agent: {
+            first_message: firstMessage,
+            prompt: { prompt: systemPrompt },
+            ...(toolIds.length > 0 ? { tools: toolIds.map(id => ({ type: "webhook", tool_id: id })) } : {})
+          }
+        };
+
+        if (r.agent_voice_id) {
+          conversation_config.tts = { voice_id: r.agent_voice_id };
+        }
+
+        if (!elAgentId) {
+          const resp = await fetch(`${EL_API}/v1/convai/agents/create`, {
+            method: "POST",
+            headers: { "xi-api-key": API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ name: `${r.name} (Automated Agent)`, conversation_config }),
+          });
+
+          const text = await resp.text();
+          if (!resp.ok) {
+            let msg = text;
+            try {
+              const p = JSON.parse(text);
+              msg = p.detail?.message || p.message || text;
+            } catch {}
+            throw new Error(`ElevenLabs notice: ${msg}`);
+          }
+          const created = JSON.parse(text);
+          elAgentId = created.agent_id;
+          action = "created";
+        } else {
+          const resp = await fetch(`${EL_API}/v1/convai/agents/${elAgentId}`, {
+            method: "PATCH",
+            headers: { "xi-api-key": API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ name: `${r.name} (Automated Agent)`, conversation_config }),
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            let msg = text;
+            try {
+              const p = JSON.parse(text);
+              msg = p.detail?.message || p.message || text;
+            } catch {}
+            throw new Error(`ElevenLabs notice: ${msg}`);
+          }
+          action = "updated";
+        }
+      } catch (err) {
+        console.warn("⚠️ ElevenLabs agent creation skipped:", err.message);
+        warning = err instanceof Error ? err.message : String(err);
+        action = "skipped";
       }
     }
 
-    // 2. Create Agent
-    console.log("🤖 Creating agent in ElevenLabs...");
-    const conversation_config = {
-      agent: {
-        first_message: firstMessage,
-        prompt: { prompt: systemPrompt },
-        tools: toolIds.map(id => ({ type: "webhook", tool_id: id }))
-      }
-    };
-
-    const resp = await fetch(`${EL_API}/v1/convai/agents/create`, {
-      method: "POST",
-      headers: { "xi-api-key": API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: `${r.name} (Automated Agent)`, conversation_config }),
-    });
-
-    if (!resp.ok) throw new Error(`Agent creation failed: ${await resp.text()}`);
-    const created = await resp.json();
-    const elAgentId = created.agent_id;
-
     // 3. Update local DB
-    await knex("restaurants").where({ id: r.id }).update({
-      elevenlabs_agent_id: elAgentId,
+    const updateData = {
       agent_system_prompt: systemPrompt,
       agent_first_message: firstMessage
-    });
+    };
+    if (elAgentId) {
+      updateData.elevenlabs_agent_id = elAgentId;
+    }
 
-    console.log("✨ Agent created and configured with tools:", elAgentId);
-    return res.json({ success: true, action: "created", elevenlabs_agent_id: elAgentId });
+    await knex("restaurants").where({ id: r.id }).update(updateData);
+
+    return res.json({
+      success: true,
+      action,
+      warning: warning || undefined,
+      elevenlabs_agent_id: elAgentId || r.elevenlabs_agent_id || null,
+    });
   } catch (e) {
     console.error("❌ Create Agent Error:", e);
     return res.status(500).json({ success: false, error: e.message || "Unknown error" });

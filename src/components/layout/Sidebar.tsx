@@ -94,7 +94,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const reportsChildren = useMemo(
     () => [
-      { icon: Store, label: t("sidebar:restaurantReport", "Restaurant report"), href: "/reports/restaurant" },
       { icon: Package, label: t("sidebar:itemReport", "Item report"), href: "/reports/items" },
       { icon: Award, label: t("sidebar:bestSellers", "Best sellers"), href: "/reports/best-sellers" },
       { icon: Boxes, label: t("sidebar:inventoryReport", "Inventory report"), href: "/reports/inventory" },
@@ -321,11 +320,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
               )}
             >
-              {role === "super_admin"
-                ? activeRestaurant
-                  ? `Super Admin • ${activeRestaurant.name}`
-                  : "Super Admin"
-                : restaurantName || "Restaurant"}
+              {role === "super_admin" ? "Super Admin" : restaurantName || "Restaurant"}
             </span>
           </div>
           <Button
@@ -352,133 +347,153 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             : "px-2.5 custom-scrollbar"
         )}
       >
-        <div className="space-y-0.5">
-          <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+        {/* ── SUPER ADMIN: minimal nav ─────────────────────────── */}
+        {role === "super_admin" ? (
+          <div className="space-y-0.5">
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+            <NavItem icon={Store} label={t("sidebar:restaurants", "Restaurants")} href="/restaurants" />
+            <NavItem icon={Wallet} label={t("sidebar:earnings", "Earnings")} href="/earnings" />
 
-          {collapsed ? (
-            <NavItem
-              icon={Users}
-              label={t("sidebar:users", "Users")}
-              href="/users/customers"
-              activeOverride={usersGroupActive}
-            />
-          ) : (
-            <div className="space-y-0.5">
-              <GroupButton
-                open={usersOpen}
-                onToggleOpen={() => setUsersOpen((v) => !v)}
-                active={usersGroupActive}
-                icon={Users}
-                label={t("sidebar:users", "Users")}
-              />
-              {usersOpen && (
-                <div className="space-y-0.5">
-                  {usersChildren.map((item) => (
-                    <NavItem key={item.href} {...item} indent />
-                  ))}
-                </div>
+            <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
+              {!collapsed && (
+                <p className="px-3 text-[10px] font-bold text-sidebar-foreground/35 uppercase tracking-[0.16em] mb-2">
+                  {t("sidebar:management", "Management")}
+                </p>
               )}
+              <NavItem icon={Settings} label={t("sidebar:settings", "Settings")} href="/settings" />
             </div>
-          )}
-
-          {collapsed ? (
-            <NavItem
-              icon={ClipboardList}
-              label={t("sidebar:orders", "Orders")}
-              href="/orders"
-              activeOverride={ordersGroupActive}
-            />
-          ) : (
-            <>
-              <GroupButton
-                open={ordersOpen}
-                onToggleOpen={() => setOrdersOpen((v) => !v)}
-                active={ordersGroupActive}
-                icon={ClipboardList}
-                label={t("sidebar:orders", "Orders")}
-              />
-              {ordersOpen && (
-                <div className="space-y-0.5">
-                  <NavItem icon={ClipboardList} label={t("sidebar:allOrders", "All orders")} href="/orders" indent />
-                  {ordersChildren.map((c) => (
-                    <NavItem key={c.href} {...c} indent />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {collapsed ? (
-            <NavItem
-              icon={UtensilsCrossed}
-              label={t("sidebar:menu", "Menu")}
-              href="/menu"
-              activeOverride={menuGroupActive}
-            />
-          ) : (
-            <>
-              <GroupButton
-                open={menuOpen}
-                onToggleOpen={() => setMenuOpen((v) => !v)}
-                active={menuGroupActive}
-                icon={UtensilsCrossed}
-                label={t("sidebar:menu", "Menu")}
-              />
-              {menuOpen && (
-                <div className="space-y-0.5">
-                  {menuChildren.map((item) => (
-                    <NavItem key={item.href} {...item} indent />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {navigationItems
-            .filter((i) => i.href !== "/")
-            .map((item) => (
-              <NavItem key={item.href} {...item} />
-            ))}
-        </div>
-
-        {collapsed ? (
-          <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">
-            <NavItem
-              icon={FileBarChart}
-              label={t("sidebar:reports", "Reports")}
-              href="/reports/restaurant"
-              activeOverride={reportsGroupActive}
-            />
           </div>
         ) : (
-          <div className="pt-4 mt-3 border-t border-sidebar-border">
-            <GroupButton
-              open={reportsOpen}
-              onToggleOpen={() => setReportsOpen((v) => !v)}
-              active={reportsGroupActive}
-              icon={FileBarChart}
-              label={t("sidebar:reports", "Reports")}
-            />
-            {reportsOpen && (
-              <div className="space-y-0.5 mt-0.5">
-                {reportsChildren.map((item) => (
-                  <NavItem key={item.href} {...item} indent />
-                ))}
+          /* ── RESTAURANT USERS: full nav ─────────────────────── */
+          <div className="space-y-0.5">
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+
+            {collapsed ? (
+              <NavItem
+                icon={Users}
+                label={t("sidebar:users", "Users")}
+                href="/users/customers"
+                activeOverride={usersGroupActive}
+              />
+            ) : (
+              <div className="space-y-0.5">
+                <GroupButton
+                  open={usersOpen}
+                  onToggleOpen={() => setUsersOpen((v) => !v)}
+                  active={usersGroupActive}
+                  icon={Users}
+                  label={t("sidebar:users", "Users")}
+                />
+                {usersOpen && (
+                  <div className="space-y-0.5">
+                    {usersChildren.map((item) => (
+                      <NavItem key={item.href} {...item} indent />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+
+            {collapsed ? (
+              <NavItem
+                icon={ClipboardList}
+                label={t("sidebar:orders", "Orders")}
+                href="/orders"
+                activeOverride={ordersGroupActive}
+              />
+            ) : (
+              <>
+                <GroupButton
+                  open={ordersOpen}
+                  onToggleOpen={() => setOrdersOpen((v) => !v)}
+                  active={ordersGroupActive}
+                  icon={ClipboardList}
+                  label={t("sidebar:orders", "Orders")}
+                />
+                {ordersOpen && (
+                  <div className="space-y-0.5">
+                    <NavItem icon={ClipboardList} label={t("sidebar:allOrders", "All orders")} href="/orders" indent />
+                    {ordersChildren.map((c) => (
+                      <NavItem key={c.href} {...c} indent />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {collapsed ? (
+              <NavItem
+                icon={UtensilsCrossed}
+                label={t("sidebar:menu", "Menu")}
+                href="/menu"
+                activeOverride={menuGroupActive}
+              />
+            ) : (
+              <>
+                <GroupButton
+                  open={menuOpen}
+                  onToggleOpen={() => setMenuOpen((v) => !v)}
+                  active={menuGroupActive}
+                  icon={UtensilsCrossed}
+                  label={t("sidebar:menu", "Menu")}
+                />
+                {menuOpen && (
+                  <div className="space-y-0.5">
+                    {menuChildren.map((item) => (
+                      <NavItem key={item.href} {...item} indent />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {navigationItems
+              .filter((i) => i.href !== "/")
+              .map((item) => (
+                <NavItem key={item.href} {...item} />
+              ))}
+
+            {collapsed ? (
+              <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">
+                <NavItem
+                  icon={FileBarChart}
+                  label={t("sidebar:reports", "Reports")}
+                  href="/reports/items"
+                  activeOverride={reportsGroupActive}
+                />
+              </div>
+            ) : (
+              <div className="pt-4 mt-3 border-t border-sidebar-border">
+                <GroupButton
+                  open={reportsOpen}
+                  onToggleOpen={() => setReportsOpen((v) => !v)}
+                  active={reportsGroupActive}
+                  icon={FileBarChart}
+                  label={t("sidebar:reports", "Reports")}
+                />
+                {reportsOpen && (
+                  <div className="space-y-0.5 mt-0.5">
+                    {reportsChildren.map((item) => (
+                      <NavItem key={item.href} {...item} indent />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
+              {!collapsed && (
+                <p className="px-3 text-[10px] font-bold text-sidebar-foreground/35 uppercase tracking-[0.16em] mb-2">
+                  {t("sidebar:management", "Management")}
+                </p>
+              )}
+              {managementItems.map((item) => (
+                <NavItem key={item.href} {...item} />
+              ))}
+            </div>
           </div>
         )}
 
-        <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
-          {!collapsed && (
-            <p className="px-3 text-[10px] font-bold text-sidebar-foreground/35 uppercase tracking-[0.16em] mb-2">
-              {t("sidebar:management", "Management")}
-            </p>
-          )}
-          {finalManagement.map((item) => (
-            <NavItem key={item.href} {...item} />
-          ))}
-        </div>
       </nav>
 
       {!collapsed && (

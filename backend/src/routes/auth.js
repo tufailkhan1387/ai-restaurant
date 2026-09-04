@@ -110,26 +110,75 @@ router.post("/create-driver-user", optionalAuth, requireAuth, requireManagement,
   }
 });
 
-/** Create / Invite a team member for a restaurant */
+/** Create / Invite a team member (Platform member for super_admin, or restaurant staff for restaurant admin) */
 router.post("/create-team-member", optionalAuth, requireAuth, async (req, res) => {
   try {
     const { email, password, full_name, role, restaurant_id } = req.body || {};
     const em = typeof email === "string" ? email.trim().toLowerCase() : "";
-    let memberRole = (role || "manager").toLowerCase();
-    // Only 1 Admin allowed per restaurant. Staff members are Manager, Kitchen, or Cashier.
-    if (memberRole === "admin" || memberRole === "owner") {
-      memberRole = "manager";
-    }
     const rid = restaurant_id;
+    const isSuperAdmin =
+      req.user?.roles?.includes("super_admin") ||
+      req.user?.role === "super_admin";
 
-    if (!em || !password || !rid) {
-      return res.status(400).json({ error: "Email, password, and restaurant are required" });
+    if (!em || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
     }
     if (String(password).length < 6) {
       return res.status(400).json({ error: "Password must be at least 6 characters" });
     }
 
     const knex = getKnex();
+
+    // 1. Case A: Super Admin creating a platform team member (no restaurant_id)
+    if (!rid && isSuperAdmin) {
+      let platformRole = (role || "admin").toLowerCase();
+      if (platformRole !== "super_admin" && platformRole !== "admin") {
+        platformRole = "admin";
+      }
+
+      let profile = await knex("profiles").whereRaw("lower(email) = lower(?)", [em]).first();
+      const hash = await bcrypt.hash(String(password), 10);
+
+      if (!profile) {
+        const [newProf] = await knex("profiles")
+          .insert({
+            id: randomUUID(),
+            email: em,
+            full_name: (typeof full_name === "string" && full_name.trim()) || em.split("@")[0],
+            password_hash: hash,
+            status: "available",
+          })
+          .returning("*");
+        profile = newProf;
+
+        await knex("user_roles").insert({ user_id: profile.id, role: platformRole });
+      } else {
+        await knex("profiles").where({ id: profile.id }).update({
+          password_hash: hash,
+          full_name: full_name?.trim() || profile.full_name,
+        });
+        await knex("user_roles").where({ user_id: profile.id }).del();
+        await knex("user_roles").insert({ user_id: profile.id, role: platformRole });
+      }
+
+      return res.status(201).json({
+        success: true,
+        user_id: profile.id,
+        email: profile.email,
+        role: platformRole,
+      });
+    }
+
+    // 2. Case B: Restaurant Admin creating a restaurant staff member
+    if (!rid) {
+      return res.status(400).json({ error: "Restaurant ID is required for restaurant staff" });
+    }
+
+    let memberRole = (role || "manager").toLowerCase();
+    // Only 1 Admin allowed per restaurant. Staff members are Manager, Kitchen, or Cashier.
+    if (memberRole === "admin" || memberRole === "owner") {
+      memberRole = "manager";
+    }
 
     // Verify restaurant
     const rest = await knex("restaurants").where({ id: rid }).first();
@@ -147,6 +196,7 @@ router.post("/create-team-member", optionalAuth, requireAuth, async (req, res) =
           email: em,
           full_name: (typeof full_name === "string" && full_name.trim()) || em.split("@")[0],
           password_hash: hash,
+          status: "available",
         })
         .returning("*");
       profile = newProf;
@@ -193,12 +243,29 @@ router.post("/create-team-member", optionalAuth, requireAuth, async (req, res) =
   }
 });
 
-/** Delete team member membership */
+/** Delete team member membership or platform user */
 router.delete("/delete-team-member/:id", optionalAuth, requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const knex = getKnex();
-    await knex("restaurant_members").where({ id }).del();
+    const isSuperAdmin =
+      req.user?.roles?.includes("super_admin") ||
+      req.user?.role === "super_admin";
+
+    // 1. Try deleting from restaurant_members
+    const delCount = await knex("restaurant_members").where({ id }).del();
+
+    // 2. If not a restaurant_members row and requester is super_admin, check if it's a user profile id
+    if (!delCount && isSuperAdmin) {
+      // Protect super admin themselves from accidental self-delete
+      if (id === req.user.id) {
+        return res.status(400).json({ error: "Cannot delete your own super admin account" });
+      }
+      await knex("restaurant_members").where({ user_id: id }).del();
+      await knex("user_roles").where({ user_id: id }).del();
+      await knex("profiles").where({ id }).del();
+    }
+
     return res.json({ success: true });
   } catch (e) {
     console.error("delete-team-member error:", e);

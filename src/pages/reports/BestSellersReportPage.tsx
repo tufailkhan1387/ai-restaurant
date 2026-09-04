@@ -38,23 +38,23 @@ export default function BestSellersReportPage() {
   const { t } = useTranslation(["reports", "common"]);
   const { data: meta, isLoading: metaLoading, error: metaError } = useReportRestaurants();
   const restaurants = meta?.restaurants ?? [];
-  const [restaurantId, setRestaurantId] = useState("all");
+  const [restaurantId, setRestaurantId] = useState("");
   const [periodDays, setPeriodDays] = useState("30");
   const [limit, setLimit] = useState("10");
   const [sortBy, setSortBy] = useState("revenue");
 
   useEffect(() => {
-    if (restaurants.length === 1) {
+    if (restaurants.length > 0 && (!restaurantId || !restaurants.some((r) => r.restaurant_id === restaurantId))) {
       setRestaurantId(restaurants[0].restaurant_id);
     }
-  }, [restaurants]);
+  }, [restaurants, restaurantId]);
 
   const { data, isLoading, error } = useQuery<BestSellersResponse>({
     queryKey: ["best-sellers", restaurantId, periodDays, limit, sortBy],
     queryFn: async () => {
       const token = getToken();
       const params = new URLSearchParams();
-      if (restaurantId !== "all") params.set("restaurant_id", restaurantId);
+      if (restaurantId) params.set("restaurant_id", restaurantId);
       if (periodDays !== "0") params.set("days", periodDays);
       params.set("limit", limit);
       params.set("sort", sortBy);
@@ -64,14 +64,14 @@ export default function BestSellersReportPage() {
       if (!res.ok) throw new Error("Failed to fetch best sellers");
       return res.json();
     },
-    enabled: !metaLoading && restaurants.length > 0,
+    enabled: !metaLoading && Boolean(restaurantId),
     refetchInterval: 30000,
   });
 
   const rows = data?.items ?? [];
   const summary = data?.summary;
-  const showRestaurantCol = restaurantId === "all";
-  const colSpan = showRestaurantCol ? 7 : 6;
+  const showRestaurantCol = false;
+  const colSpan = 6;
 
   const topItem = rows[0];
 

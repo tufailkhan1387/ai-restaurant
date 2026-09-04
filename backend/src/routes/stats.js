@@ -110,13 +110,17 @@ router.get("/global", optionalAuth, requireAuth, async (req, res) => {
 router.get("/earnings", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    // Check if super_admin
-    const roleRow = await knex("user_roles")
-      .where({ user_id: req.user.id, role: "super_admin" })
-      .first();
-
-    if (!roleRow) {
-      return res.status(403).json({ error: "Access denied. Super admin only." });
+    const scope = resolveReportRestaurantIds(req.user, req.query.restaurant_id);
+    if (!scope.allowed) {
+      return res.json({
+        restaurants: [],
+        summary: {
+          total_sales: 0,
+          total_orders: 0,
+          total_admin_earning: 0,
+          total_restaurant_earning: 0,
+        },
+      });
     }
 
     const stats = await knex("orders")
@@ -129,6 +133,9 @@ router.get("/earnings", optionalAuth, requireAuth, async (req, res) => {
         knex.raw("COUNT(orders.id) as order_count")
       )
       .whereIn("orders.status", ["delivered", "completed"])
+      .modify((qb) => {
+        applyRestaurantScope(qb, knex, "restaurants.id", scope);
+      })
       .groupBy("restaurants.id", "restaurants.name", "restaurants.commission_rate")
       .orderBy("total_sales", "desc");
 
@@ -174,22 +181,14 @@ router.get("/earnings", optionalAuth, requireAuth, async (req, res) => {
   }
 });
 
-/** Menu item sales (line items) for delivered / completed orders. Super admin only. */
+/** Menu item sales (line items) for delivered / completed orders. */
 router.get("/item-reports", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    const roleRow = await knex("user_roles")
-      .where({ user_id: req.user.id, role: "super_admin" })
-      .first();
-
-    if (!roleRow) {
-      return res.status(403).json({ error: "Access denied. Super admin only." });
+    const scope = resolveReportRestaurantIds(req.user, req.query.restaurant_id);
+    if (!scope.allowed) {
+      return res.json({ items: [] });
     }
-
-    const restaurantId =
-      typeof req.query.restaurant_id === "string" && req.query.restaurant_id.trim()
-        ? req.query.restaurant_id.trim()
-        : null;
 
     const q = knex("order_items")
       .join("orders", "order_items.order_id", "orders.id")
@@ -206,9 +205,7 @@ router.get("/item-reports", optionalAuth, requireAuth, async (req, res) => {
       )
       .whereIn("orders.status", ["delivered", "completed"])
       .modify((qb) => {
-        if (restaurantId) {
-          qb.where("restaurants.id", restaurantId);
-        }
+        applyRestaurantScope(qb, knex, "restaurants.id", scope);
       })
       .groupBy([
         "restaurants.id",
@@ -256,6 +253,72 @@ router.get("/accessible-restaurants", optionalAuth, requireAuth, async (req, res
     res.json({ restaurants: rows });
   } catch (e) {
     console.error("ACCESSIBLE RESTAURANTS ERROR:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** All restaurants with full details — Super Admin only. */
+router.get("/all-restaurants", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const knex = getKnex();
+    const roleRow = await knex("user_roles")
+      .where({ user_id: req.user.id, role: "super_admin" })
+      .first();
+    if (!roleRow) return res.status(403).json({ error: "Super admin only." });
+
+    const restaurants = await knex("restaurants")
+      .select(
+        "id", "name", "slug", "phone", "contact_email", "address",
+        "logo_url", "cover_image_url", "twilio_phone_number", "elevenlabs_agent_id",
+        "is_active", "created_at", "agent_language", "agent_voice_id",
+        "agent_first_message", "agent_system_prompt", "commission_rate",
+        "allows_delivery", "allows_pickup"
+      )
+      .orderBy("created_at", "desc");
+
+    const ids = restaurants.map((r) => r.id);
+    const ownerEmailByRestaurant = {};
+    const cuisineMap = {};
+
+    if (ids.length) {
+      const members = await knex("restaurant_members")
+        .select("restaurant_id", "user_id")
+        .whereIn("restaurant_id", ids);
+
+      const userIds = [...new Set(members.map((m) => m.user_id))];
+      if (userIds.length) {
+        const profiles = await knex("profiles").select("id", "email").whereIn("id", userIds);
+        const emailByUser = Object.fromEntries(profiles.map((p) => [p.id, p.email]));
+        for (const m of members) {
+          if (ownerEmailByRestaurant[m.restaurant_id] !== undefined) continue;
+          ownerEmailByRestaurant[m.restaurant_id] = emailByUser[m.user_id] ?? "";
+        }
+      }
+
+      const links = await knex("restaurant_cuisines")
+        .select("restaurant_id", "cuisine_id")
+        .whereIn("restaurant_id", ids);
+      const cuisineIds = [...new Set(links.map((l) => l.cuisine_id))];
+      if (cuisineIds.length) {
+        const cuisines = await knex("cuisines").select("id", "name").whereIn("id", cuisineIds);
+        const nameById = Object.fromEntries(cuisines.map((c) => [c.id, c.name]));
+        for (const l of links) {
+          if (!cuisineMap[l.restaurant_id]) cuisineMap[l.restaurant_id] = [];
+          const name = nameById[l.cuisine_id];
+          if (name) cuisineMap[l.restaurant_id].push(name);
+        }
+      }
+    }
+
+    const result = restaurants.map((r) => ({
+      ...r,
+      owner_login_email: ownerEmailByRestaurant[r.id] ?? "",
+      cuisines: cuisineMap[r.id] ?? [],
+    }));
+
+    res.json({ restaurants: result });
+  } catch (e) {
+    console.error("ALL RESTAURANTS ERROR:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -536,6 +599,97 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
     });
   } catch (e) {
     console.error("CUSTOMER ANALYTICS STATS ERROR:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+/** Super Admin Dashboard: monthly revenue trend (last 12 months) + per-restaurant breakdown */
+router.get("/superadmin-dashboard", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const knex = getKnex();
+    const roleRow = await knex("user_roles")
+      .where({ user_id: req.user.id, role: "super_admin" })
+      .first();
+    if (!roleRow) return res.status(403).json({ error: "Super admin only." });
+
+    const [
+      restaurantsCount,
+      totalOrders,
+      totalRevenue,
+      activeRestaurants,
+      totalCustomers,
+      pendingOrders,
+      monthlyRows,
+      restaurantSalesRows,
+      orderStatusRows,
+    ] = await Promise.all([
+      knex("restaurants").count("* as cnt").first(),
+      knex("orders").count("* as cnt").first(),
+      knex("orders").whereIn("status", ["delivered", "completed"]).sum("total_amount as s").first(),
+      knex("restaurants").where("is_active", true).count("* as cnt").first(),
+      knex("orders").countDistinct("customer_phone as cnt").first(),
+      knex("orders").whereNotIn("status", ["delivered", "completed", "cancelled"]).count("* as cnt").first(),
+
+      // Monthly revenue last 12 months
+      knex("orders")
+        .whereIn("status", ["delivered", "completed"])
+        .where("created_at", ">=", knex.raw("NOW() - INTERVAL '12 months'"))
+        .select(
+          knex.raw("TO_CHAR(DATE_TRUNC('month', created_at), 'Mon') as month"),
+          knex.raw("DATE_TRUNC('month', created_at) as month_date"),
+          knex.raw("COUNT(*) as orders"),
+          knex.raw("COALESCE(SUM(total_amount), 0) as revenue"),
+        )
+        .groupByRaw("DATE_TRUNC('month', created_at)")
+        .orderByRaw("DATE_TRUNC('month', created_at) ASC"),
+
+      // Per-restaurant sales (top 8)
+      knex("orders")
+        .join("restaurants", "orders.restaurant_id", "restaurants.id")
+        .whereIn("orders.status", ["delivered", "completed"])
+        .select(
+          "restaurants.name as restaurant_name",
+          knex.raw("COUNT(orders.id) as order_count"),
+          knex.raw("COALESCE(SUM(orders.total_amount), 0) as revenue"),
+        )
+        .groupBy("restaurants.id", "restaurants.name")
+        .orderBy("revenue", "desc")
+        .limit(8),
+
+      // Order status distribution
+      knex("orders")
+        .select("status", knex.raw("COUNT(*) as cnt"))
+        .groupBy("status")
+        .orderBy("cnt", "desc"),
+    ]);
+
+    res.json({
+      summary: {
+        total_restaurants: Number(restaurantsCount?.cnt || 0),
+        active_restaurants: Number(activeRestaurants?.cnt || 0),
+        total_orders: Number(totalOrders?.cnt || 0),
+        pending_orders: Number(pendingOrders?.cnt || 0),
+        total_revenue: Number(totalRevenue?.s || 0),
+        total_customers: Number(totalCustomers?.cnt || 0),
+      },
+      monthly_revenue: monthlyRows.map((r) => ({
+        month: r.month,
+        orders: Number(r.orders),
+        revenue: Number(r.revenue),
+      })),
+      restaurant_sales: restaurantSalesRows.map((r) => ({
+        name: r.restaurant_name,
+        order_count: Number(r.order_count),
+        revenue: Number(r.revenue),
+      })),
+      order_status: orderStatusRows.map((r) => ({
+        status: r.status,
+        count: Number(r.cnt),
+      })),
+    });
+  } catch (e) {
+    console.error("SUPERADMIN DASHBOARD STATS ERROR:", e.message);
     res.status(500).json({ error: e.message });
   }
 });

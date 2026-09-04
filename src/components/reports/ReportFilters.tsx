@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "@/hooks/useAuth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Props = {
@@ -23,6 +24,8 @@ export function ReportFilters({
   showPeriod = false,
   extra,
 }: Props) {
+  const { role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
   const { t } = useTranslation(["reports", "orders", "common"]);
 
   const periodOptions = [
@@ -34,13 +37,12 @@ export function ReportFilters({
 
   return (
     <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-      {showRestaurantFilter && restaurants.length > 1 && (
+      {showRestaurantFilter && isSuperAdmin && restaurants.length > 1 && (
         <Select value={restaurantId} onValueChange={onRestaurantChange}>
           <SelectTrigger className="w-full sm:w-[260px]">
             <SelectValue placeholder={t("reports:selectRestaurant", "Restaurant")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t("reports:allRestaurants", "All restaurants")}</SelectItem>
             {restaurants.map((r) => (
               <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
                 {r.restaurant_name}

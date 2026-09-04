@@ -17,7 +17,6 @@ import { useToast } from "@/hooks/use-toast";
 import { syncRestaurantMenuToVoiceAgent } from "@/lib/syncRestaurantMenuToVoiceAgent";
 import { formatDate } from "@/i18n/formatters";
 
-// Types returned from the new backend endpoint
 type InventoryItem = {
   id: string;
   name: string;
@@ -43,7 +42,7 @@ export default function InventoryReportPage() {
   // Load restaurant list – used for the restaurant selector in the filters
   const { data: meta, isLoading: metaLoading, error: metaError } = useReportRestaurants();
   const restaurants = meta?.restaurants ?? [];
-  const [restaurantId, setRestaurantId] = useState("all");
+  const [restaurantId, setRestaurantId] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Reset selected ids when restaurant changes
@@ -51,10 +50,12 @@ export default function InventoryReportPage() {
     setSelectedIds([]);
   }, [restaurantId]);
 
-  // Auto‑select the sole restaurant if the user only belongs to one
+  // Auto‑select the first restaurant
   useEffect(() => {
-    if (restaurants.length === 1) setRestaurantId(restaurants[0].restaurant_id);
-  }, [restaurants]);
+    if (restaurants.length > 0 && (!restaurantId || !restaurants.some((r) => r.restaurant_id === restaurantId))) {
+      setRestaurantId(restaurants[0].restaurant_id);
+    }
+  }, [restaurants, restaurantId]);
 
   // Pull inventory data from the backend
   const { data, isLoading, error } = useQuery<InventoryResponse>({
@@ -62,7 +63,7 @@ export default function InventoryReportPage() {
     queryFn: async () => {
       const token = getToken();
       const params = new URLSearchParams();
-      if (restaurantId !== "all") params.set("restaurant_id", restaurantId);
+      if (restaurantId) params.set("restaurant_id", restaurantId);
       const qs = params.toString();
       const res = await fetch(`${getApiBase()}/api/inventory/report${qs ? `?${qs}` : ""}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -70,12 +71,11 @@ export default function InventoryReportPage() {
       if (!res.ok) throw new Error("Failed to fetch inventory report");
       return res.json();
     },
-    enabled: !metaLoading && restaurants.length > 0,
+    enabled: !metaLoading && Boolean(restaurantId),
     refetchInterval: 30_000,
   });
 
   const items = data?.data ?? [];
-  const showRestaurantCol = restaurantId === "all";
 
   const handleUpdateStock = async (itemId: string, newStock: number) => {
     setSavingItemId(itemId);
@@ -98,7 +98,7 @@ export default function InventoryReportPage() {
       queryClient.invalidateQueries({ queryKey: ["inventory-report", restaurantId] });
 
       // Trigger AI sync if a specific restaurant is selected
-      if (restaurantId && restaurantId !== "all") {
+      if (restaurantId) {
         await syncRestaurantMenuToVoiceAgent(restaurantId);
       }
     } catch (e: any) {
@@ -138,7 +138,7 @@ export default function InventoryReportPage() {
       setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: ["inventory-report", restaurantId] });
 
-      if (restaurantId && restaurantId !== "all") {
+      if (restaurantId) {
         await syncRestaurantMenuToVoiceAgent(restaurantId);
       }
     } catch (e: any) {
@@ -189,13 +189,6 @@ export default function InventoryReportPage() {
         />
       </div>
 
-      {restaurantId === "all" && (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-500 p-4 rounded-xl text-sm font-medium flex items-center gap-2">
-          <span>⚠️</span>
-          <span>{t("reports:selectSpecificRestaurantWarning", "To update stock levels, please select a specific restaurant using the filter dropdown above.")}</span>
-        </div>
-      )}
-
       {/* Error handling */}
       {error ? (
         <div className="p-6 text-center bg-destructive/10 text-destructive rounded-xl border border-destructive/20">
@@ -212,15 +205,10 @@ export default function InventoryReportPage() {
               <Table className="w-full text-sm text-left">
                 <TableHeader>
                   <TableRow>
-                    {restaurantId !== "all" && (
-                      <TableCell className="px-6 py-4 w-14">
-                        {/* checkbox header */}
-                      </TableCell>
-                    )}
+                    <TableCell className="px-6 py-4 w-14">
+                      {/* checkbox header */}
+                    </TableCell>
                     <TableCell className="px-6 py-4 w-14">#</TableCell>
-                    {showRestaurantCol && (
-                      <TableCell className="px-6 py-4">{t("reports:colRestaurant", "Restaurant")}</TableCell>
-                    )}
                     <TableCell className="px-6 py-4">{t("reports:colProduct", "Item")}</TableCell>
                     <TableCell className="px-6 py-4 text-right">{t("reports:colStock", "Stock")}</TableCell>
                     <TableCell className="px-6 py-4 text-right">{t("reports:colSold", "Sold")}</TableCell>
@@ -241,20 +229,18 @@ export default function InventoryReportPage() {
                   {!isLoading &&
                     items.map((item, idx) => (
                       <TableRow key={item.id} className="hover:bg-muted/30">
-                        {restaurantId !== "all" && (
-                          <TableCell className="px-6 py-4">
-                            <Checkbox
-                              checked={selectedIds.includes(item.id)}
-                              onCheckedChange={(checked) => {
-                                setSelectedIds((prev) =>
-                                  checked
-                                    ? [...prev, item.id]
-                                    : prev.filter((id) => id !== item.id)
-                                );
-                              }}
-                            />
-                          </TableCell>
-                        )}
+                        <TableCell className="px-6 py-4">
+                          <Checkbox
+                            checked={selectedIds.includes(item.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedIds((prev) =>
+                                checked
+                                  ? [...prev, item.id]
+                                  : prev.filter((id) => id !== item.id)
+                              );
+                            }}
+                          />
+                        </TableCell>
                         <TableCell className="px-6 py-4">
                           <Badge
                             variant={item.remaining_quantity === 0 ? "destructive" : "secondary"}
@@ -263,37 +249,28 @@ export default function InventoryReportPage() {
                             {idx + 1}
                           </Badge>
                         </TableCell>
-                        {showRestaurantCol && (
-                          <TableCell className="px-6 py-4 font-medium text-muted-foreground">
-                            {item.restaurant_name || "—"}
-                          </TableCell>
-                        )}
                         <TableCell className="px-6 py-4 font-semibold">{item.name}</TableCell>
                         <TableCell className="px-6 py-4 text-right tabular-nums">
-                          {restaurantId !== "all" ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <Input
-                                key={`${item.id}-stock-${item.stock_quantity ?? 0}`}
-                                type="number"
-                                min={0}
-                                className="w-24 text-right h-8"
-                                defaultValue={item.stock_quantity ?? 0}
-                                disabled={savingItemId === item.id}
-                                onBlur={async (e) => {
-                                  const val = parseInt(e.target.value, 10);
-                                  const newStock = Math.max(0, isNaN(val) ? 0 : val);
-                                  if (newStock !== item.stock_quantity) {
-                                    await handleUpdateStock(item.id, newStock);
-                                  }
-                                }}
-                              />
-                              {savingItemId === item.id && (
-                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                              )}
-                            </div>
-                          ) : (
-                            item.stock_quantity != null ? item.stock_quantity : "—"
-                          )}
+                          <div className="flex items-center justify-end gap-2">
+                            <Input
+                              key={`${item.id}-stock-${item.stock_quantity ?? 0}`}
+                              type="number"
+                              min={0}
+                              className="w-24 text-right h-8"
+                              defaultValue={item.stock_quantity ?? 0}
+                              disabled={savingItemId === item.id}
+                              onBlur={async (e) => {
+                                const val = parseInt(e.target.value, 10);
+                                const newStock = Math.max(0, isNaN(val) ? 0 : val);
+                                if (newStock !== item.stock_quantity) {
+                                  await handleUpdateStock(item.id, newStock);
+                                }
+                              }}
+                            />
+                            {savingItemId === item.id && (
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="px-6 py-4 text-right tabular-nums">{item.sold_quantity}</TableCell>
                         <TableCell className="px-6 py-4 text-right tabular-nums">

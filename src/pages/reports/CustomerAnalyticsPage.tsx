@@ -45,22 +45,22 @@ export default function CustomerAnalyticsPage() {
   const { t } = useTranslation(["reports", "common"]);
   const { data: meta, isLoading: metaLoading, error: metaError } = useReportRestaurants();
   const restaurants = meta?.restaurants ?? [];
-  const [restaurantId, setRestaurantId] = useState("all");
+  const [restaurantId, setRestaurantId] = useState("");
   const [periodDays, setPeriodDays] = useState("0");
   const [limit, setLimit] = useState("25");
 
   useEffect(() => {
-    if (restaurants.length === 1) {
+    if (restaurants.length > 0 && (!restaurantId || !restaurants.some((r) => r.restaurant_id === restaurantId))) {
       setRestaurantId(restaurants[0].restaurant_id);
     }
-  }, [restaurants]);
+  }, [restaurants, restaurantId]);
 
   const { data, isLoading, error } = useQuery<CustomerAnalyticsResponse>({
     queryKey: ["customer-analytics", restaurantId, periodDays, limit],
     queryFn: async () => {
       const token = getToken();
       const params = new URLSearchParams();
-      if (restaurantId !== "all") params.set("restaurant_id", restaurantId);
+      if (restaurantId) params.set("restaurant_id", restaurantId);
       if (periodDays !== "0") params.set("days", periodDays);
       params.set("limit", limit);
       const res = await fetch(`${getApiBase()}/api/stats/customer-analytics?${params}`, {
@@ -69,14 +69,14 @@ export default function CustomerAnalyticsPage() {
       if (!res.ok) throw new Error("Failed to fetch customer analytics");
       return res.json();
     },
-    enabled: !metaLoading && restaurants.length > 0,
+    enabled: !metaLoading && Boolean(restaurantId),
     refetchInterval: 30000,
   });
 
   const rows = data?.customers ?? [];
   const summary = data?.summary;
-  const showRestaurantCol = restaurantId === "all";
-  const colSpan = showRestaurantCol ? 8 : 7;
+  const showRestaurantCol = false;
+  const colSpan = 7;
 
   if (metaLoading) {
     return (

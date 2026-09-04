@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Store, Loader2, DollarSign, ShoppingCart } from "lucide-react";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/restaurant";
@@ -22,7 +23,9 @@ interface EarningStats {
 
 export default function RestaurantReportPage() {
   const { t } = useTranslation(["reports", "common"]);
-  const [restaurantId, setRestaurantId] = useState("all");
+  const { role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
+  const [restaurantId, setRestaurantId] = useState("");
 
   const { data, isLoading, error } = useQuery<EarningStats>({
     queryKey: ["restaurant-reports"],
@@ -38,11 +41,15 @@ export default function RestaurantReportPage() {
   });
 
   const restaurants = data?.restaurants || [];
+
+  useEffect(() => {
+    if (restaurants.length > 0 && (!restaurantId || !restaurants.some((r) => r.restaurant_id === restaurantId))) {
+      setRestaurantId(restaurants[0].restaurant_id);
+    }
+  }, [restaurants, restaurantId]);
+
   const filtered = useMemo(
-    () =>
-      restaurantId === "all"
-        ? restaurants
-        : restaurants.filter((r) => r.restaurant_id === restaurantId),
+    () => restaurants.filter((r) => r.restaurant_id === restaurantId),
     [restaurants, restaurantId]
   );
 
@@ -86,19 +93,20 @@ export default function RestaurantReportPage() {
           </h1>
           <p className="text-muted-foreground mt-1">{t("reports:restaurantReportDesc", "Sales and commission by restaurant")}</p>
         </div>
-        <Select value={restaurantId} onValueChange={setRestaurantId}>
-          <SelectTrigger className="w-full md:w-[280px]">
-            <SelectValue placeholder={t("reports:filterByRestaurant", "Filter by restaurant")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("reports:allRestaurants", "All Restaurants")}</SelectItem>
-            {restaurants.map((r) => (
-              <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
-                {r.restaurant_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {isSuperAdmin && restaurants.length > 1 && (
+          <Select value={restaurantId} onValueChange={setRestaurantId}>
+            <SelectTrigger className="w-full md:w-[280px]">
+              <SelectValue placeholder={t("reports:filterByRestaurant", "Filter by restaurant")} />
+            </SelectTrigger>
+            <SelectContent>
+              {restaurants.map((r) => (
+                <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
+                  {r.restaurant_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

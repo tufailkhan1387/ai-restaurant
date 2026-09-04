@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogBody } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogBody } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Store, Plus, Pencil, Trash2, Sparkles, Phone, Bot, Settings, Pause, Play, Eye } from "lucide-react";
@@ -215,50 +215,26 @@ export default function Restaurants() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("restaurants").select("*").order("created_at", { ascending: false });
-    if (error) toast({ variant: "destructive", title: "Failed to load", description: (error as any).message });
-    const rows = (data as Restaurant[]) ?? [];
-    const ids = rows.map((r) => r.id);
-    const ownerEmailByRestaurant: Record<string, string> = {};
-    if (ids.length) {
-      const { data: mems } = await supabase.from("restaurant_members").select("restaurant_id, user_id").in("restaurant_id", ids);
-      const mrows = (mems as { restaurant_id: string; user_id: string }[]) ?? [];
-      const userIds = [...new Set(mrows.map((m) => m.user_id))];
-      if (userIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, email").in("id", userIds);
-        const emailByUser = Object.fromEntries(((profs as { id: string; email: string }[]) ?? []).map((p) => [p.id, p.email]));
-        for (const m of mrows) {
-          if (ownerEmailByRestaurant[m.restaurant_id] !== undefined) continue;
-          ownerEmailByRestaurant[m.restaurant_id] = emailByUser[m.user_id] ?? "";
-        }
+    try {
+      const token = getToken();
+      // Use dedicated backend endpoint — returns all restaurants with owner emails and cuisines
+      const resp = await fetch(`${getApiBase()}/api/stats/all-restaurants`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) {
+        const j = await resp.json().catch(() => ({}));
+        toast({ variant: "destructive", title: "Failed to load", description: j.error || resp.statusText });
+        return;
       }
+      const j = await resp.json();
+      setList((j.restaurants || []) as Restaurant[]);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Failed to load", description: e.message });
+    } finally {
+      setLoading(false);
     }
-    const cuisineMap: Record<string, string[]> = {};
-    if (ids.length) {
-      const { data: links } = await supabase
-        .from("restaurant_cuisines")
-        .select("restaurant_id,cuisine_id")
-        .in("restaurant_id", ids);
-      const linkRows = (links as { restaurant_id: string; cuisine_id: string }[]) ?? [];
-      const cuisineIds = [...new Set(linkRows.map((l) => l.cuisine_id))];
-      if (cuisineIds.length) {
-        const { data: cuisines } = await supabase.from("cuisines").select("id,name").in("id", cuisineIds);
-        const nameById = Object.fromEntries(((cuisines as { id: string; name: string }[]) ?? []).map((c) => [c.id, c.name]));
-        for (const l of linkRows) {
-          const name = nameById[l.cuisine_id];
-          if (!name) continue;
-          if (!cuisineMap[l.restaurant_id]) cuisineMap[l.restaurant_id] = [];
-          cuisineMap[l.restaurant_id].push(name);
-        }
-      }
-    }
-    setList(rows.map((r) => ({
-      ...r,
-      owner_login_email: ownerEmailByRestaurant[r.id] ?? "",
-      cuisines: cuisineMap[r.id] ?? [],
-    })));
-    setLoading(false);
   };
+
   useEffect(() => { load(); }, []);
 
   if (role !== "super_admin") {
@@ -383,6 +359,21 @@ export default function Restaurants() {
       setSubmitting(true);
       let createdRestaurantId: string | null = null;
       try {
+        const { data: existingSlug } = await supabase
+          .from("restaurants")
+          .select("id")
+          .eq("slug", slug)
+          .maybeSingle();
+
+        if (existingSlug) {
+          setSubmitting(false);
+          return toast({
+            variant: "destructive",
+            title: "Restaurant slug already exists",
+            description: `A restaurant with the slug "${slug}" already exists. Please choose a different restaurant name or change the slug.`,
+          });
+        }
+
         const cuisineNames = parseCuisineNames(form.cuisines);
         let logo_url: string | null = (form.logo_url || "").trim() || null;
         let cover_image_url: string | null = (form.cover_image_url || "").trim() || null;
@@ -447,7 +438,11 @@ export default function Restaurants() {
             console.error("Rollback: failed to delete partial restaurant", createdRestaurantId, delErr);
           }
         }
-        toast({ variant: "destructive", title: "Create failed", description: e?.message ?? String(e) });
+        const errMsg = e?.message ?? String(e);
+        const description = errMsg.includes("restaurants_slug_key")
+          ? `A restaurant with the slug "${slug}" already exists. Please customize the slug.`
+          : errMsg;
+        toast({ variant: "destructive", title: "Create failed", description });
       } finally {
         setSubmitting(false);
       }
@@ -457,6 +452,22 @@ export default function Restaurants() {
     if (mode?.kind === "edit") {
       setSubmitting(true);
       try {
+        const { data: existingSlug } = await supabase
+          .from("restaurants")
+          .select("id")
+          .eq("slug", slug)
+          .neq("id", mode.restaurant.id)
+          .maybeSingle();
+
+        if (existingSlug) {
+          setSubmitting(false);
+          return toast({
+            variant: "destructive",
+            title: "Restaurant slug already in use",
+            description: `Another restaurant is already using the slug "${slug}". Please choose a different slug.`,
+          });
+        }
+
         const cuisineNames = parseCuisineNames(form.cuisines);
         let logo_url: string | null = (form.logo_url || "").trim() || null;
         let cover_image_url: string | null = (form.cover_image_url || "").trim() || null;
@@ -521,7 +532,11 @@ export default function Restaurants() {
         closeDialog();
         load();
       } catch (e: any) {
-        toast({ variant: "destructive", title: "Update failed", description: e?.message ?? String(e) });
+        const errMsg = e?.message ?? String(e);
+        const description = errMsg.includes("restaurants_slug_key")
+          ? `Another restaurant is already using the slug "${slug}". Please choose a different slug.`
+          : errMsg;
+        toast({ variant: "destructive", title: "Update failed", description });
       } finally {
         setSubmitting(false);
       }
@@ -557,6 +572,9 @@ export default function Restaurants() {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{isEdit ? t("superAdmin:editRestaurant", "Edit restaurant") : t("superAdmin:createRestaurant", "Create restaurant")}</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                {isEdit ? t("superAdmin:editRestaurantDesc", "Update restaurant configuration and details.") : t("superAdmin:createRestaurantDesc", "Add a new restaurant tenant and assign an owner account.")}
+              </DialogDescription>
             </DialogHeader>
             <DialogBody className="space-y-3">
               <div>

@@ -54,6 +54,7 @@ export default function Earnings() {
   const { t } = useTranslation(["superAdmin", "reports", "common"]);
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>("all");
 
+  // Fetch earnings data (only restaurants with completed orders)
   const { data, isLoading, error } = useQuery<EarningStats>({
     queryKey: ["super-admin-earnings"],
     queryFn: async () => {
@@ -67,19 +68,42 @@ export default function Earnings() {
     refetchInterval: 30000,
   });
 
-  const restaurants = data?.restaurants ?? [];
+  // Fetch ALL restaurants for the filter dropdown (independent of whether they have orders)
+  const { data: allRestaurantsData } = useQuery<{ restaurants: { id: string; name: string }[] }>({
+    queryKey: ["all-restaurants-for-filter"],
+    queryFn: async () => {
+      const token = getToken();
+      const res = await fetch(`${getApiBase()}/api/stats/all-restaurants`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return { restaurants: [] };
+      return res.json();
+    },
+  });
+
+  // All restaurants for dropdown (use all-restaurants endpoint, not earnings data)
+  const allRestaurantsForFilter = allRestaurantsData?.restaurants ?? [];
+
+  const earningsRestaurants = data?.restaurants ?? [];
+  const earningsById = useMemo(() => {
+    const map: Record<string, typeof earningsRestaurants[0]> = {};
+    for (const r of earningsRestaurants) map[r.restaurant_id] = r;
+    return map;
+  }, [earningsRestaurants]);
+
   const displayedRestaurants = useMemo(
     () =>
       selectedRestaurantId === "all"
-        ? restaurants
-        : restaurants.filter((r) => r.restaurant_id === selectedRestaurantId),
-    [restaurants, selectedRestaurantId]
+        ? earningsRestaurants
+        : earningsRestaurants.filter((r) => r.restaurant_id === selectedRestaurantId),
+    [earningsRestaurants, selectedRestaurantId]
   );
 
   const selectedRestaurantName = useMemo(() => {
     if (selectedRestaurantId === "all") return t("reports:allRestaurants", "All Restaurants");
-    return restaurants.find((r) => r.restaurant_id === selectedRestaurantId)?.restaurant_name || t("superAdmin:selectedRestaurant", "Selected Restaurant");
-  }, [restaurants, selectedRestaurantId, t]);
+    const restaurant = allRestaurantsForFilter.find((r) => r.id === selectedRestaurantId);
+    return restaurant?.name || t("superAdmin:selectedRestaurant", "Selected Restaurant");
+  }, [allRestaurantsForFilter, selectedRestaurantId, t]);
 
   const displayedSummary = useMemo(
     () =>
@@ -149,9 +173,12 @@ export default function Earnings() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("reports:allRestaurants", "All Restaurants")}</SelectItem>
-            {restaurants.map((r) => (
-              <SelectItem key={r.restaurant_id} value={r.restaurant_id}>
-                {r.restaurant_name}
+            {allRestaurantsForFilter.map((r) => (
+              <SelectItem key={r.id} value={r.id}>
+                {r.name}
+                {!earningsById[r.id] && (
+                  <span className="ml-2 text-[10px] text-muted-foreground">(no sales yet)</span>
+                )}
               </SelectItem>
             ))}
           </SelectContent>

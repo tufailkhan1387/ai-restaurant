@@ -96,14 +96,21 @@ jobs:
             --exclude 'scratch' \
             backend/ "${SSH_USER}@${SSH_HOST}:/home/limiria/public_html/airestaurantbackend/"
 
-      - name: Install backend deps + restart
+      - name: Install backend deps + PM2 start/restart
         run: |
           ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
             "${SSH_USER}@${SSH_HOST}" 'bash -s' << 'EOF'
           set -e
           cd /home/limiria/public_html/airestaurantbackend
           npm ci --omit=dev || npm install --omit=dev
-          mkdir -p tmp
-          touch tmp/restart.txt
+
+          # Start if missing, otherwise restart (keeps process alive via PM2)
+          if npx pm2 describe airestaurant-api >/dev/null 2>&1; then
+            npx pm2 restart airestaurant-api --update-env
+          else
+            npx pm2 start src/index.js --name airestaurant-api
+          fi
+          npx pm2 save
+          npx pm2 status airestaurant-api
           echo "Backend deploy finished at $(date -u)"
           EOF

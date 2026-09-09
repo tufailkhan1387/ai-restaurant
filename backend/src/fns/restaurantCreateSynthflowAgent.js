@@ -56,8 +56,8 @@ const ORDER_EXTRACTORS = [
     kind: "OPEN_QUESTION",
     identifier: "order_items",
     description:
-      "List every ordered menu item with quantity as plain text, for example: 2 Margherita Pizza, 1 Coke",
-    examples: ["2 Burgers, 1 Fries", "1 Chicken Biryani"],
+      "List every ordered menu item with quantity, size, flavor, and add-ons as plain text, for example: 1 Large Signature Pizza (Chicken Supreme, Garlic Sauce), 1 Coke",
+    examples: ["1 Large Signature Pizza (Chicken Supreme)", "2 Burgers, 1 Fries"],
   },
   {
     kind: "OPEN_QUESTION",

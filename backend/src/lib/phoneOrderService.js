@@ -89,12 +89,26 @@ export function parseOrderItemsText(raw) {
 }
 
 /**
- * Match items to menu and compute line totals.
+ * Match items to menu and compute line totals, factoring in sizes and add-ons.
  */
-export function matchMenuLines(menu, items) {
+export function matchMenuLines(menu, items, variants = [], addons = [], itemAddons = []) {
   const lines = [];
   const unmatched = [];
   const outOfStock = [];
+
+  const variantByItem = new Map();
+  for (const v of variants || []) {
+    if (!variantByItem.has(v.menu_item_id)) variantByItem.set(v.menu_item_id, []);
+    variantByItem.get(v.menu_item_id).push(v);
+  }
+
+  const addonById = new Map((addons || []).map((a) => [a.id, a]));
+  const addonsByItem = new Map();
+  for (const link of itemAddons || []) {
+    if (!addonsByItem.has(link.menu_item_id)) addonsByItem.set(link.menu_item_id, []);
+    const ad = addonById.get(link.menu_addon_id);
+    if (ad) addonsByItem.get(link.menu_item_id).push(ad);
+  }
 
   for (const it of items) {
     const qty = Math.max(1, Number(it.quantity ?? 1) || 1);
@@ -114,10 +128,36 @@ export function matchMenuLines(menu, items) {
         outOfStock.push(m.name);
       }
 
-      const price = Number(m.price);
+      let price = Number(m.price);
+      const itemVars = variantByItem.get(m.id) || [];
+      const itemAds = addonsByItem.get(m.id) || [];
+
+      // Check for size match in needle
+      const sizes = itemVars.filter((v) => v.variant_type === "size");
+      for (const s of sizes) {
+        const sName = (s.name || "").toLowerCase();
+        const sMeas = (s.measurement || "").toLowerCase().replace(/["\s]/g, "");
+        if (
+          (sName && needle.includes(sName)) ||
+          (sMeas && needle.replace(/["\s]/g, "").includes(sMeas))
+        ) {
+          price = Number(s.price);
+          break;
+        }
+      }
+
+      // Check for add-ons in needle or notes
+      const notesAndName = `${needle} ${(it.notes || "").toLowerCase()}`;
+      for (const ad of itemAds) {
+        const adName = (ad.name || "").toLowerCase();
+        if (adName && notesAndName.includes(adName)) {
+          price += Number(ad.price || 0);
+        }
+      }
+
       lines.push({
         menu_item_id: m.id,
-        item_name: m.name,
+        item_name: it.name || m.name,
         quantity: qty,
         unit_price: price,
         line_total: price * qty,
@@ -265,18 +305,31 @@ export async function createPhoneOrder(knex, input) {
     .where({ restaurant_id: targetRestaurantId })
     .select("id", "name", "price", "is_available", "track_inventory", "stock_quantity");
 
+  let effectiveMenuRestId = targetRestaurantId;
   if (!menu.length) {
     const targetRest = await knex("restaurants").where({ id: targetRestaurantId }).first();
     if (targetRest?.is_branch && targetRest.parent_restaurant_id) {
+      effectiveMenuRestId = targetRest.parent_restaurant_id;
       menu = await knex("menu_items")
         .where({ restaurant_id: targetRest.parent_restaurant_id })
         .select("id", "name", "price", "is_available", "track_inventory", "stock_quantity");
     }
   }
 
+  const menuItemIds = menu.map((m) => m.id);
+  const [variants, addons, itemAddons] = await Promise.all([
+    menuItemIds.length
+      ? knex("menu_item_variants").whereIn("menu_item_id", menuItemIds).andWhere({ is_active: true })
+      : [],
+    knex("menu_addons").where({ restaurant_id: effectiveMenuRestId, is_active: true }),
+    menuItemIds.length
+      ? knex("menu_item_addons").whereIn("menu_item_id", menuItemIds)
+      : [],
+  ]);
+
   const settings = await knex("restaurant_settings").where({ restaurant_id: targetRestaurantId }).first();
 
-  const { lines, unmatched, outOfStock } = matchMenuLines(menu, parsedItems);
+  const { lines, unmatched, outOfStock } = matchMenuLines(menu, parsedItems, variants, addons, itemAddons);
 
   if (outOfStock.length > 0) {
     const err = new Error(`Item "${outOfStock.join(", ")}" is currently out of order / out of stock.`);

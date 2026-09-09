@@ -10,13 +10,73 @@ function isSuperAdmin(user) {
   return user?.roles?.includes("super_admin");
 }
 
+async function canAccessBranchReports(knex, userId, branchRestaurantId) {
+  const branch = await knex("restaurants").where({ id: branchRestaurantId }).first();
+  if (!branch?.is_branch) return true; // not a branch, normal rules apply
+
+  const isBranchMember = await knex("restaurant_members")
+    .where({ restaurant_id: branchRestaurantId, user_id: userId })
+    .first();
+  const isParentOwner = branch.parent_restaurant_id
+    ? await knex("restaurant_members")
+        .where({ restaurant_id: branch.parent_restaurant_id, user_id: userId })
+        .whereIn("member_role", ["owner", "admin"])
+        .first()
+    : false;
+
+  return Boolean(isBranchMember || isParentOwner);
+  // Note: deliberately does NOT check for super_admin role here.
+}
+
 /** Resolve which restaurant IDs the caller may read in reports. */
-function resolveReportRestaurantIds(user, queryRestaurantId) {
+async function resolveReportRestaurantIds(knex, user, queryRestaurantId) {
   const requested =
     typeof queryRestaurantId === "string" && queryRestaurantId.trim() ? queryRestaurantId.trim() : null;
 
+  if (requested) {
+    const target = await knex("restaurants").where({ id: requested }).first();
+    if (!target) {
+      return { allowed: false, restaurantIds: [], scopeAll: false };
+    }
+
+    if (target.is_branch) {
+      // Direct branch report request -> check branch RBAC explicitly (super_admin is NOT exempt)
+      const allowed = await canAccessBranchReports(knex, user.id, requested);
+      if (!allowed) {
+        return { allowed: false, restaurantIds: [], scopeAll: false, forbidden: true };
+      }
+      return { allowed: true, restaurantIds: [requested], scopeAll: false, isBranch: true };
+    }
+
+    // Target is a parent or standalone restaurant
+    if (isSuperAdmin(user)) {
+      return { allowed: true, restaurantIds: [requested], scopeAll: false };
+    }
+
+    const memberIds = [...new Set(user?.restaurantIds || [])];
+    if (!memberIds.includes(requested)) {
+      return { allowed: false, restaurantIds: [], scopeAll: false };
+    }
+
+    // Parent rollup: If user is owner/admin of parent restaurant, rollup parent + all active branches
+    const isParentOwner = (user?.memberships || []).some(
+      (m) => m.restaurant_id === requested && (m.member_role === "owner" || m.member_role === "admin")
+    );
+
+    if (isParentOwner) {
+      const branches = await knex("restaurants")
+        .where({ parent_restaurant_id: requested, is_active: true })
+        .select("id");
+      const familyIds = [requested, ...branches.map((b) => b.id)];
+      return { allowed: true, restaurantIds: familyIds, scopeAll: false, isParentRollup: true };
+    }
+
+    return { allowed: true, restaurantIds: [requested], scopeAll: false };
+  }
+
+  // No specific restaurant requested
   if (isSuperAdmin(user)) {
-    return { allowed: true, restaurantIds: requested ? [requested] : null, scopeAll: !requested };
+    return { allowed: true, restaurantIds: null, scopeAll: true };
   }
 
   const memberIds = [...new Set(user?.restaurantIds || [])];
@@ -24,11 +84,20 @@ function resolveReportRestaurantIds(user, queryRestaurantId) {
     return { allowed: false, restaurantIds: [], scopeAll: false };
   }
 
-  if (requested) {
-    if (!memberIds.includes(requested)) {
-      return { allowed: false, restaurantIds: [], scopeAll: false };
-    }
-    return { allowed: true, restaurantIds: [requested], scopeAll: false };
+  // Check if any of user's restaurants are parent restaurants -> expand to include active child branches
+  const parentRestaurants = await knex("restaurants")
+    .whereIn("id", memberIds)
+    .whereNull("parent_restaurant_id")
+    .where({ is_branch: false });
+
+  if (parentRestaurants.length > 0) {
+    const parentIds = parentRestaurants.map((p) => p.id);
+    const childBranches = await knex("restaurants")
+      .whereIn("parent_restaurant_id", parentIds)
+      .where({ is_active: true })
+      .select("id");
+    const allExpandedIds = [...new Set([...memberIds, ...childBranches.map((b) => b.id)])];
+    return { allowed: true, restaurantIds: allExpandedIds, scopeAll: allExpandedIds.length > 1, isParentRollup: true };
   }
 
   return { allowed: true, restaurantIds: memberIds, scopeAll: memberIds.length > 1 };
@@ -110,8 +179,11 @@ router.get("/global", optionalAuth, requireAuth, async (req, res) => {
 router.get("/earnings", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    const scope = resolveReportRestaurantIds(req.user, req.query.restaurant_id);
+    const scope = await resolveReportRestaurantIds(knex, req.user, req.query.restaurant_id);
     if (!scope.allowed) {
+      if (scope.forbidden) {
+        return res.status(403).json({ error: "Access denied: Branch reports are private to the branch and parent owner." });
+      }
       return res.json({
         restaurants: [],
         summary: {
@@ -181,53 +253,284 @@ router.get("/earnings", optionalAuth, requireAuth, async (req, res) => {
   }
 });
 
-/** Menu item sales (line items) for delivered / completed orders. */
+/** Menu item sales (line items) for delivered / completed orders with date, item, category, search & sort filters. */
 router.get("/item-reports", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    const scope = resolveReportRestaurantIds(req.user, req.query.restaurant_id);
+    const scope = await resolveReportRestaurantIds(knex, req.user, req.query.restaurant_id);
     if (!scope.allowed) {
-      return res.json({ items: [] });
+      if (scope.forbidden) {
+        return res.status(403).json({ error: "Access denied: Branch reports are private to the branch and parent owner." });
+      }
+      return res.json({ items: [], categories: [], menu_items: [], summary: { total_revenue: 0, total_units: 0, total_orders: 0, sku_count: 0 } });
     }
+
+    const {
+      from,
+      to,
+      days,
+      period,
+      category_id,
+      menu_item_id,
+      search,
+      sort_by = "revenue",
+      sort_order = "desc",
+      min_revenue,
+      min_quantity,
+    } = req.query;
 
     const q = knex("order_items")
       .join("orders", "order_items.order_id", "orders.id")
       .join("restaurants", "orders.restaurant_id", "restaurants.id")
       .leftJoin("menu_items", "order_items.menu_item_id", "menu_items.id")
+      .leftJoin("menu_categories", "menu_items.category_id", "menu_categories.id")
       .select(
         "restaurants.id as restaurant_id",
         "restaurants.name as restaurant_name",
         knex.raw("COALESCE(menu_items.id, order_items.menu_item_id) as menu_item_id"),
         knex.raw("COALESCE(menu_items.name, order_items.item_name) as item_name"),
+        knex.raw("menu_categories.id as category_id"),
+        knex.raw("COALESCE(menu_categories.name, 'Uncategorized') as category_name"),
         knex.raw("SUM(order_items.quantity::integer) as quantity_sold"),
         knex.raw("COUNT(DISTINCT orders.id) as order_count"),
-        knex.raw("SUM(order_items.line_total) as revenue")
+        knex.raw("SUM(order_items.line_total) as revenue"),
+        knex.raw("ROUND(AVG(order_items.unit_price), 2) as avg_price")
       )
       .whereIn("orders.status", ["delivered", "completed"])
       .modify((qb) => {
         applyRestaurantScope(qb, knex, "restaurants.id", scope);
+
+        // Date range filters
+        if (from && from.trim()) {
+          qb.where("orders.created_at", ">=", `${from.trim()}T00:00:00.000Z`);
+        }
+        if (to && to.trim()) {
+          qb.where("orders.created_at", "<=", `${to.trim()}T23:59:59.999Z`);
+        }
+        if (!from && !to) {
+          if (period === "today" || days === "1") {
+            qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE"));
+          } else if (period === "yesterday") {
+            qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE - INTERVAL '1 day'"))
+              .where("orders.created_at", "<", knex.raw("CURRENT_DATE"));
+          } else if (period === "this_month") {
+            qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW())"));
+          } else if (period === "last_month") {
+            qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW() - INTERVAL '1 month')"))
+              .where("orders.created_at", "<", knex.raw("DATE_TRUNC('month', NOW())"));
+          } else if (days && Number(days) > 0) {
+            const numDays = Math.min(parseInt(days, 10), 3650);
+            qb.where("orders.created_at", ">=", knex.raw("NOW() - ?::interval", [`${numDays} days`]));
+          }
+        }
+
+        // Category filter
+        if (category_id && category_id !== "all") {
+          qb.where("menu_categories.id", category_id);
+        }
+
+        // Specific Item filter
+        if (menu_item_id && menu_item_id !== "all") {
+          qb.where(function () {
+            this.where("menu_items.id", menu_item_id).orWhere("order_items.menu_item_id", menu_item_id);
+          });
+        }
+
+        // Search item name
+        if (search && search.trim()) {
+          const s = `%${search.trim().toLowerCase()}%`;
+          qb.whereRaw("LOWER(COALESCE(menu_items.name, order_items.item_name)) LIKE ?", [s]);
+        }
       })
       .groupBy([
         "restaurants.id",
         "restaurants.name",
         knex.raw("COALESCE(menu_items.id, order_items.menu_item_id)"),
         knex.raw("COALESCE(menu_items.name, order_items.item_name)"),
+        "menu_categories.id",
+        "menu_categories.name",
       ])
-      .orderBy("revenue", "desc");
+      .modify((qb) => {
+        if (min_revenue && Number(min_revenue) > 0) {
+          qb.having(knex.raw("SUM(order_items.line_total) >= ?", [Number(min_revenue)]));
+        }
+        if (min_quantity && Number(min_quantity) > 0) {
+          qb.having(knex.raw("SUM(order_items.quantity::integer) >= ?", [Number(min_quantity)]));
+        }
+      });
+
+    // Sorting
+    const validSortCols = {
+      revenue: "revenue",
+      quantity: "quantity_sold",
+      orders: "order_count",
+      name: knex.raw("COALESCE(menu_items.name, order_items.item_name)"),
+      price: "avg_price",
+    };
+    const orderCol = validSortCols[sort_by] || "revenue";
+    const orderDir = String(sort_order).toLowerCase() === "asc" ? "asc" : "desc";
+    q.orderBy(orderCol, orderDir);
 
     const rows = await q;
+
+    // Category breakdown aggregation
+    const categoryMap = new Map();
+    for (const r of rows) {
+      const catKey = r.category_name || "Uncategorized";
+      const catId = r.category_id || "uncategorized";
+      if (!categoryMap.has(catKey)) {
+        categoryMap.set(catKey, {
+          id: catId,
+          name: catKey,
+          revenue: 0,
+          units_sold: 0,
+          item_count: 0,
+          percentage: 0,
+        });
+      }
+      const catObj = categoryMap.get(catKey);
+      catObj.revenue += Number(r.revenue || 0);
+      catObj.units_sold += Number(r.quantity_sold || 0);
+      catObj.item_count += 1;
+    }
+
+    // Daily sales trend aggregation for charts
+    const baseItemsTrendQuery = knex("order_items")
+      .join("orders", "order_items.order_id", "orders.id")
+      .join("restaurants", "orders.restaurant_id", "restaurants.id")
+      .leftJoin("menu_items", "order_items.menu_item_id", "menu_items.id")
+      .leftJoin("menu_categories", "menu_items.category_id", "menu_categories.id")
+      .whereIn("orders.status", ["delivered", "completed"])
+      .modify((qb) => {
+        applyRestaurantScope(qb, knex, "restaurants.id", scope);
+
+        // Date range filters
+        if (from && from.trim()) {
+          qb.where("orders.created_at", ">=", `${from.trim()}T00:00:00.000Z`);
+        }
+        if (to && to.trim()) {
+          qb.where("orders.created_at", "<=", `${to.trim()}T23:59:59.999Z`);
+        }
+        if (!from && !to) {
+          if (period === "today" || days === "1") {
+            qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE"));
+          } else if (period === "yesterday") {
+            qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE - INTERVAL '1 day'"))
+              .where("orders.created_at", "<", knex.raw("CURRENT_DATE"));
+          } else if (period === "this_month") {
+            qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW())"));
+          } else if (period === "last_month") {
+            qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW() - INTERVAL '1 month')"))
+              .where("orders.created_at", "<", knex.raw("DATE_TRUNC('month', NOW())"));
+          } else if (days && Number(days) > 0) {
+            const numDays = Math.min(parseInt(days, 10), 3650);
+            qb.where("orders.created_at", ">=", knex.raw("NOW() - ?::interval", [`${numDays} days`]));
+          }
+        }
+
+        if (category_id && category_id !== "all") {
+          qb.where("menu_categories.id", category_id);
+        }
+        if (menu_item_id && menu_item_id !== "all") {
+          qb.where(function () {
+            this.where("menu_items.id", menu_item_id).orWhere("order_items.menu_item_id", menu_item_id);
+          });
+        }
+        if (search && search.trim()) {
+          const s = `%${search.trim().toLowerCase()}%`;
+          qb.whereRaw("LOWER(COALESCE(menu_items.name, order_items.item_name)) LIKE ?", [s]);
+        }
+      });
+
+    const dailyTrendRows = await baseItemsTrendQuery
+      .select(
+        knex.raw("TO_CHAR(orders.created_at, 'YYYY-MM-DD') as date_str"),
+        knex.raw("TO_CHAR(orders.created_at, 'Mon DD') as formatted_date"),
+        knex.raw("SUM(order_items.line_total) as revenue"),
+        knex.raw("SUM(order_items.quantity::integer) as units_sold"),
+        knex.raw("COUNT(DISTINCT orders.id) as order_count")
+      )
+      .groupByRaw("TO_CHAR(orders.created_at, 'YYYY-MM-DD'), TO_CHAR(orders.created_at, 'Mon DD')")
+      .orderBy("date_str", "asc");
+
+    const dailyTrend = dailyTrendRows.map((r) => ({
+      date: r.date_str,
+      formatted_date: r.formatted_date,
+      revenue: Number(r.revenue || 0),
+      units_sold: Number(r.units_sold || 0),
+      order_count: Number(r.order_count || 0),
+    }));
+
+    // Also get categories for the filter dropdown
+    let catQuery = knex("menu_categories")
+      .select("id", "name")
+      .where("is_active", true)
+      .orderBy("sort_order", "asc");
+    if (scope.restaurantIds?.length) {
+      catQuery = catQuery.whereIn("restaurant_id", scope.restaurantIds);
+    }
+    const categories = await catQuery;
+
+    // Also get all menu items for the item dropdown
+    let menuItemsQuery = knex("menu_items")
+      .select("id", "name", "category_id")
+      .orderBy("name", "asc");
+    if (scope.restaurantIds?.length) {
+      menuItemsQuery = menuItemsQuery.whereIn("restaurant_id", scope.restaurantIds);
+    }
+    const menuItems = await menuItemsQuery;
 
     const items = rows.map((r) => ({
       restaurant_id: r.restaurant_id,
       restaurant_name: r.restaurant_name,
       menu_item_id: r.menu_item_id,
       item_name: r.item_name || "Unknown item",
+      category_id: r.category_id || null,
+      category_name: r.category_name || "Uncategorized",
       quantity_sold: Number(r.quantity_sold || 0),
       order_count: Number(r.order_count || 0),
       revenue: Number(r.revenue || 0),
+      avg_price: Number(r.avg_price || 0),
     }));
 
-    res.json({ items });
+    const totalRevenue = items.reduce((s, i) => s + i.revenue, 0);
+    const totalUnits = items.reduce((s, i) => s + i.quantity_sold, 0);
+    const totalOrders = items.reduce((s, i) => s + i.order_count, 0);
+    const avgPrice = totalUnits > 0 ? totalRevenue / totalUnits : 0;
+
+    // Calculate category percentages and format list
+    const categoryBreakdown = Array.from(categoryMap.values()).map((c) => ({
+      ...c,
+      percentage: totalRevenue > 0 ? Math.round((c.revenue / totalRevenue) * 100) : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    const topProduct = items.length > 0 ? [...items].sort((a, b) => b.revenue - a.revenue)[0] : null;
+    const topCategory = categoryBreakdown.length > 0 ? categoryBreakdown[0] : null;
+
+    res.json({
+      items,
+      categories,
+      menu_items: menuItems,
+      category_breakdown: categoryBreakdown,
+      daily_trend: dailyTrend,
+      summary: {
+        total_revenue: totalRevenue,
+        total_units: totalUnits,
+        total_orders: totalOrders,
+        sku_count: items.length,
+        avg_price: avgPrice,
+        top_product: topProduct ? {
+          name: topProduct.item_name,
+          revenue: topProduct.revenue,
+          units_sold: topProduct.quantity_sold,
+        } : null,
+        top_category: topCategory ? {
+          name: topCategory.name,
+          revenue: topCategory.revenue,
+          percentage: topCategory.percentage,
+        } : null,
+      },
+    });
   } catch (e) {
     console.error("ITEM REPORTS STATS ERROR:", e.message);
     res.status(500).json({ error: e.message });
@@ -327,9 +630,9 @@ router.get("/all-restaurants", optionalAuth, requireAuth, async (req, res) => {
 router.get("/best-sellers", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    const scope = resolveReportRestaurantIds(req.user, req.query.restaurant_id);
+    const scope = await resolveReportRestaurantIds(knex, req.user, req.query.restaurant_id);
     if (!scope.allowed) {
-      return res.status(403).json({ error: "Access denied for this restaurant." });
+      return res.status(403).json({ error: scope.forbidden ? "Access denied: Branch reports are private to the branch and parent owner." : "Access denied for this restaurant." });
     }
 
     const limit = parsePositiveInt(req.query.limit, 10, 100);
@@ -406,9 +709,9 @@ router.get("/best-sellers", optionalAuth, requireAuth, async (req, res) => {
 router.get("/inventory", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    const scope = resolveReportRestaurantIds(req.user, req.query.restaurant_id);
+    const scope = await resolveReportRestaurantIds(knex, req.user, req.query.restaurant_id);
     if (!scope.allowed) {
-      return res.status(403).json({ error: "Access denied for this restaurant." });
+      return res.status(403).json({ error: scope.forbidden ? "Access denied: Branch reports are private to the branch and parent owner." : "Access denied for this restaurant." });
     }
 
     const lowStockThreshold = parsePositiveInt(req.query.low_stock_threshold, 10, 1000);
@@ -480,28 +783,82 @@ router.get("/inventory", optionalAuth, requireAuth, async (req, res) => {
   }
 });
 
-/** Customer spend and repeat-order analytics from orders. */
+/** Customer spend and repeat-order analytics from orders with date, category, customer type, search & sort filters. */
 router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    const scope = resolveReportRestaurantIds(req.user, req.query.restaurant_id);
+    const scope = await resolveReportRestaurantIds(knex, req.user, req.query.restaurant_id);
     if (!scope.allowed) {
-      return res.status(403).json({ error: "Access denied for this restaurant." });
+      return res.status(403).json({ error: scope.forbidden ? "Access denied: Branch reports are private to the branch and parent owner." : "Access denied for this restaurant." });
     }
 
-    const days = parsePositiveInt(req.query.days, 0, 3650);
-    const limit = parsePositiveInt(req.query.limit, 25, 200);
+    const {
+      from,
+      to,
+      days,
+      period,
+      category_id,
+      customer_type,
+      search,
+      sort_by = "total_spent",
+      sort_order = "desc",
+    } = req.query;
+
+    const limit = parsePositiveInt(req.query.limit, 50, 500);
 
     const baseOrders = knex("orders")
       .whereNot("status", "cancelled")
       .modify((qb) => {
         applyRestaurantScope(qb, knex, "orders.restaurant_id", scope);
-        if (days > 0) {
-          qb.where("orders.created_at", ">=", knex.raw("NOW() - ?::interval", [`${days} days`]));
+
+        // Date range filters
+        if (from && from.trim()) {
+          qb.where("orders.created_at", ">=", `${from.trim()}T00:00:00.000Z`);
+        }
+        if (to && to.trim()) {
+          qb.where("orders.created_at", "<=", `${to.trim()}T23:59:59.999Z`);
+        }
+        if (!from && !to) {
+          if (period === "today" || days === "1") {
+            qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE"));
+          } else if (period === "yesterday") {
+            qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE - INTERVAL '1 day'"))
+              .where("orders.created_at", "<", knex.raw("CURRENT_DATE"));
+          } else if (period === "this_month") {
+            qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW())"));
+          } else if (period === "last_month") {
+            qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW() - INTERVAL '1 month')"))
+              .where("orders.created_at", "<", knex.raw("DATE_TRUNC('month', NOW())"));
+          } else if (days && Number(days) > 0) {
+            const numDays = Math.min(parseInt(days, 10), 3650);
+            qb.where("orders.created_at", ">=", knex.raw("NOW() - ?::interval", [`${numDays} days`]));
+          }
+        }
+
+        // Category filter (orders that contain items belonging to category_id)
+        if (category_id && category_id !== "all") {
+          qb.whereExists(function () {
+            this.select("*")
+              .from("order_items")
+              .join("menu_items", "order_items.menu_item_id", "menu_items.id")
+              .whereRaw("order_items.order_id = orders.id")
+              .where("menu_items.category_id", category_id);
+          });
+        }
+
+        // Search by customer name, phone, or email
+        if (search && search.trim()) {
+          const s = `%${search.trim().toLowerCase()}%`;
+          qb.where(function () {
+            this.whereRaw("LOWER(COALESCE(orders.customer_name, '')) LIKE ?", [s])
+              .orWhereRaw("LOWER(COALESCE(orders.customer_phone, '')) LIKE ?", [s])
+              .orWhereRaw("LOWER(COALESCE(orders.customer_email, '')) LIKE ?", [s]);
+          });
         }
       });
 
-    const customerRows = await baseOrders
+    // Customer rows query
+    let customerQuery = baseOrders
       .clone()
       .select(
         "orders.restaurant_id",
@@ -512,12 +869,36 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
         knex.raw("SUM(orders.total_amount) as total_spent"),
         knex.raw("AVG(orders.total_amount) as avg_order_value"),
         knex.raw("MAX(orders.created_at) as last_order_at"),
-        knex.raw("MIN(orders.created_at) as first_order_at"),
+        knex.raw("MIN(orders.created_at) as first_order_at")
       )
       .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''")
-      .groupBy("orders.restaurant_id", knex.raw("TRIM(orders.customer_phone)"))
-      .orderBy("total_spent", "desc")
-      .limit(limit);
+      .groupBy("orders.restaurant_id", knex.raw("TRIM(orders.customer_phone)"));
+
+    // Filter by Customer Segment / Type
+    if (customer_type === "repeat") {
+      customerQuery.having(knex.raw("COUNT(*) > 1"));
+    } else if (customer_type === "single" || customer_type === "one_time") {
+      customerQuery.having(knex.raw("COUNT(*) = 1"));
+    } else if (customer_type === "vip") {
+      customerQuery.having(knex.raw("SUM(orders.total_amount) >= 100"));
+    } else if (customer_type === "new") {
+      customerQuery.having(knex.raw("MIN(orders.created_at) >= NOW() - INTERVAL '30 days'"));
+    }
+
+    // Sorting
+    const sortColMap = {
+      total_spent: "total_spent",
+      order_count: "order_count",
+      avg_order_value: "avg_order_value",
+      last_order_at: "last_order_at",
+      first_order_at: "first_order_at",
+      customer_name: knex.raw("MAX(orders.customer_name)"),
+    };
+    const orderCol = sortColMap[sort_by] || "total_spent";
+    const orderDir = String(sort_order).toLowerCase() === "asc" ? "asc" : "desc";
+    customerQuery.orderBy(orderCol, orderDir).limit(limit);
+
+    const customerRows = await customerQuery;
 
     const restaurantIds = [...new Set(customerRows.map((r) => r.restaurant_id))];
     const restaurantNameById = new Map();
@@ -540,13 +921,23 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
       is_repeat: Number(r.order_count || 0) > 1,
     }));
 
+    // Categories query for filter
+    let catQuery = knex("menu_categories")
+      .select("id", "name")
+      .where("is_active", true)
+      .orderBy("sort_order", "asc");
+    if (scope.restaurantIds?.length) {
+      catQuery = catQuery.whereIn("restaurant_id", scope.restaurantIds);
+    }
+    const categories = await catQuery;
+
     const [totalsRow] = await baseOrders
       .clone()
       .select(
         knex.raw("COUNT(*)::int as total_orders"),
         knex.raw("SUM(orders.total_amount) as total_revenue"),
         knex.raw("AVG(orders.total_amount) as avg_order_value"),
-        knex.raw("COUNT(DISTINCT TRIM(orders.customer_phone))::int as unique_customers"),
+        knex.raw("COUNT(DISTINCT TRIM(orders.customer_phone))::int as unique_customers")
       )
       .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''");
 
@@ -556,12 +947,12 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
           .clone()
           .select(
             knex.raw("TRIM(orders.customer_phone) as customer_phone"),
-            knex.raw("COUNT(*)::int as order_count"),
+            knex.raw("COUNT(*)::int as order_count")
           )
           .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''")
           .groupBy(knex.raw("TRIM(orders.customer_phone)"))
           .having(knex.raw("COUNT(*) > 1"))
-          .as("repeat_customers"),
+          .as("repeat_customers")
       )
       .count("* as cnt");
 
@@ -579,8 +970,120 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
     const totalOrders = Number(totalsRow?.total_orders || 0);
     const uniqueCustomers = Number(totalsRow?.unique_customers || 0);
 
+    // Precise calculation of Repeat vs One-Time breakdown
+    const customerAggSubq = baseOrders
+      .clone()
+      .select(
+        knex.raw("TRIM(orders.customer_phone) as customer_phone"),
+        knex.raw("COUNT(*)::int as order_count"),
+        knex.raw("SUM(orders.total_amount) as total_spent")
+      )
+      .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''")
+      .groupBy(knex.raw("TRIM(orders.customer_phone)"))
+      .as("cust_agg");
+
+    const breakdownRows = await knex
+      .from(customerAggSubq)
+      .select(
+        knex.raw("CASE WHEN order_count > 1 THEN 'repeat' ELSE 'one_time' END as cust_type"),
+        knex.raw("COUNT(*)::int as customer_count"),
+        knex.raw("SUM(order_count)::int as total_orders"),
+        knex.raw("SUM(total_spent) as total_revenue")
+      )
+      .groupBy(knex.raw("CASE WHEN order_count > 1 THEN 'repeat' ELSE 'one_time' END"));
+
+    let oneTimeBreakdown = {
+      customer_count: 0,
+      total_orders: 0,
+      total_revenue: 0,
+      avg_order_value: 0,
+      percentage: 0,
+    };
+    let repeatBreakdown = {
+      customer_count: 0,
+      total_orders: 0,
+      total_revenue: 0,
+      avg_order_value: 0,
+      percentage: 0,
+    };
+
+    for (const b of breakdownRows) {
+      const cCount = Number(b.customer_count || 0);
+      const oCount = Number(b.total_orders || 0);
+      const rev = Number(b.total_revenue || 0);
+      const avg = oCount > 0 ? rev / oCount : 0;
+      const pct = uniqueCustomers > 0 ? Math.round((cCount / uniqueCustomers) * 100) : 0;
+
+      if (b.cust_type === "repeat") {
+        repeatBreakdown = {
+          customer_count: cCount,
+          total_orders: oCount,
+          total_revenue: rev,
+          avg_order_value: avg,
+          percentage: pct,
+        };
+      } else {
+        oneTimeBreakdown = {
+          customer_count: cCount,
+          total_orders: oCount,
+          total_revenue: rev,
+          avg_order_value: avg,
+          percentage: pct,
+        };
+      }
+    }
+
+    // Ensure percentages sum to 100% if we have customers
+    if (uniqueCustomers > 0 && repeatBreakdown.customer_count > 0 && oneTimeBreakdown.customer_count > 0) {
+      oneTimeBreakdown.percentage = 100 - repeatBreakdown.percentage;
+    }
+
+    // Daily revenue trend for One-time vs Repeat orders
+    const dailyTrendRows = await knex
+      .from(
+        baseOrders
+          .clone()
+          .join(customerAggSubq, knex.raw("TRIM(orders.customer_phone)"), "cust_agg.customer_phone")
+          .select(
+            knex.raw("TO_CHAR(orders.created_at, 'YYYY-MM-DD') as date_str"),
+            knex.raw("TO_CHAR(orders.created_at, 'Mon DD') as formatted_date"),
+            knex.raw("CASE WHEN cust_agg.order_count > 1 THEN 'repeat' ELSE 'one_time' END as cust_type"),
+            knex.raw("SUM(orders.total_amount) as revenue"),
+            knex.raw("COUNT(orders.id)::int as order_count")
+          )
+          .groupByRaw("TO_CHAR(orders.created_at, 'YYYY-MM-DD'), TO_CHAR(orders.created_at, 'Mon DD'), CASE WHEN cust_agg.order_count > 1 THEN 'repeat' ELSE 'one_time' END")
+          .as("daily_agg")
+      )
+      .select("*")
+      .orderBy("date_str", "asc");
+
+    const trendMap = new Map();
+    for (const r of dailyTrendRows) {
+      if (!trendMap.has(r.date_str)) {
+        trendMap.set(r.date_str, {
+          date: r.date_str,
+          formatted_date: r.formatted_date,
+          one_time_revenue: 0,
+          repeat_revenue: 0,
+          total_revenue: 0,
+        });
+      }
+      const entry = trendMap.get(r.date_str);
+      const rev = Number(r.revenue || 0);
+      if (r.cust_type === "repeat") {
+        entry.repeat_revenue += rev;
+      } else {
+        entry.one_time_revenue += rev;
+      }
+      entry.total_revenue += rev;
+    }
+
+    const revenueTrend = Array.from(trendMap.values());
+
     res.json({
       customers,
+      categories,
+      revenue_trend: revenueTrend,
       summary: {
         total_orders: totalOrders,
         total_revenue: Number(totalsRow?.total_revenue || 0),
@@ -594,7 +1097,9 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
             : 0,
         orders_per_customer:
           uniqueCustomers > 0 ? Math.round((totalOrders / uniqueCustomers) * 10) / 10 : 0,
-        period_days: days || null,
+        period_days: days ? Number(days) : null,
+        one_time_breakdown: oneTimeBreakdown,
+        repeat_breakdown: repeatBreakdown,
       },
     });
   } catch (e) {

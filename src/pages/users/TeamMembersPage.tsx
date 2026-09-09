@@ -337,42 +337,42 @@ export default function TeamMembersPage() {
     if (r === "super_admin") {
       return (
         <Badge className="bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950/40 dark:text-orange-300 gap-1 font-semibold">
-          <ShieldCheck className="h-3 w-3" /> Super Admin
+          <ShieldCheck className="h-3 w-3" /> {t("users:roleSuperAdmin", "Super Admin")}
         </Badge>
       );
     }
     if (r === "owner") {
       return (
         <Badge className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 gap-1 font-semibold">
-          <ShieldCheck className="h-3 w-3" /> Owner
+          <ShieldCheck className="h-3 w-3" /> {t("users:roleOwner", "Owner")}
         </Badge>
       );
     }
     if (r === "admin") {
       return (
         <Badge className="bg-primary/10 text-primary border-primary/30 gap-1 font-semibold">
-          <Shield className="h-3 w-3" /> Admin
+          <Shield className="h-3 w-3" /> {t("users:roleAdmin", "Admin")}
         </Badge>
       );
     }
     if (r === "manager") {
       return (
         <Badge className="bg-primary/10 text-primary border-primary/30 gap-1 font-semibold">
-          <Shield className="h-3 w-3" /> Manager
+          <Shield className="h-3 w-3" /> {t("users:roleManager", "Manager")}
         </Badge>
       );
     }
     if (r === "kitchen" || r === "chef") {
       return (
         <Badge className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 gap-1">
-          <ChefHat className="h-3 w-3" /> Kitchen Staff
+          <ChefHat className="h-3 w-3" /> {t("users:roleKitchen", "Kitchen Staff")}
         </Badge>
       );
     }
     if (r === "cashier") {
       return (
         <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1">
-          <Receipt className="h-3 w-3" /> Cashier
+          <Receipt className="h-3 w-3" /> {t("users:roleCashier", "Cashier")}
         </Badge>
       );
     }
@@ -474,13 +474,13 @@ export default function TeamMembersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="manager">Manager (Operations, Menu, Orders & Inventory)</SelectItem>
-                    <SelectItem value="kitchen">Kitchen Staff (Order Fulfillment)</SelectItem>
-                    <SelectItem value="cashier">Cashier (Orders & Receipts)</SelectItem>
+                    <SelectItem value="manager">{t("users:roleOptionManager", "Manager (Operations, Menu, Orders & Inventory)")}</SelectItem>
+                    <SelectItem value="kitchen">{t("users:roleOptionKitchen", "Kitchen Staff (Order Fulfillment)")}</SelectItem>
+                    <SelectItem value="cashier">{t("users:roleOptionCashier", "Cashier (Orders & Receipts)")}</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground pt-1">
-                  Team members will have full rights to manage and modify this restaurant's operations.
+                  {t("users:teamMembersHelpText", "Team members will have full rights to manage and modify this restaurant's operations.")}
                 </p>
               </div>
 
@@ -494,7 +494,7 @@ export default function TeamMembersPage() {
                   className="gradient-primary text-primary-foreground gap-2 min-w-[120px]"
                 >
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {submitting ? "Saving..." : "Add Member"}
+                  {submitting ? t("common:saving", "Saving...") : t("users:addTeamMember", "Add Member")}
                 </Button>
               </DialogFooter>
             </form>
@@ -509,7 +509,7 @@ export default function TeamMembersPage() {
           <Input
             placeholder={
               isSuperAdmin
-                ? "Search platform team by name, email, or role..."
+                ? t("users:searchPlatformTeamPlaceholder", "Search platform team by name, email, or role...")
                 : t("users:searchTeamPlaceholder", "Search by name, email, or role...")
             }
             className="pl-9 rounded-xl text-xs"
@@ -524,20 +524,20 @@ export default function TeamMembersPage() {
         <CardHeader className="border-b border-border/40 py-4 px-6 bg-muted/10 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-bold flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            {isSuperAdmin ? "Platform Team Members" : t("users:activeTeamMembers", "Active Team Members")} ({filteredMembers.length})
+            {isSuperAdmin ? t("users:platformTeamMembers", "Platform Team Members") : t("users:activeTeamMembers", "Active Team Members")} ({filteredMembers.length})
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
             <div className="py-16 flex items-center justify-center gap-2 text-muted-foreground text-sm">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              <span>Loading team members...</span>
+              <span>{t("users:loadingTeamMembers", "Loading team members...")}</span>
             </div>
           ) : filteredMembers.length === 0 ? (
             <div className="py-16 text-center text-muted-foreground space-y-2">
               <Users className="h-10 w-10 mx-auto text-muted-foreground/30" />
-              <p className="font-semibold text-sm">No team members found</p>
-              <p className="text-xs">Click "Add Member" above to grant access.</p>
+              <p className="font-semibold text-sm">{t("users:noTeamMembersFound", "No team members found")}</p>
+              <p className="text-xs">{t("users:noTeamMembersSub", 'Click "Add Member" above to grant access.')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -545,21 +545,21 @@ export default function TeamMembersPage() {
                 <TableHeader>
                   <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border/50">
                     <TableHead className="py-3.5 px-6 font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                      Member
+                      {t("users:colMember", "Member")}
                     </TableHead>
                     {!isSuperAdmin && (
                       <TableHead className="py-3.5 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                        Restaurant
+                        {t("users:colRestaurant", "Restaurant")}
                       </TableHead>
                     )}
                     <TableHead className="py-3.5 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                      Role & Permissions
+                      {t("users:colRolePermissions", "Role & Permissions")}
                     </TableHead>
                     <TableHead className="py-3.5 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                      Date Added
+                      {t("users:colDateAdded", "Date Added")}
                     </TableHead>
                     <TableHead className="py-3.5 px-6 text-right font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                      Actions
+                      {t("users:colActions", "Actions")}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -607,9 +607,9 @@ export default function TeamMembersPage() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="manager">Manager</SelectItem>
-                                <SelectItem value="kitchen">Kitchen</SelectItem>
-                                <SelectItem value="cashier">Cashier</SelectItem>
+                                <SelectItem value="manager">{t("users:roleManager", "Manager")}</SelectItem>
+                                <SelectItem value="kitchen">{t("users:roleKitchen", "Kitchen")}</SelectItem>
+                                <SelectItem value="cashier">{t("users:roleCashier", "Cashier")}</SelectItem>
                               </SelectContent>
                             </Select>
                           )}

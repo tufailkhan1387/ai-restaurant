@@ -41,5 +41,13 @@
   "onTheWay": "Livreur en route",
   "delivered": "Commande livrée ! Bon appétit",
   "minutes": "min",
-  "items": "articles"
+  "items": "articles",
+  "chooseFlavor": "Choisissez votre saveur",
+  "flavor": "Saveur",
+  "flavorsAvailable": "{{count}} saveurs disponibles",
+  "chooseSize": "Choisissez votre taille",
+  "chooseSizeAndFlavor": "Choisissez votre taille et saveur",
+  "size": "Taille",
+  "sizesAvailable": "{{count}} tailles disponibles",
+  "sizesAndFlavors": "{{sizes}} tailles · {{flavors}} saveurs"
 }

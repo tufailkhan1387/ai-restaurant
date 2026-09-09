@@ -32,9 +32,14 @@ export function TopBar() {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const isBranch = Boolean(
+    activeRestaurant?.is_branch ||
+    (activeRestaurant?.parent_restaurant_id != null && activeRestaurant.parent_restaurant_id !== "")
+  );
+
   const results = useMemo(
-    () => filterSidebarNavItems(query, { isSuperAdmin }),
-    [query, isSuperAdmin],
+    () => filterSidebarNavItems(query, { isSuperAdmin, isBranch }),
+    [query, isSuperAdmin, isBranch],
   );
 
   const close = useCallback(() => {

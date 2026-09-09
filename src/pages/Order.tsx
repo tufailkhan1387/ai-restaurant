@@ -18,7 +18,15 @@ import {
   DialogFooter,
   DialogBody,
 } from "@/components/ui/dialog";
-import { Minus, Plus, ShoppingCart, Trash2, Check, Sparkles } from "lucide-react";
+import {
+  Minus,
+  Plus,
+  ShoppingCart,
+  Trash2,
+  Check,
+  Sparkles,
+  Boxes,
+} from "lucide-react";
 import { formatCurrency } from "@/lib/restaurant";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -42,9 +50,12 @@ type Variant = {
   id: string;
   menu_item_id: string;
   name: string;
+  measurement?: string | null;
   price: number;
   sort_order: number;
   is_active: boolean;
+  variant_type?: "size" | "flavor";
+  parent_id?: string | null;
 };
 
 type Addon = {
@@ -66,7 +77,7 @@ type Deal = { id: string; name: string; description: string | null; price: numbe
 type Settings = { name: string; phone: string | null; address: string | null; tax_rate: number; delivery_fee: number; min_order_amount: number; currency: string; is_open: boolean; allows_delivery?: boolean; allows_pickup?: boolean };
 type Restaurant = { id: string; elevenlabs_agent_id?: string | null };
 
-type CartLine = { kind: "item" | "deal"; refId: string; name: string; price: number; quantity: number };
+type BranchOption = { id: string; name: string; address: string | null; phone: string | null; is_accepting_orders?: boolean };
 type WorkingHour = { day_of_week: number; open_time: string; close_time: string };
 
 export default function Order() {
@@ -74,6 +85,8 @@ export default function Order() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -87,9 +100,10 @@ export default function Order() {
   const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup">("delivery");
   const [form, setForm] = useState({ customer_name: "", customer_phone: "", customer_email: "", delivery_address: "", notes: "" });
 
-  // Customization Dialog State (Pizza sizes, Burger sizes, Sauces & Extras)
+  // Customization Dialog State (Sizes, Flavors, Sauces & Extras)
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
-  const [chosenVariant, setChosenVariant] = useState<Variant | null>(null);
+  const [chosenSize, setChosenSize] = useState<Variant | null>(null);
+  const [chosenFlavor, setChosenFlavor] = useState<Variant | null>(null);
   const [chosenAddonIds, setChosenAddonIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -101,6 +115,7 @@ export default function Order() {
       const r = bundle.restaurant || {};
       setRestaurant({ id: r.id, elevenlabs_agent_id: r.elevenlabs_agent_id ?? null });
       setSettings({ ...s, allows_delivery: r.allows_delivery, allows_pickup: r.allows_pickup } as any);
+      setBranches(bundle.branches || []);
       
       if (r.allows_delivery === false && r.allows_pickup !== false) {
         setFulfillmentType("pickup");
@@ -133,14 +148,25 @@ export default function Order() {
   };
 
   const handleItemAddClick = (it: MenuItem) => {
-    const itemVariants = variants.filter((v) => v.menu_item_id === it.id);
+    const itemSizes = variants.filter((v) => v.menu_item_id === it.id && v.variant_type === "size");
+    const itemFlavors = variants.filter((v) => v.menu_item_id === it.id && v.variant_type !== "size");
     const linkedAddonIds = itemAddons.filter((l) => l.menu_item_id === it.id).map((l) => l.menu_addon_id);
     const itemLinkedAddons = addons.filter((a) => linkedAddonIds.includes(a.id));
 
-    // If item has sizes (variants) or sauces/addons, open customization dialog
-    if (itemVariants.length > 0 || itemLinkedAddons.length > 0) {
+    // If item has sizes, flavors or sauces/addons, open customization dialog
+    if (itemSizes.length > 0 || itemFlavors.length > 0 || itemLinkedAddons.length > 0) {
       setCustomizingItem(it);
-      setChosenVariant(itemVariants.length > 0 ? itemVariants[0] : null);
+      const firstActiveSize = itemSizes.find((s) => s.is_active !== false) || itemSizes[0] || null;
+      let initialFlavor: Variant | null = null;
+      if (firstActiveSize) {
+        const flavorsForSize = itemFlavors.filter((f) => f.parent_id === firstActiveSize.id);
+        initialFlavor = flavorsForSize.find((f) => f.is_active !== false) || flavorsForSize[0] || null;
+      }
+      if (!initialFlavor) {
+        initialFlavor = itemFlavors.find((f) => f.is_active !== false) || itemFlavors[0] || null;
+      }
+      setChosenSize(firstActiveSize);
+      setChosenFlavor(initialFlavor);
       setChosenAddonIds([]);
     } else {
       addItem({ kind: "item", refId: it.id, name: it.name, price: Number(it.price) });
@@ -148,21 +174,64 @@ export default function Order() {
     }
   };
 
+  const selectSize = (size: Variant) => {
+    setChosenSize(size);
+    const flavorsForThisSize = variants.filter(
+      (v) => v.menu_item_id === customizingItem?.id && v.variant_type !== "size" && v.parent_id === size.id
+    );
+    if (flavorsForThisSize.length > 0) {
+      const match = flavorsForThisSize.find((f) => f.name.toLowerCase() === chosenFlavor?.name.toLowerCase());
+      if (match) {
+        setChosenFlavor(match);
+      } else {
+        const firstActive = flavorsForThisSize.find((f) => f.is_active !== false) || flavorsForThisSize[0];
+        setChosenFlavor(firstActive);
+      }
+    }
+  };
+
   const addCustomizedItemToCart = () => {
     if (!customizingItem) return;
-    const basePrice = chosenVariant ? Number(chosenVariant.price) : Number(customizingItem.price);
+    if (activeCustomizingSizes.length > 0 && !chosenSize) {
+      return toast.error("Please choose a size");
+    }
+    if (chosenSize && chosenSize.is_active === false) {
+      return toast.error("Selected size is currently unavailable");
+    }
+    if (activeCustomizingFlavors.length > 0 && !chosenFlavor) {
+      return toast.error("Please choose a flavor");
+    }
+    if (chosenFlavor && chosenFlavor.is_active === false) {
+      return toast.error("Selected flavor is currently unavailable");
+    }
+
+    const basePrice = chosenSize ? Number(chosenSize.price) : Number(customizingItem.price);
+    const flavorExtra = chosenFlavor && Number(chosenFlavor.price) > 0 ? Number(chosenFlavor.price) : 0;
     const selectedAddonsList = addons.filter((a) => chosenAddonIds.includes(a.id));
     const addonsTotal = selectedAddonsList.reduce((sum, a) => sum + Number(a.price), 0);
-    const finalPrice = basePrice + addonsTotal;
+    const finalPrice = basePrice + flavorExtra + addonsTotal;
 
-    const sizePart = chosenVariant ? ` (${chosenVariant.name})` : "";
+    const sizeName = chosenSize
+      ? `${chosenSize.name}${chosenSize.measurement ? ` — ${chosenSize.measurement}` : ""}`
+      : "";
+    const flavorName = chosenFlavor ? chosenFlavor.name : "";
+
+    let descriptor = "";
+    if (sizeName && flavorName) {
+      descriptor = ` (${sizeName} · ${flavorName})`;
+    } else if (sizeName) {
+      descriptor = ` (${sizeName})`;
+    } else if (flavorName) {
+      descriptor = ` (${flavorName})`;
+    }
+
     const addonsPart =
       selectedAddonsList.length > 0 ? ` + ${selectedAddonsList.map((a) => a.name).join(", ")}` : "";
-    const fullName = `${customizingItem.name}${sizePart}${addonsPart}`;
+    const fullName = `${customizingItem.name}${descriptor}${addonsPart}`;
 
     addItem({
       kind: "item",
-      refId: `${customizingItem.id}-${chosenVariant?.id || "std"}-${chosenAddonIds.sort().join("-")}`,
+      refId: `${customizingItem.id}-${chosenSize?.id || "nosize"}-${chosenFlavor?.id || "noflavor"}-${chosenAddonIds.sort().join("-")}`,
       name: fullName,
       price: finalPrice,
     });
@@ -228,6 +297,7 @@ export default function Order() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           restaurant_id: restaurantId,
+          branch_id: selectedBranchId || null,
           customer_name: form.customer_name,
           customer_phone: form.customer_phone,
           customer_email: form.customer_email || null,
@@ -259,10 +329,26 @@ export default function Order() {
   );
 
   // Customization active options
-  const activeCustomizingVariants = useMemo(() => {
+  const activeCustomizingSizes = useMemo(() => {
     if (!customizingItem) return [];
-    return variants.filter((v) => v.menu_item_id === customizingItem.id);
+    return variants
+      .filter((v) => v.menu_item_id === customizingItem.id && v.variant_type === "size")
+      .sort((a, b) => a.sort_order - b.sort_order);
   }, [customizingItem, variants]);
+
+  const activeCustomizingFlavors = useMemo(() => {
+    if (!customizingItem) return [];
+    const itemFlavors = variants.filter(
+      (v) => v.menu_item_id === customizingItem.id && v.variant_type !== "size"
+    );
+    // If a size is selected and has child flavors, filter to ONLY that size's flavors!
+    if (chosenSize) {
+      const sizeFlavors = itemFlavors.filter((f) => f.parent_id === chosenSize.id);
+      if (sizeFlavors.length > 0) return sizeFlavors.sort((a, b) => a.sort_order - b.sort_order);
+    }
+    // Fallback: root flavors without parent
+    return itemFlavors.filter((f) => !f.parent_id).sort((a, b) => a.sort_order - b.sort_order);
+  }, [customizingItem, variants, chosenSize]);
 
   const activeCustomizingAddons = useMemo(() => {
     if (!customizingItem) return [];
@@ -274,164 +360,201 @@ export default function Order() {
 
   const computedCustomizingTotal = useMemo(() => {
     if (!customizingItem) return 0;
-    const base = chosenVariant ? Number(chosenVariant.price) : Number(customizingItem.price);
-    const addonsCost = addons
-      .filter((a) => chosenAddonIds.includes(a.id))
-      .reduce((sum, a) => sum + Number(a.price), 0);
-    return base + addonsCost;
-  }, [customizingItem, chosenVariant, chosenAddonIds, addons]);
+    const basePrice = chosenSize ? Number(chosenSize.price) : Number(customizingItem.price);
+    const flavorExtra = chosenFlavor && Number(chosenFlavor.price) > 0 ? Number(chosenFlavor.price) : 0;
+    const selectedAddonsList = addons.filter((a) => chosenAddonIds.includes(a.id));
+    const addonsTotal = selectedAddonsList.reduce((sum, a) => sum + Number(a.price), 0);
+    return basePrice + flavorExtra + addonsTotal;
+  }, [customizingItem, chosenSize, chosenFlavor, chosenAddonIds, addons]);
 
   return (
-    <div className="min-h-screen bg-muted/20">
-      <header className="border-b bg-background sticky top-0 z-10 shadow-xs">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary text-primary-foreground font-extrabold flex items-center justify-center text-lg shadow-md shadow-primary/20">
-              {settings?.name?.charAt(0) || "R"}
-            </div>
-            <div>
-              <h1 className="text-lg font-bold leading-tight">{settings?.name || "Restaurant"}</h1>
-              <p className="text-xs text-muted-foreground">{settings?.address || "Order online"}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2.5">
-              <LanguageSwitcher />
-              {restaurant?.elevenlabs_agent_id && (
-                <AIChatTest
-                  agentId={restaurant.elevenlabs_agent_id}
-                  restaurantName={settings?.name || "our restaurant"}
-                />
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="border-b bg-card sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <span>{settings?.name || "Restaurant"}</span>
+              {isOpenNow ? (
+                <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-semibold">
+                  Open
+                </Badge>
+              ) : (
+                <Badge variant="destructive" className="text-xs font-semibold">
+                  Closed
+                </Badge>
               )}
-              <Badge variant={isOpenNow && settings?.is_open ? "default" : "destructive"} className="text-xs font-semibold">
-                {isOpenNow && settings?.is_open ? t("common:active", "Open Now") : t("common:inactive", "Closed")}
-              </Badge>
-            </div>
+            </h1>
+            <p className="text-xs text-muted-foreground">{settings?.address || ""}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher />
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/">{t("ordering:adminLogin", "Admin")}</Link>
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-4 grid md:grid-cols-[200px_1fr_320px] gap-6">
-        {/* Categories */}
-        <aside className="space-y-1">
+      {/* Hero / Banner */}
+      <section className="bg-muted/40 border-b py-6 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black tracking-tight text-foreground">{t("ordering:heroTitle", "Delicious Food Delivered Fast")}</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {t("ordering:heroSubtitle", "Choose from our chef-crafted deals, specialty pizzas, and authentic meals.")}
+            </p>
+          </div>
+          {restaurant?.elevenlabs_agent_id ? (
+            <AIChatTest agentId={restaurant.elevenlabs_agent_id} />
+          ) : null}
+        </div>
+      </section>
+
+      {/* Category Pills Nav */}
+      <nav className="border-b bg-card sticky top-[57px] z-10 overflow-x-auto">
+        <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-2">
           {deals.length > 0 && (
             <Button
-              variant={activeCat === "deals" ? "default" : "ghost"}
-              className="w-full justify-start font-semibold"
+              size="sm"
+              variant={activeCat === "deals" ? "default" : "outline"}
               onClick={() => setActiveCat("deals")}
+              className="rounded-full text-xs font-semibold shrink-0"
             >
-              🏷️ {t("deals:title", "Deals & Offers")}
+              🔥 {t("deals:title", "Special Deals")} ({deals.length})
             </Button>
           )}
           {categories.map((c) => (
             <Button
               key={c.id}
-              variant={activeCat === c.id ? "default" : "ghost"}
-              className="w-full justify-start"
+              size="sm"
+              variant={activeCat === c.id ? "default" : "outline"}
               onClick={() => setActiveCat(c.id)}
+              className="rounded-full text-xs font-semibold shrink-0"
             >
               {c.name}
             </Button>
           ))}
-        </aside>
+        </div>
+      </nav>
 
-        {/* Items */}
-        <section className="space-y-3">
-          {activeCat === "deals" &&
-            deals.map((d) => (
-              <Card key={d.id} className="hover:border-primary/50 transition-colors">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{d.name}</h3>
-                      <Badge variant="destructive">{t("deals:title", "Deal")}</Badge>
+      {/* Main Content Area */}
+      <main className="max-w-6xl mx-auto px-4 py-6 flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 w-full">
+        {/* Menu Items Grid */}
+        <section className="space-y-4">
+          {activeCat === "deals" && deals.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {deals.map((d) => (
+                <Card key={d.id} className="overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
+                  {d.image_url && <img src={d.image_url} alt={d.name} className="h-40 w-full object-cover" />}
+                  <CardContent className="p-4 flex flex-col justify-between flex-1">
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-bold text-base text-foreground">{d.name}</h3>
+                        <Badge variant="secondary" className="bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold shrink-0">
+                          {t("deals:dealBadge", "Deal")}
+                        </Badge>
+                      </div>
+                      {d.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{d.description}</p>}
                     </div>
-                    {d.description && <p className="text-sm text-muted-foreground mt-1">{d.description}</p>}
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="font-semibold">{formatCurrency(d.price, settings?.currency)}</span>
-                      {d.original_price && (
-                        <span className="text-sm text-muted-foreground line-through">
-                          {formatCurrency(d.original_price, settings?.currency)}
-                        </span>
-                      )}
+                    <div className="mt-4 flex items-center justify-between pt-2 border-t">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-lg font-black text-foreground">{formatCurrency(d.price, settings?.currency)}</span>
+                        {d.original_price && Number(d.original_price) > Number(d.price) && (
+                          <span className="text-xs text-muted-foreground line-through">
+                            {formatCurrency(d.original_price, settings?.currency)}
+                          </span>
+                        )}
+                      </div>
+                      <Button size="sm" onClick={() => addItem({ kind: "deal", refId: d.id, name: d.name, price: Number(d.price) })}>
+                        <Plus className="h-4 w-4 mr-1" /> {t("ordering:addDeal", "Add")}
+                      </Button>
                     </div>
-                  </div>
-                  <Button onClick={() => addItem({ kind: "deal", refId: d.id, name: d.name, price: Number(d.price) })}>
-                    <Plus className="h-4 w-4 mr-1" /> {t("ordering:addToCart", "Add")}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
-          {visibleItems.map((it) => {
-            const isOutOfStock =
-              it.is_available === false ||
-              (it.track_inventory && Number(it.stock_quantity ?? 0) <= 0);
+          {visibleItems.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {visibleItems.map((it) => {
+                const itemSizes = variants.filter((v) => v.menu_item_id === it.id && v.variant_type === "size");
+                const itemFlavors = variants.filter((v) => v.menu_item_id === it.id && v.variant_type !== "size");
+                const linkedAddons = itemAddons.filter((l) => l.menu_item_id === it.id);
+                const hasCustomization = itemSizes.length > 0 || itemFlavors.length > 0 || linkedAddons.length > 0;
+                const isOutOfStock = !it.is_available || (it.track_inventory && Number(it.stock_quantity || 0) <= 0);
 
-            const itemVariants = variants.filter((v) => v.menu_item_id === it.id);
-            const linkedAddonIds = itemAddons
-              .filter((l) => l.menu_item_id === it.id)
-              .map((l) => l.menu_addon_id);
-            const hasCustomization = itemVariants.length > 0 || linkedAddonIds.length > 0;
+                const sizePrices = itemSizes.filter((s) => s.is_active).map((s) => Number(s.price));
+                const minSizePrice = sizePrices.length > 0 ? Math.min(...sizePrices) : Number(it.price);
 
-            return (
-              <Card
-                key={it.id}
-                className={cn("transition-all hover:border-primary/40", isOutOfStock && "opacity-75 bg-muted/20 border-destructive/20")}
-              >
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-base">{it.name}</h3>
-                      {isOutOfStock && (
-                        <Badge
-                          variant="destructive"
-                          className="bg-destructive/10 text-destructive border-destructive/20 text-xs font-semibold px-2 py-0.5"
+                return (
+                  <Card key={it.id} className={cn("overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow", isOutOfStock && "opacity-60")}>
+                    {it.image_url && <img src={it.image_url} alt={it.name} className="h-40 w-full object-cover" />}
+                    <CardContent className="p-4 flex flex-col justify-between flex-1">
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-bold text-base text-foreground">{it.name}</h3>
+                          {isOutOfStock && (
+                            <Badge variant="destructive" className="text-xs font-semibold shrink-0">
+                              {t("menu:outOfStock", "Out of Order")}
+                            </Badge>
+                          )}
+                        </div>
+                        {it.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{it.description}</p>}
+                        
+                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-foreground">
+                            {sizePrices.length > 0
+                              ? `From ${formatCurrency(minSizePrice, settings?.currency)}`
+                              : formatCurrency(it.price, settings?.currency)}
+                          </span>
+                          {it.dietary_tags?.map((t) => (
+                            <Badge key={t} variant="secondary" className="text-xs">
+                              {t}
+                            </Badge>
+                          ))}
+                          {itemSizes.length > 0 && (
+                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 text-xs font-semibold">
+                              {itemSizes.length} {itemSizes.length === 1 ? "Size" : "Sizes"}
+                            </Badge>
+                          )}
+                          {itemFlavors.length > 0 && (
+                            <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 text-xs font-semibold">
+                              {itemFlavors.length} {itemFlavors.length === 1 ? "Flavor" : "Flavors"}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {isOutOfStock ? (
+                        <Button
+                          disabled
+                          variant="secondary"
+                          size="sm"
+                          className="opacity-70 cursor-not-allowed bg-muted text-muted-foreground border border-border mt-3"
                         >
                           {t("menu:outOfStock", "Out of Order")}
-                        </Badge>
+                        </Button>
+                      ) : (
+                        <Button className="mt-3" onClick={() => handleItemAddClick(it)}>
+                          <Plus className="h-4 w-4 mr-1" />
+                          {itemSizes.length > 0 && itemFlavors.length > 0
+                            ? t("ordering:chooseSizeAndFlavor", "Choose Size & Flavor")
+                            : itemSizes.length > 0
+                            ? t("ordering:chooseSize", "Choose Size")
+                            : itemFlavors.length > 0
+                            ? t("ordering:chooseFlavor", "Choose Flavor")
+                            : hasCustomization
+                            ? t("ordering:itemOptions", "Customize")
+                            : t("ordering:addToCart", "Add")}
+                        </Button>
                       )}
-                    </div>
-                    {it.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{it.description}</p>}
-                    
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-foreground">
-                        {itemVariants.length > 0
-                          ? `From ${formatCurrency(Math.min(...itemVariants.map((v) => Number(v.price))), settings?.currency)}`
-                          : formatCurrency(it.price, settings?.currency)}
-                      </span>
-                      {it.dietary_tags?.map((t) => (
-                        <Badge key={t} variant="secondary" className="text-xs">
-                          {t}
-                        </Badge>
-                      ))}
-                      {itemVariants.length > 0 && (
-                        <span className="text-xs text-muted-foreground font-medium">
-                          ({itemVariants.length} Sizes)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {isOutOfStock ? (
-                    <Button
-                      disabled
-                      variant="secondary"
-                      size="sm"
-                      className="opacity-70 cursor-not-allowed bg-muted text-muted-foreground border border-border"
-                    >
-                      {t("menu:outOfStock", "Out of Order")}
-                    </Button>
-                  ) : (
-                    <Button onClick={() => handleItemAddClick(it)}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      {hasCustomization ? t("ordering:itemOptions", "Choose Size / Sauces") : t("ordering:addToCart", "Add")}
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
 
           {activeCat !== "deals" && visibleItems.length === 0 && (
             <p className="text-muted-foreground text-sm py-8 text-center">{t("menu:noItemsFound", "No items in this category.")}</p>
@@ -487,43 +610,39 @@ export default function Order() {
                   <span>{formatCurrency(total, settings?.currency)}</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t("ordering:deliveryDetails", "Order Details")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {settings?.allows_delivery !== false && settings?.allows_pickup !== false && (
-                <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
-                  <Button
-                    variant={fulfillmentType === "delivery" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setFulfillmentType("delivery")}
-                    className="text-xs"
-                  >
-                    {t("orders:delivery", "Delivery")}
-                  </Button>
-                  <Button
-                    variant={fulfillmentType === "pickup" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setFulfillmentType("pickup")}
-                    className="text-xs"
-                  >
-                    {t("orders:pickup", "Pickup")}
-                  </Button>
-                </div>
-              )}
+              {/* Fulfillment Switch & Customer Details */}
+              <div className="space-y-3 pt-3 border-t">
+                {settings?.allows_delivery !== false && settings?.allows_pickup !== false && (
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={fulfillmentType === "delivery" ? "default" : "ghost"}
+                      className="text-xs h-8"
+                      onClick={() => setFulfillmentType("delivery")}
+                    >
+                      🛵 {t("ordering:delivery", "Delivery")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={fulfillmentType === "pickup" ? "default" : "ghost"}
+                      className="text-xs h-8"
+                      onClick={() => setFulfillmentType("pickup")}
+                    >
+                      🛍️ {t("orders:pickup", "Pickup")}
+                    </Button>
+                  </div>
+                )}
 
-              <div className="space-y-3">
                 <div>
-                  <Label>{t("ordering:customerName", "Name")} *</Label>
-                  <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
+                  <Label>{t("ordering:customerName", "Your Name")} *</Label>
+                  <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="John Doe" />
                 </div>
                 <div>
-                  <Label>{t("ordering:customerPhone", "Phone")} *</Label>
-                  <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} />
+                  <Label>{t("ordering:customerPhone", "Phone Number")} *</Label>
+                  <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="+1234567890" />
                 </div>
                 <div>
                   <Label>{t("ordering:customerEmail", "Email")}</Label>
@@ -540,10 +659,37 @@ export default function Order() {
                     />
                   </div>
                 ) : (
-                  <div className="p-3 rounded-lg border bg-primary/5 text-primary text-xs flex flex-col gap-1">
-                    <p className="font-bold">{t("orders:pickup", "Pickup from")}:</p>
-                    <p>{settings?.name}</p>
-                    <p className="opacity-80">{settings?.address}</p>
+                  <div className="space-y-3">
+                    {branches.length > 0 && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">{t("orders:pickupLocation", "Pickup Location")}</Label>
+                        <select
+                          value={selectedBranchId}
+                          onChange={(e) => setSelectedBranchId(e.target.value)}
+                          className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="">{settings?.name || "Main Location"} (Main)</option>
+                          {branches.map((b) => (
+                            <option key={b.id} value={b.id} disabled={b.is_accepting_orders === false}>
+                              {b.name} {b.address ? `— ${b.address}` : ""} {b.is_accepting_orders === false ? "(Closed)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <div className="p-3 rounded-lg border bg-primary/5 text-primary text-xs flex flex-col gap-1">
+                      <p className="font-bold">{t("orders:pickup", "Pickup from")}:</p>
+                      <p className="font-semibold">
+                        {selectedBranchId
+                          ? branches.find((b) => b.id === selectedBranchId)?.name || settings?.name
+                          : settings?.name}
+                      </p>
+                      <p className="opacity-85">
+                        {selectedBranchId
+                          ? branches.find((b) => b.id === selectedBranchId)?.address || settings?.address
+                          : settings?.address}
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -551,16 +697,16 @@ export default function Order() {
                   <Label>{t("ordering:specialInstructions", "Notes")}</Label>
                   <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Any special instructions?" />
                 </div>
+                <Button className="w-full font-bold" onClick={submitOrder} disabled={submitting || cart.length === 0}>
+                  {submitting ? t("ordering:processingOrder", "Placing order…") : `${t("ordering:placeOrder", "Place order")} — ${formatCurrency(total, settings?.currency)}`}
+                </Button>
               </div>
-              <Button className="w-full font-bold" onClick={submitOrder} disabled={submitting || cart.length === 0}>
-                {submitting ? t("ordering:processingOrder", "Placing order…") : `${t("ordering:placeOrder", "Place order")} — ${formatCurrency(total, settings?.currency)}`}
-              </Button>
             </CardContent>
           </Card>
         </aside>
       </main>
 
-      {/* Item Customization Dialog (Sizes & Sauces) */}
+      {/* Item Customization Dialog (Sizes, Flavors & Extras) */}
       <Dialog open={!!customizingItem} onOpenChange={(open) => !open && setCustomizingItem(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -574,30 +720,45 @@ export default function Order() {
           </DialogHeader>
 
           <DialogBody className="space-y-5 py-2">
-            {/* 1. Size Selection (Variants) */}
-            {activeCustomizingVariants.length > 0 && (
+            {/* 1. Size Selection */}
+            {activeCustomizingSizes.length > 0 && (
               <div className="space-y-2.5">
-                <Label className="text-sm font-bold text-foreground uppercase tracking-wider text-xs">
-                  1. {t("menu:extraPrice", "Select Size / Variant")} *
+                <Label className="text-sm font-bold text-foreground uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Boxes className="h-3.5 w-3.5 text-blue-500" />
+                  1. {t("ordering:chooseSize", "Choose your size")} *
                 </Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {activeCustomizingVariants.map((v) => {
-                    const isSelected = chosenVariant?.id === v.id;
+                  {activeCustomizingSizes.map((s) => {
+                    const isSelected = chosenSize?.id === s.id;
+                    const isUnavailable = s.is_active === false;
+
                     return (
                       <button
                         type="button"
-                        key={v.id}
-                        onClick={() => setChosenVariant(v)}
+                        key={s.id}
+                        disabled={isUnavailable}
+                        onClick={() => !isUnavailable && selectSize(s)}
                         className={cn(
-                          "flex items-center justify-between p-3 rounded-xl border text-left transition-all",
-                          isSelected
-                            ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-1 ring-primary"
+                          "flex items-center justify-between p-3 rounded-xl border text-left transition-all relative",
+                          isUnavailable
+                            ? "opacity-50 cursor-not-allowed bg-muted/40 border-dashed border-border"
+                            : isSelected
+                            ? "border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-300 font-bold shadow-xs ring-1 ring-blue-500"
                             : "border-border hover:bg-muted/50 text-foreground"
                         )}
                       >
-                        <span className="text-sm font-semibold">{v.name}</span>
-                        <span className="text-sm tabular-nums font-bold">
-                          {formatCurrency(v.price, settings?.currency)}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={cn("text-sm font-semibold truncate", isUnavailable && "line-through text-muted-foreground")}>
+                            {s.name}{s.measurement ? ` — ${s.measurement}` : ""}
+                          </span>
+                          {isUnavailable && (
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                              {t("menu:unavailable", "Unavailable")}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-sm tabular-nums font-bold shrink-0 ml-2">
+                          {formatCurrency(s.price, settings?.currency)}
                         </span>
                       </button>
                     );
@@ -606,11 +767,58 @@ export default function Order() {
               </div>
             )}
 
-            {/* 2. Sauces & Add-ons Selection */}
+            {/* 2. Flavor Selection */}
+            {activeCustomizingFlavors.length > 0 && (
+              <div className="space-y-2.5">
+                <Label className="text-sm font-bold text-foreground uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  {activeCustomizingSizes.length > 0 ? "2" : "1"}. {t("ordering:chooseFlavor", "Choose your flavor")} *
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {activeCustomizingFlavors.map((f) => {
+                    const isSelected = chosenFlavor?.id === f.id;
+                    const isUnavailable = f.is_active === false;
+
+                    return (
+                      <button
+                        type="button"
+                        key={f.id}
+                        disabled={isUnavailable}
+                        onClick={() => !isUnavailable && setChosenFlavor(f)}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-xl border text-left transition-all relative",
+                          isUnavailable
+                            ? "opacity-50 cursor-not-allowed bg-muted/40 border-dashed border-border"
+                            : isSelected
+                            ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-1 ring-primary"
+                            : "border-border hover:bg-muted/50 text-foreground"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={cn("text-sm font-semibold truncate", isUnavailable && "line-through text-muted-foreground")}>
+                            {f.name}
+                          </span>
+                          {isUnavailable && (
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">
+                              {t("menu:unavailable", "Unavailable")}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-sm tabular-nums font-bold shrink-0 ml-2">
+                          {Number(f.price) > 0 ? `+${formatCurrency(f.price, settings?.currency)}` : formatCurrency(0, settings?.currency)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Sauces & Add-ons Selection */}
             {activeCustomizingAddons.length > 0 && (
               <div className="space-y-2.5">
                 <Label className="text-sm font-bold text-foreground uppercase tracking-wider text-xs">
-                  2. {t("menu:tabAddOns", "Choose Extra Sauces / Add-ons")} ({t("common:optional", "Optional")})
+                  {(activeCustomizingSizes.length > 0 ? 1 : 0) + (activeCustomizingFlavors.length > 0 ? 1 : 0) + 1}. {t("menu:tabAddOns", "Choose Extra Sauces / Add-ons")} ({t("common:optional", "Optional")})
                 </Label>
                 <div className="space-y-2">
                   {activeCustomizingAddons.map((ad) => {
@@ -652,19 +860,18 @@ export default function Order() {
             )}
           </DialogBody>
 
-          <DialogFooter className="flex items-center justify-between sm:justify-between border-t pt-4">
-            <div>
-              <p className="text-xs text-muted-foreground">{t("common:total", "Total Price")}</p>
-              <p className="text-lg font-extrabold text-foreground tabular-nums">
+          <DialogFooter className="flex-col sm:flex-row items-center justify-between gap-3 border-t pt-3">
+            <div className="text-left w-full sm:w-auto">
+              <span className="text-xs text-muted-foreground block">{t("ordering:total", "Total Price")}</span>
+              <span className="text-lg font-black text-foreground">
                 {formatCurrency(computedCustomizingTotal, settings?.currency)}
-              </p>
+              </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <Button variant="outline" onClick={() => setCustomizingItem(null)}>
                 {t("common:cancel", "Cancel")}
               </Button>
               <Button onClick={addCustomizedItemToCart} className="font-bold">
-                <Check className="h-4 w-4 mr-1.5" />
                 {t("ordering:addToCart", "Add to Cart")}
               </Button>
             </div>

@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter, DialogBody } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge, Search, X, FilterX, Eye } from "lucide-react";
+import { Pencil, Plus, Trash2, UtensilsCrossed, Layers, Loader2, LayoutGrid, ListTree, PlusSquare, RefreshCw, Boxes, Gauge, Search, X, FilterX, Eye, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/lib/restaurant";
@@ -43,7 +43,17 @@ interface MenuItem {
   stock_quantity?: number | null;
   max_order_quantity?: number | null;
 }
-interface MenuItemVariant { id: string; menu_item_id: string; name: string; price: number; sort_order: number; is_active: boolean }
+interface MenuItemVariant {
+  id: string;
+  menu_item_id: string;
+  name: string;
+  measurement?: string | null;
+  price: number;
+  sort_order: number;
+  is_active: boolean;
+  variant_type?: "size" | "flavor";
+  parent_id?: string | null;
+}
 interface MenuAddon {
   id: string;
   restaurant_id: string;
@@ -158,14 +168,14 @@ function MenuItemsTable({
       <table className="w-full text-sm min-w-[980px] border-collapse">
         <thead className="text-left bg-muted/40 text-muted-foreground border-b text-xs font-semibold uppercase tracking-wider">
           <tr>
-            <th className="py-3 px-4 w-12 text-center">#</th>
+            <th className="py-3 px-4 w-12 text-center">{t("menu:itemNumber", "Item #")}</th>
             <th className="py-3 px-4 w-16">{t("menu:image", "Image")}</th>
-            <th className="py-3 px-4 min-w-[180px]">{t("menu:itemName", "Product name")}</th>
-            <th className="py-3 px-4">{t("menu:category", "Menu category")}</th>
-            <th className="py-3 px-4 whitespace-nowrap">{t("menu:price", "Price")}</th>
-            <th className="py-3 px-4">{t("menu:preparationTime", "Prep")}</th>
+            <th className="py-3 px-4 min-w-[240px]">{t("menu:itemName", "Item Name")}</th>
+            <th className="py-3 px-4">{t("menu:category", "Category")}</th>
             <th className="py-3 px-4">{t("menu:subCategory", "Sub-category")}</th>
-            <th className="py-3 px-4 text-center whitespace-nowrap">{t("menu:tabAddOns", "Add-on groups")}</th>
+            <th className="py-3 px-4 text-center whitespace-nowrap">{t("menu:stock", "Stock")}</th>
+            <th className="py-3 px-4 whitespace-nowrap">{t("menu:preparationTime", "Prep Time")}</th>
+            <th className="py-3 px-4 whitespace-nowrap">{t("menu:price", "Price")}</th>
             <th className="py-3 px-4 text-center">{t("common:status", "Status")}</th>
             <th className="py-3 px-4 w-28 text-right">{t("common:actions", "Actions")}</th>
           </tr>
@@ -175,28 +185,51 @@ function MenuItemsTable({
             const thumbSrc = resolveMediaUrl(it.image_url);
             const categoryName = categories?.find((c) => c.id === it.category_id)?.name || t("common:uncategorized", "Uncategorized");
             const subCategoryName = subCategories?.find((sc) => sc.id === it.sub_category_id)?.name || "—";
-            const addOnCount = itemAddonCount?.[it.id] ?? (addonSummary?.[it.id] ? addonSummary[it.id].split(',').length : 0);
-            const addOnNames = addonSummary?.[it.id];
+
+            const itemVars = itemVariants?.filter((v) => v.menu_item_id === it.id) || [];
+            const itemSizes = itemVars.filter((v) => v.variant_type === "size");
+            const itemFlavors = itemVars.filter((v) => v.variant_type !== "size");
+
+            const sizePrices = itemSizes.filter((s) => s.is_active).map((s) => Number(s.price));
+            const flavorPrices = itemFlavors.filter((v) => v.is_active && Number(v.price) > 0).map((v) => Number(v.price));
+
+            let minPrice = Number(it.price) || 0;
+            let maxPrice = Number(it.price) || 0;
+            if (sizePrices.length > 0) {
+              minPrice = Math.min(...sizePrices);
+              maxPrice = Math.max(...sizePrices);
+            } else if (flavorPrices.length > 0) {
+              minPrice = Math.min(...flavorPrices);
+              maxPrice = Math.max(...flavorPrices);
+            }
 
             return (
               <tr key={it.id} className="hover:bg-muted/40 transition-colors">
+                {/* 1. Item # */}
                 <td className="py-3 px-4 align-middle text-center text-xs font-medium text-muted-foreground">
-                  {idx + 1}
+                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-muted/50 border border-border/40 font-semibold text-xs">
+                    {idx + 1}
+                  </span>
                 </td>
+
+                {/* 2. Image */}
                 <td className="py-3 px-4 align-middle">
                   {thumbSrc ? (
-                    <img src={thumbSrc} alt={it.name} className="h-10 w-10 rounded-md object-cover border bg-muted/20" />
+                    <img src={thumbSrc} alt={it.name} className="h-11 w-11 rounded-lg object-cover border bg-muted/20 shadow-2xs" />
                   ) : (
-                    <div className="h-10 w-10 rounded-md border bg-muted/30 flex items-center justify-center text-muted-foreground text-xs font-medium">
-                      <UtensilsCrossed className="h-4 w-4 opacity-50" />
+                    <div className="h-11 w-11 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground text-xs font-medium">
+                      <UtensilsCrossed className="h-5 w-5 opacity-50" />
                     </div>
                   )}
                 </td>
+
+                {/* 3. Item Name */}
                 <td className="py-3 px-4 align-middle font-medium">
+                  {/* Name + Out of stock badge */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <Link
                       to={`/menu/items/${it.id}`}
-                      className="text-foreground font-semibold hover:text-primary hover:underline underline-offset-2"
+                      className="text-foreground font-bold hover:text-primary hover:underline underline-offset-2 text-sm leading-tight"
                     >
                       {it.name}
                     </Link>
@@ -205,76 +238,106 @@ function MenuItemsTable({
                         variant="destructive"
                         className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] px-1.5 py-0 h-4 font-semibold"
                       >
-                        {t("menu:outOfStock", "Out of Order")}
+                        {t("menu:outOfStock", "Out of Stock")}
                       </Badge>
                     )}
                   </div>
+
+                  {/* Description */}
                   {it.description && (
-                    <div className="text-xs text-muted-foreground line-clamp-1 max-w-[220px]" title={it.description}>
+                    <div className="text-xs text-muted-foreground line-clamp-1 max-w-[280px] mt-0.5" title={it.description}>
                       {it.description}
                     </div>
                   )}
-                  {itemVariants?.filter((v) => v.menu_item_id === it.id).length ? (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {itemVariants.filter((v) => v.menu_item_id === it.id).map((v) => (
-                        <Badge key={v.id} variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">
-                          {v.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : null}
                 </td>
+
+                {/* 4. Category */}
                 <td className="py-3 px-4 align-middle">
-                  <span className="text-xs font-medium text-foreground">{categoryName}</span>
+                  <span className="inline-block text-xs font-medium text-foreground bg-muted/60 px-2.5 py-1 rounded-md">
+                    {categoryName}
+                  </span>
                 </td>
-                <td className="py-3 px-4 align-middle whitespace-nowrap font-semibold text-foreground">
-                  {formatCurrency(it.price)}
-                </td>
+
+                {/* 5. Sub-category */}
                 <td className="py-3 px-4 align-middle">
-                  <div className="text-xs text-muted-foreground whitespace-nowrap">
-                    {it.prep_time_minutes ? `${it.prep_time_minutes} min` : "—"}
-                  </div>
+                  <span className="text-xs font-bold text-amber-700 dark:text-amber-400 lowercase">
+                    {subCategoryName}
+                  </span>
                 </td>
-                <td className="py-3 px-4 align-middle text-xs text-muted-foreground">
-                  {subCategoryName}
-                </td>
+
+                {/* 6. Stock */}
                 <td className="py-3 px-4 align-middle text-center">
-                  {addOnNames ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 text-xs font-semibold rounded-full bg-muted text-foreground cursor-help underline decoration-dotted">
-                          {addOnCount}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs text-xs">
-                        {addOnNames}
-                      </TooltipContent>
-                    </Tooltip>
+                  <span className="inline-block border border-border/80 bg-background px-2.5 py-0.5 rounded-md text-xs font-semibold text-foreground">
+                    {it.track_inventory ? (it.stock_quantity ?? 0) : "1"}
+                  </span>
+                </td>
+
+                {/* 7. Prep Time */}
+                <td className="py-3 px-4 align-middle whitespace-nowrap">
+                  {it.prep_time_minutes ? (
+                    <div className="flex flex-col text-xs">
+                      <span className="font-semibold text-foreground leading-tight">{it.prep_time_minutes}</span>
+                      <span className="text-[10px] text-muted-foreground leading-none">min</span>
+                    </div>
                   ) : (
-                    <span className="text-xs text-muted-foreground font-medium">{addOnCount}</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </td>
-                <td className="py-3 px-4 align-middle text-center">
-                  <div className="flex items-center justify-center">
-                    <Switch
-                      checked={Boolean(it.is_available)}
-                      onCheckedChange={() => onToggleAvailability?.(it)}
-                      className="data-[state=checked]:bg-primary"
-                    />
-                  </div>
+
+                {/* 8. Price */}
+                <td className="py-3 px-4 align-middle whitespace-nowrap">
+                  {(sizePrices.length > 1 || flavorPrices.length > 1) && minPrice !== maxPrice ? (
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-muted-foreground font-medium leading-none mb-0.5">From</span>
+                      <span className="text-sm sm:text-base font-extrabold text-foreground leading-tight">{formatCurrency(minPrice)}</span>
+                    </div>
+                  ) : (
+                    <span className="text-sm sm:text-base font-extrabold text-foreground">
+                      {formatCurrency(minPrice || it.price)}
+                    </span>
+                  )}
                 </td>
+
+                {/* 9. Status Switch */}
+                <td className="py-3 px-4 align-middle text-center">
+                  <Switch
+                    checked={it.is_available}
+                    onCheckedChange={() => onToggleAvailability?.(it)}
+                    className="data-[state=checked]:bg-primary"
+                  />
+                </td>
+
+                {/* Actions Column */}
                 <td className="py-3 px-4 align-middle text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
-                      <Link to={`/menu/items/${it.id}`} title="View details">
-                        <Eye className="h-4 w-4" />
+                  <div className="flex items-center justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-8 p-0 rounded-lg border-border/60 text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                      asChild
+                      title={t("common:view", "View details")}
+                    >
+                      <Link to={`/menu/items/${it.id}`}>
+                        <Eye className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => onEdit(it)}>
-                      <Pencil className="h-4 w-4" />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-8 p-0 rounded-lg border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      onClick={() => onEdit(it)}
+                      title={t("common:edit", "Edit")}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete(it.id)}>
-                      <Trash2 className="h-4 w-4" />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-8 p-0 rounded-lg border-red-200/60 bg-red-50/40 dark:bg-red-950/20 text-red-600 hover:bg-red-100/80 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/50"
+                      onClick={() => onDelete(it.id)}
+                      title={t("common:delete", "Delete")}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </td>
@@ -509,10 +572,19 @@ export default function Menu() {
 
   const beginEditItem = async (it: MenuItem) => {
     setEditItem(it);
-    const { data } = await supabase.from("menu_item_addons").select("menu_addon_id").eq("menu_item_id", it.id);
+    const [{ data: linkData }, { data: variantData }] = await Promise.all([
+      supabase.from("menu_item_addons").select("menu_addon_id").eq("menu_item_id", it.id),
+      supabase.from("menu_item_variants").select("*").eq("menu_item_id", it.id).order("sort_order"),
+    ]);
     const allowed = new Set(addons.map((x) => x.id));
-    const raw = ((data as { menu_addon_id: string }[]) || []).map((r) => r.menu_addon_id);
+    const raw = ((linkData as { menu_addon_id: string }[]) || []).map((r) => r.menu_addon_id);
     setEditItemAddonIds(raw.filter((id) => allowed.has(id)));
+    if (variantData) {
+      setItemVariants((prev) => {
+        const others = prev.filter((v) => v.menu_item_id !== it.id);
+        return [...others, ...(variantData as MenuItemVariant[])];
+      });
+    }
     setItemDialog(true);
   };
 
@@ -543,15 +615,69 @@ export default function Menu() {
     const { error: delErr } = await supabase.from("menu_item_variants").delete().eq("menu_item_id", itemId);
     if (delErr) throw delErr;
     if (!variants.length) return;
-    const rows = variants.map((v, idx) => ({
-      menu_item_id: itemId,
-      name: v.name || "",
-      price: Number(v.price) || 0,
-      sort_order: v.sort_order ?? idx,
-      is_active: v.is_active ?? true,
-    }));
-    const { error: insErr } = await supabase.from("menu_item_variants").insert(rows);
-    if (insErr) throw insErr;
+
+    const sizeVariants = variants.filter((v) => v.variant_type === "size");
+    const flavorVariants = variants.filter((v) => v.variant_type !== "size");
+
+    if (sizeVariants.length) {
+      const sizeRows = sizeVariants.map((s, idx) => ({
+        id: s.id && !s.id.startsWith("temp-") ? s.id : crypto.randomUUID(),
+        menu_item_id: itemId,
+        name: (s.name || "").trim(),
+        measurement: (s.measurement || "").trim() || null,
+        price: Number(s.price) || 0,
+        sort_order: s.sort_order ?? idx,
+        is_active: s.is_active ?? true,
+        variant_type: "size" as const,
+        parent_id: null,
+      }));
+
+      const { error: sizeErr } = await supabase.from("menu_item_variants").insert(sizeRows);
+      if (sizeErr) throw sizeErr;
+
+      const parentIdMap = new Map<string, string>();
+      sizeVariants.forEach((s, i) => {
+        if (s.id) parentIdMap.set(s.id, sizeRows[i].id);
+      });
+
+      if (flavorVariants.length) {
+        const flavorRows = flavorVariants.map((f, idx) => {
+          let resolvedParentId = f.parent_id || null;
+          if (resolvedParentId && parentIdMap.has(resolvedParentId)) {
+            resolvedParentId = parentIdMap.get(resolvedParentId)!;
+          }
+          return {
+            id: f.id && !f.id.startsWith("temp-") ? f.id : crypto.randomUUID(),
+            menu_item_id: itemId,
+            name: (f.name || "").trim(),
+            measurement: null,
+            price: Number(f.price) || 0,
+            sort_order: f.sort_order ?? idx,
+            is_active: f.is_active ?? true,
+            variant_type: "flavor" as const,
+            parent_id: resolvedParentId,
+          };
+        });
+
+        const { error: flvErr } = await supabase.from("menu_item_variants").insert(flavorRows);
+        if (flvErr) throw flvErr;
+      }
+    } else if (flavorVariants.length) {
+      const flavorRows = flavorVariants.map((f, idx) => ({
+        id: f.id && !f.id.startsWith("temp-") ? f.id : crypto.randomUUID(),
+        menu_item_id: itemId,
+        name: (f.name || "").trim(),
+        measurement: null,
+        price: Number(f.price) || 0,
+        sort_order: f.sort_order ?? idx,
+        is_active: f.is_active ?? true,
+        variant_type: "flavor" as const,
+        parent_id: null,
+      }));
+
+      const { error: flvErr } = await supabase.from("menu_item_variants").insert(flavorRows);
+      if (flvErr) throw flvErr;
+    }
   };
 
   const saveCategory = async (form: Partial<Category> & { restaurant_id?: string }) => {
@@ -911,26 +1037,32 @@ export default function Menu() {
           {categoriesTab && (
             <Dialog open={catDialog} onOpenChange={(o) => { setCatDialog(o); if (!o) setEditCat(null); }}>
               <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" />{t("menu:addCategory", "Add Category")}</Button></DialogTrigger>
-              <CategoryForm
-                initial={editCat}
-                onSubmit={saveCategory}
-                isSaving={isSaving}
-                isSuperAdmin={false}
-                restaurantPickerOptions={[]}
-              />
+              {catDialog && (
+                <CategoryForm
+                  key={editCat ? `edit-${editCat.id}` : "new-cat"}
+                  initial={editCat}
+                  onSubmit={saveCategory}
+                  isSaving={isSaving}
+                  isSuperAdmin={false}
+                  restaurantPickerOptions={[]}
+                />
+              )}
             </Dialog>
           )}
           {subCategoriesTab && (
             <Dialog open={subCatDialog} onOpenChange={(o) => { setSubCatDialog(o); if (!o) setEditSubCat(null); }}>
               <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" />{t("menu:addSubCategory", "Add Sub-category")}</Button></DialogTrigger>
-              <SubCategoryForm
-                initial={editSubCat}
-                categories={categories}
-                onSubmit={saveSubCategory}
-                isSaving={isSaving}
-                isSuperAdmin={false}
-                restaurantPickerOptions={[]}
-              />
+              {subCatDialog && (
+                <SubCategoryForm
+                  key={editSubCat ? `edit-${editSubCat.id}` : "new-subcat"}
+                  initial={editSubCat}
+                  categories={categories}
+                  onSubmit={saveSubCategory}
+                  isSaving={isSaving}
+                  isSuperAdmin={false}
+                  restaurantPickerOptions={[]}
+                />
+              )}
             </Dialog>
           )}
           {itemsTab && (
@@ -973,30 +1105,36 @@ export default function Menu() {
         }
       }}
       >
-        <ItemForm
-          initial={editItem}
-          initialAddonIds={editItemAddonIds}
-          initialVariants={itemVariants.filter(v => v.menu_item_id === editItem?.id)}
-          categories={categories}
-          subCategories={subCategories}
-          addons={addons}
-          onSubmit={saveItem}
-          isSaving={isSaving}
-          isSuperAdmin={false}
-          restaurantPickerOptions={[]}
-        />
+        {itemDialog && (
+          <ItemForm
+            key={editItem ? `edit-${editItem.id}` : "new-item"}
+            initial={editItem}
+            initialAddonIds={editItem ? editItemAddonIds : []}
+            initialVariants={editItem ? itemVariants.filter(v => v.menu_item_id === editItem.id) : []}
+            categories={categories}
+            subCategories={subCategories}
+            addons={addons}
+            onSubmit={saveItem}
+            isSaving={isSaving}
+            isSuperAdmin={false}
+            restaurantPickerOptions={[]}
+          />
+        )}
       </Dialog>
 
       <Dialog open={addonDialog} onOpenChange={(o) => { setAddonDialog(o); if (!o) setEditAddon(null); }}>
-        <AddonForm
-          initial={editAddon}
-          restaurantName={restaurantName}
-          defaultRestaurantId={restaurantId}
-          showRestaurantPicker={false}
-          restaurantPickerOptions={[]}
-          onSubmit={saveAddon}
-          isSaving={isSaving}
-        />
+        {addonDialog && (
+          <AddonForm
+            key={editAddon ? `edit-${editAddon.id}` : "new-addon"}
+            initial={editAddon}
+            restaurantName={restaurantName}
+            defaultRestaurantId={restaurantId}
+            showRestaurantPicker={false}
+            restaurantPickerOptions={[]}
+            onSubmit={saveAddon}
+            isSaving={isSaving}
+          />
+        )}
       </Dialog>
 
       {loading ? (
@@ -1579,10 +1717,10 @@ function AddonForm({
         ) : null}
         {showRestaurantPicker && restaurantPickerOptions.length > 0 && initial ? (
           <div className="space-y-2">
-            <Label>Restaurant</Label>
+            <Label>{t("superAdmin:restaurant", "Restaurant")}</Label>
             <Select value={selectedRid} onValueChange={(v) => setForm({ ...form, restaurant_id: v })}>
               <SelectTrigger>
-                <SelectValue placeholder="Select restaurant" />
+                <SelectValue placeholder={t("menu:selectRestaurant", "Select restaurant")} />
               </SelectTrigger>
               <SelectContent>
                 {restaurantPickerOptions.map((row) => (
@@ -1766,10 +1904,10 @@ function CategoryForm({
       <DialogBody className="space-y-3">
         {isSuperAdmin && (
           <div>
-            <Label>Restaurant</Label>
+            <Label>{t("superAdmin:restaurant", "Restaurant")}</Label>
             <Select value={selectedRestaurantId} onValueChange={setSelectedRestaurantId}>
               <SelectTrigger>
-                <SelectValue placeholder="Select restaurant" />
+                <SelectValue placeholder={t("menu:selectRestaurant", "Select restaurant")} />
               </SelectTrigger>
               <SelectContent>
                 {restaurantPickerOptions.map((r) => (
@@ -1782,15 +1920,15 @@ function CategoryForm({
           </div>
         )}
         <div>
-          <Label>Name</Label>
+          <Label>{t("common:name", "Name")}</Label>
           <Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </div>
         <div>
-          <Label>Description</Label>
+          <Label>{t("common:description", "Description")}</Label>
           <Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </div>
         <div>
-          <Label>Sort order</Label>
+          <Label>{t("common:sortOrder", "Sort order")}</Label>
           <Input
             type="number"
             value={form.sort_order || 0}
@@ -1799,13 +1937,13 @@ function CategoryForm({
         </div>
         <div className="flex items-center gap-2">
           <Switch checked={form.is_active ?? true} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
-          <Label>Active</Label>
+          <Label>{t("common:active", "Active")}</Label>
         </div>
       </DialogBody>
       <DialogFooter>
         <Button onClick={handleSave} disabled={isSaving}>
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save
+          {t("common:save", "Save")}
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -1858,7 +1996,7 @@ function SubCategoryForm({
   return (
     <DialogContent className="max-w-lg sm:max-w-xl">
       <DialogHeader>
-        <DialogTitle>{initial ? "Edit sub-category" : "New sub-category"}</DialogTitle>
+        <DialogTitle>{initial ? t("menu:editSubCategory", "Edit sub-category") : t("menu:addSubCategory", "New sub-category")}</DialogTitle>
         <DialogDescription className="text-xs text-muted-foreground pt-1">
           {initial ? "Update sub-category details below." : "Create a new sub-category."}
         </DialogDescription>
@@ -1866,13 +2004,13 @@ function SubCategoryForm({
       <DialogBody className="space-y-3">
         {isSuperAdmin && (
           <div>
-            <Label>Restaurant</Label>
+            <Label>{t("superAdmin:restaurant", "Restaurant")}</Label>
             <Select value={selectedRestaurantId} onValueChange={(v) => {
               setSelectedRestaurantId(v);
               setForm(prev => ({ ...prev, category_id: "" }));
             }}>
               <SelectTrigger>
-                <SelectValue placeholder="Select restaurant" />
+                <SelectValue placeholder={t("menu:selectRestaurant", "Select restaurant")} />
               </SelectTrigger>
               <SelectContent>
                 {restaurantPickerOptions.map((r) => (
@@ -1885,10 +2023,10 @@ function SubCategoryForm({
           </div>
         )}
         <div>
-          <Label>Category</Label>
+          <Label>{t("menu:category", "Category")}</Label>
           <Select value={form.category_id || ""} onValueChange={(v) => setForm({ ...form, category_id: v })}>
             <SelectTrigger>
-              <SelectValue placeholder="Select parent category" />
+              <SelectValue placeholder={t("menu:selectParentCategory", "Select parent category")} />
             </SelectTrigger>
             <SelectContent>
               {filteredCategories.map((c) => (
@@ -1931,6 +2069,21 @@ function SubCategoryForm({
 }
 
 
+interface FlavorEntry {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
+interface SizeEntry {
+  id: string;
+  name: string;
+  measurement: string;
+  price: number;
+  is_active: boolean;
+  flavors: FlavorEntry[];
+}
+
 function ItemForm({
   initial,
   initialAddonIds,
@@ -1956,51 +2109,249 @@ function ItemForm({
 }) {
   const { t } = useTranslation(["menu", "common", "superAdmin"]);
   const { toast } = useToast();
-  const [form, setForm] = useState<Partial<MenuItem>>(initial || { name: "", description: "", price: 0, is_available: true, prep_time_minutes: 15, dietary_tags: [], spice_level: 0 });
-  const [tagsText, setTagsText] = useState((initial?.dietary_tags || []).join(", "));
+  const [form, setForm] = useState<Partial<MenuItem>>(() =>
+    initial
+      ? { ...initial }
+      : {
+          name: "",
+          description: "",
+          price: 0,
+          is_available: true,
+          prep_time_minutes: 15,
+          dietary_tags: [],
+          spice_level: 0,
+          category_id: "",
+          sub_category_id: null,
+        }
+  );
+  const [tagsText, setTagsText] = useState(() => (initial?.dietary_tags || []).join(", "));
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>(initialAddonIds);
-  const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>(initial?.restaurant_id ?? (isSuperAdmin && restaurantPickerOptions.length ? restaurantPickerOptions[0].id : ''));
-  const [variants, setVariants] = useState<Partial<MenuItemVariant>[]>(initialVariants);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>(() => (initial ? initialAddonIds || [] : []));
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>(
+    initial?.restaurant_id ?? (isSuperAdmin && restaurantPickerOptions.length ? restaurantPickerOptions[0].id : "")
+  );
+
+  const [sizes, setSizes] = useState<SizeEntry[]>(() => {
+    if (!initial) return [];
+    const initialList = (initialVariants || []) as MenuItemVariant[];
+    const sizeRows = initialList.filter((v) => v.variant_type === "size");
+    const childFlavors = initialList.filter((v) => v.variant_type !== "size" && v.parent_id);
+    return sizeRows.map((s) => ({
+      id: s.id || crypto.randomUUID(),
+      name: s.name,
+      measurement: s.measurement || "",
+      price: Number(s.price) || 0,
+      is_active: s.is_active ?? true,
+      flavors: childFlavors
+        .filter((f) => f.parent_id === s.id)
+        .map((f) => ({
+          id: f.id || crypto.randomUUID(),
+          name: f.name,
+          is_active: f.is_active ?? true,
+        })),
+    }));
+  });
+
+  const [standaloneFlavors, setStandaloneFlavors] = useState<FlavorEntry[]>(() => {
+    if (!initial) return [];
+    const initialList = (initialVariants || []) as MenuItemVariant[];
+    const rootFlavors = initialList.filter((v) => v.variant_type !== "size" && !v.parent_id);
+    return rootFlavors.map((f) => ({
+      id: f.id || crypto.randomUUID(),
+      name: f.name,
+      is_active: f.is_active ?? true,
+    }));
+  });
 
   const filteredCategories = useMemo(() => {
     if (!isSuperAdmin) return categories;
-    return categories.filter(c => !selectedRestaurantId || String(c.restaurant_id) === String(selectedRestaurantId));
+    return categories.filter((c) => !selectedRestaurantId || String(c.restaurant_id) === String(selectedRestaurantId));
   }, [categories, isSuperAdmin, selectedRestaurantId]);
 
   const filteredSubCategories = useMemo(() => {
     let list = subCategories;
     if (isSuperAdmin && selectedRestaurantId) {
-      list = list.filter(sc => String(sc.restaurant_id) === String(selectedRestaurantId));
+      list = list.filter((sc) => String(sc.restaurant_id) === String(selectedRestaurantId));
     }
     if (form.category_id) {
-      list = list.filter(sc => sc.category_id === form.category_id);
+      list = list.filter((sc) => sc.category_id === form.category_id);
     }
     return list;
   }, [subCategories, isSuperAdmin, selectedRestaurantId, form.category_id]);
 
   const filteredAddons = useMemo(() => {
     if (!isSuperAdmin) return addons;
-    return addons.filter(a => !selectedRestaurantId || String(a.restaurant_id) === String(selectedRestaurantId));
+    return addons.filter((a) => !selectedRestaurantId || String(a.restaurant_id) === String(selectedRestaurantId));
   }, [addons, isSuperAdmin, selectedRestaurantId]);
 
   useEffect(() => {
-    setForm(initial || { name: "", description: "", price: 0, is_available: true, prep_time_minutes: 15, dietary_tags: [], spice_level: 0 });
-    setTagsText((initial?.dietary_tags || []).join(", "));
-    setImageFile(null);
-  }, [initial]);
+    if (initial) {
+      setForm({ ...initial });
+      setTagsText((initial?.dietary_tags || []).join(", "));
+      setSelectedAddonIds(initialAddonIds || []);
+      const initialList = (initialVariants || []) as MenuItemVariant[];
+      const sizeRows = initialList.filter((v) => v.variant_type === "size");
+      const childFlavors = initialList.filter((v) => v.variant_type !== "size" && v.parent_id);
+      const rootFlavors = initialList.filter((v) => v.variant_type !== "size" && !v.parent_id);
 
-  useEffect(() => {
-    setSelectedAddonIds(initialAddonIds);
-    setVariants(initialVariants);
+      if (sizeRows.length > 0) {
+        setSizes(
+          sizeRows.map((s) => ({
+            id: s.id || crypto.randomUUID(),
+            name: s.name,
+            measurement: s.measurement || "",
+            price: Number(s.price) || 0,
+            is_active: s.is_active ?? true,
+            flavors: childFlavors
+              .filter((f) => f.parent_id === s.id)
+              .map((f) => ({
+                id: f.id || crypto.randomUUID(),
+                name: f.name,
+                is_active: f.is_active ?? true,
+              })),
+          }))
+        );
+        setStandaloneFlavors([]);
+      } else {
+        setSizes([]);
+        setStandaloneFlavors(
+          rootFlavors.map((f) => ({
+            id: f.id || crypto.randomUUID(),
+            name: f.name,
+            is_active: f.is_active ?? true,
+          }))
+        );
+      }
+    } else {
+      setForm({
+        name: "",
+        description: "",
+        price: 0,
+        is_available: true,
+        prep_time_minutes: 15,
+        dietary_tags: [],
+        spice_level: 0,
+        category_id: "",
+        sub_category_id: null,
+      });
+      setTagsText("");
+      setSelectedAddonIds([]);
+      setSizes([]);
+      setStandaloneFlavors([]);
+    }
+    setImageFile(null);
     if (isSuperAdmin && restaurantPickerOptions.length) {
       setSelectedRestaurantId(initial?.restaurant_id ?? restaurantPickerOptions[0].id);
     }
-  }, [initialAddonIds, initialVariants, initial?.id]);
+  }, [initial, initialAddonIds, initialVariants, isSuperAdmin, restaurantPickerOptions]);
 
   const toggleAddon = (id: string) => {
     setSelectedAddonIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const applyStandardPizzaSizes = () => {
+    const defaultFlavors = () => [
+      { id: crypto.randomUUID(), name: "Chicken Fajita", is_active: true },
+      { id: crypto.randomUUID(), name: "Chicken Tikka", is_active: true },
+      { id: crypto.randomUUID(), name: "BBQ Chicken", is_active: true },
+      { id: crypto.randomUUID(), name: "Cheese Lover", is_active: true },
+      { id: crypto.randomUUID(), name: "Pepperoni", is_active: true },
+    ];
+    setSizes([
+      { id: crypto.randomUUID(), name: "Small", measurement: '9"', price: 8.0, is_active: true, flavors: defaultFlavors() },
+      { id: crypto.randomUUID(), name: "Medium", measurement: '12"', price: 12.0, is_active: true, flavors: defaultFlavors() },
+      { id: crypto.randomUUID(), name: "Large", measurement: '14"', price: 16.0, is_active: true, flavors: defaultFlavors() },
+      { id: crypto.randomUUID(), name: "Family", measurement: '18"', price: 22.0, is_active: true, flavors: defaultFlavors() },
+    ]);
+    setStandaloneFlavors([]);
+  };
+
+  const addSizeCard = () => {
+    const newId = crypto.randomUUID();
+    const existingFlavors =
+      sizes.length > 0 && sizes[sizes.length - 1].flavors.length > 0
+        ? sizes[sizes.length - 1].flavors.map((f) => ({ id: crypto.randomUUID(), name: f.name, is_active: true }))
+        : [
+            { id: crypto.randomUUID(), name: "Chicken Fajita", is_active: true },
+            { id: crypto.randomUUID(), name: "Chicken Tikka", is_active: true },
+            { id: crypto.randomUUID(), name: "BBQ Chicken", is_active: true },
+            { id: crypto.randomUUID(), name: "Cheese Lover", is_active: true },
+          ];
+
+    setSizes([
+      ...sizes,
+      {
+        id: newId,
+        name: "",
+        measurement: "",
+        price: Number(form.price) || 0,
+        is_active: true,
+        flavors: existingFlavors,
+      },
+    ]);
+  };
+
+  const removeSize = (idx: number) => {
+    setSizes(sizes.filter((_, i) => i !== idx));
+  };
+
+  const moveSize = (idx: number, delta: number) => {
+    const target = idx + delta;
+    if (target < 0 || target >= sizes.length) return;
+    const next = [...sizes];
+    const [removed] = next.splice(idx, 1);
+    next.splice(target, 0, removed);
+    setSizes(next);
+  };
+
+  const updateSize = (idx: number, field: keyof SizeEntry, value: any) => {
+    const next = [...sizes];
+    next[idx] = { ...next[idx], [field]: value };
+    setSizes(next);
+  };
+
+  const addFlavorToSize = (sizeIdx: number, name = "") => {
+    const next = [...sizes];
+    next[sizeIdx] = {
+      ...next[sizeIdx],
+      flavors: [...next[sizeIdx].flavors, { id: crypto.randomUUID(), name, is_active: true }],
+    };
+    setSizes(next);
+  };
+
+  const removeFlavorFromSize = (sizeIdx: number, flvIdx: number) => {
+    const next = [...sizes];
+    next[sizeIdx] = {
+      ...next[sizeIdx],
+      flavors: next[sizeIdx].flavors.filter((_, i) => i !== flvIdx),
+    };
+    setSizes(next);
+  };
+
+  const updateFlavorInSize = (sizeIdx: number, flvIdx: number, field: keyof FlavorEntry, value: any) => {
+    const next = [...sizes];
+    const flvs = [...next[sizeIdx].flavors];
+    flvs[flvIdx] = { ...flvs[flvIdx], [field]: value };
+    next[sizeIdx] = { ...next[sizeIdx], flavors: flvs };
+    setSizes(next);
+  };
+
+  const copyFlavorsToAllSizes = (sourceSizeIdx: number) => {
+    const sourceFlavors = sizes[sourceSizeIdx].flavors;
+    if (!sourceFlavors.length) {
+      toast({ variant: "destructive", title: "No flavors", description: "This size has no flavors to copy." });
+      return;
+    }
+    const next = sizes.map((s, i) => {
+      if (i === sourceSizeIdx) return s;
+      return {
+        ...s,
+        flavors: sourceFlavors.map((f) => ({ id: crypto.randomUUID(), name: f.name, is_active: f.is_active })),
+      };
+    });
+    setSizes(next);
+    toast({ title: "Flavors copied", description: `Copied ${sourceFlavors.length} flavors to all sizes.` });
   };
 
   const filePreview = imageFile ? URL.createObjectURL(imageFile) : null;
@@ -2013,6 +2364,68 @@ function ItemForm({
   const displayImageSrc = filePreview ?? resolveMediaUrl(form.image_url) ?? undefined;
 
   const handleSave = async () => {
+    if (!form.name?.trim()) {
+      toast({ variant: "destructive", title: "Name required", description: "Please enter a name for the menu item." });
+      return;
+    }
+
+    // Validate sizes & flavors if sizes are used
+    if (sizes.length > 0) {
+      for (let i = 0; i < sizes.length; i++) {
+        const s = sizes[i];
+        if (!s.name || !s.name.trim()) {
+          toast({
+            variant: "destructive",
+            title: "Size name required",
+            description: `Size #${i + 1} has an empty name. Please enter a name (e.g. Small, Medium) or remove the card.`,
+          });
+          return;
+        }
+        if (Number(s.price) < 0) {
+          toast({
+            variant: "destructive",
+            title: "Invalid price",
+            description: `Price for size "${s.name}" cannot be negative.`,
+          });
+          return;
+        }
+        for (let j = 0; j < s.flavors.length; j++) {
+          const f = s.flavors[j];
+          if (!f.name || !f.name.trim()) {
+            toast({
+              variant: "destructive",
+              title: "Flavor name required",
+              description: `Size "${s.name}" has an empty flavor at #${j + 1}. Please enter a name or remove it.`,
+            });
+            return;
+          }
+        }
+      }
+
+      const sizeNames = sizes.map((s) => (s.name || "").trim().toLowerCase());
+      const dupSizes = sizeNames.filter((name, index) => sizeNames.indexOf(name) !== index);
+      if (dupSizes.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Duplicate size",
+          description: `Size name "${dupSizes[0]}" appears more than once. Each size must have a unique name.`,
+        });
+        return;
+      }
+    } else if (standaloneFlavors.length > 0) {
+      for (let i = 0; i < standaloneFlavors.length; i++) {
+        const f = standaloneFlavors[i];
+        if (!f.name || !f.name.trim()) {
+          toast({
+            variant: "destructive",
+            title: "Flavor name required",
+            description: `Variation #${i + 1} has an empty name. Please enter a name or remove the row.`,
+          });
+          return;
+        }
+      }
+    }
+
     setUploading(true);
     try {
       let image_url: string | null = form.image_url ?? null;
@@ -2040,7 +2453,63 @@ function ItemForm({
         }
         image_url = j.url;
       }
-      const payload: any = { ...form, image_url, addon_ids: selectedAddonIds, variants };
+
+      const cleanedVariants: Partial<MenuItemVariant>[] = [];
+
+      sizes.forEach((s, sIdx) => {
+        cleanedVariants.push({
+          id: s.id,
+          name: s.name.trim(),
+          measurement: s.measurement?.trim() || null,
+          price: Number(s.price) || 0,
+          sort_order: sIdx,
+          is_active: s.is_active ?? true,
+          variant_type: "size" as const,
+          parent_id: null,
+        });
+
+        s.flavors.forEach((f, fIdx) => {
+          if (!f.name?.trim()) return;
+          cleanedVariants.push({
+            id: f.id,
+            name: f.name.trim(),
+            measurement: null,
+            price: 0,
+            sort_order: fIdx,
+            is_active: f.is_active ?? true,
+            variant_type: "flavor" as const,
+            parent_id: s.id,
+          });
+        });
+      });
+
+      if (sizes.length === 0) {
+        standaloneFlavors.forEach((f, fIdx) => {
+          if (!f.name?.trim()) return;
+          cleanedVariants.push({
+            id: f.id,
+            name: f.name.trim(),
+            measurement: null,
+            price: 0,
+            sort_order: fIdx,
+            is_active: f.is_active ?? true,
+            variant_type: "flavor" as const,
+            parent_id: null,
+          });
+        });
+      }
+
+      // If sizes exist, set base price to the first active size's price for consistent display
+      const firstActiveSize = sizes.find((s) => s.is_active) || sizes[0];
+      const basePrice = sizes.length > 0 && firstActiveSize ? Number(firstActiveSize.price) : Number(form.price) || 0;
+
+      const payload: any = {
+        ...form,
+        price: basePrice,
+        image_url,
+        addon_ids: selectedAddonIds,
+        variants: cleanedVariants,
+      };
       if (isSuperAdmin) payload.restaurant_id = selectedRestaurantId;
       await onSubmit(payload);
     } finally {
@@ -2049,31 +2518,36 @@ function ItemForm({
   };
 
   return (
-    <DialogContent className="max-w-2xl">
+    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
-        <DialogTitle>{initial ? "Edit item" : "New item"}</DialogTitle>
+        <DialogTitle>{initial ? t("menu:editItem", "Edit item") : t("menu:addItem", "New item")}</DialogTitle>
         <DialogDescription className="text-sm text-muted-foreground pt-1">
-          Fill in the details below, then save to update the menu.
+          Fill in the details below, configure sizes, flavors, and add-ons, then save to update the menu.
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-4">
+        {/* Basic Information */}
         <div className="form-field">
-          <Label>Name</Label>
-          <Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Margherita Pizza" />
+          <Label>{t("menu:itemName", "Item Name")} *</Label>
+          <Input
+            value={form.name || ""}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="e.g. Crown Crust Supreme Pizza"
+          />
         </div>
         <div className="form-field">
-          <Label>Category</Label>
+          <Label>{t("menu:category", "Category")} *</Label>
           <Select value={form.category_id || ""} onValueChange={(v) => setForm({ ...form, category_id: v })}>
-            <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={t("menu:selectCategory", "Select category")} /></SelectTrigger>
             <SelectContent>{filteredCategories.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div className="form-row">
           {isSuperAdmin && (
             <div className="form-field">
-              <Label>Restaurant</Label>
+              <Label>{t("menu:restaurant", "Restaurant")}</Label>
               <Select value={selectedRestaurantId} onValueChange={setSelectedRestaurantId}>
-                <SelectTrigger><SelectValue placeholder="Select restaurant" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("menu:selectRestaurant", "Select restaurant")} /></SelectTrigger>
                 <SelectContent>
                   {restaurantPickerOptions.map((r) => (
                     <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
@@ -2083,14 +2557,14 @@ function ItemForm({
             </div>
           )}
           <div className="form-field">
-            <Label>Sub-category</Label>
+            <Label>{t("menu:subCategory", "Sub-category")}</Label>
             <Select
               value={form.sub_category_id || "none"}
               onValueChange={(v) => setForm({ ...form, sub_category_id: v === "none" ? null : v })}
             >
-              <SelectTrigger><SelectValue placeholder="Select sub-category" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("menu:selectSubCategory", "Select sub-category")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="none">{t("common:none", "None")}</SelectItem>
                 {filteredSubCategories.map((sc) => (
                   <SelectItem key={sc.id} value={String(sc.id)}>{sc.name}</SelectItem>
                 ))}
@@ -2099,21 +2573,48 @@ function ItemForm({
           </div>
         </div>
         <div className="form-field">
-          <Label>Description</Label>
-          <Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Short description for customers" />
+          <Label>{t("menu:itemDescription", "Description")}</Label>
+          <Textarea
+            value={form.description || ""}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="e.g. Delicious crown crust pizza loaded with cheese, fresh toppings and flavorful sauce..."
+          />
         </div>
+
+        {/* Pricing & Prep */}
         <div className="form-row">
           <div className="form-field">
-            <Label>Price</Label>
-            <Input type="number" step="0.01" value={form.price || 0} onChange={(e) => setForm({ ...form, price: parseFloat(e.target.value) || 0 })} />
+            <Label>
+              {sizes.length > 0 ? "Base Reference Price" : t("menu:price", "Price")} ({formatCurrency(0).charAt(0)})
+            </Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={sizes.length > 0 ? (sizes.find((s) => s.is_active)?.price ?? form.price ?? 0) : form.price || 0}
+              disabled={sizes.length > 0}
+              onChange={(e) => setForm({ ...form, price: parseFloat(e.target.value) || 0 })}
+            />
+            {sizes.length > 0 && (
+              <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-1">
+                ⚡ Price is dynamically controlled by the selected size below.
+              </p>
+            )}
           </div>
           <div className="form-field">
-            <Label>Prep time (min)</Label>
-            <Input type="number" value={form.prep_time_minutes || 15} onChange={(e) => setForm({ ...form, prep_time_minutes: parseInt(e.target.value) || 15 })} />
+            <Label>{t("menu:preparationTime", "Prep time (min)")}</Label>
+            <Input
+              type="number"
+              min={0}
+              value={form.prep_time_minutes || 15}
+              onChange={(e) => setForm({ ...form, prep_time_minutes: parseInt(e.target.value) || 15 })}
+            />
           </div>
         </div>
+
+        {/* Image Upload */}
         <div className="form-field">
-          <Label>Item image</Label>
+          <Label>{t("menu:image", "Item image")}</Label>
           {displayImageSrc && (
             <img src={displayImageSrc} alt="" className="w-full max-h-40 object-cover rounded-lg border border-zinc-200" />
           )}
@@ -2136,23 +2637,26 @@ function ItemForm({
               Remove image
             </Button>
           )}
-          <p className="text-xs text-zinc-500">JPEG, PNG, GIF, or WebP — up to 5MB.</p>
-        </div>
-        <div className="form-field">
-          <Label>Dietary tags (comma separated)</Label>
-          <Input value={tagsText} onChange={(e) => { setTagsText(e.target.value); setForm({ ...form, dietary_tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }); }} placeholder="vegan, gluten-free" />
-        </div>
-        <div className="form-field">
-          <Label>Spice level (0-5)</Label>
-          <Input type="number" min={0} max={5} value={form.spice_level || 0} onChange={(e) => setForm({ ...form, spice_level: parseInt(e.target.value) || 0 })} />
+          <p className="text-xs text-muted-foreground">JPEG, PNG, GIF, or WebP — up to 5MB.</p>
         </div>
 
-        <div className="space-y-3 border-t border-zinc-200 pt-4">
+        {/* ========================================================================= */}
+        {/* ================= 🍕 Pizza Sizes & Flavors Section ====================== */}
+        {/* ========================================================================= */}
+        <div className="space-y-3.5 border-t border-border pt-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <Label className="text-sm font-semibold text-zinc-900">Variants (Sizes / Options)</Label>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Set up sizes like Small, Medium, Large, Extra Large — each with its individual price.
+              <Label className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                <Boxes className="h-4 w-4 text-blue-500" />
+                🍕 {t("menu:pizzaSizesTitle", "Pizza Sizes & Variations")}
+                {sizes.length > 0 && (
+                  <Badge variant="secondary" className="text-xs px-2 py-0.5 ml-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                    {sizes.length} {sizes.length === 1 ? "size" : "sizes"}
+                  </Badge>
+                )}
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t("menu:pizzaSizesDesc", "Add different sizes, measurements, prices, and specific flavors for each size.")}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -2161,105 +2665,382 @@ function ItemForm({
                 variant="outline"
                 size="sm"
                 className="text-xs h-8"
-                onClick={() => {
-                  const base = Number(form.price) || 10;
-                  setVariants([
-                    { name: "Small", price: Math.max(1, Math.round(base * 0.7)), sort_order: 0, is_active: true },
-                    { name: "Medium", price: base, sort_order: 1, is_active: true },
-                    { name: "Large", price: Math.round(base * 1.35), sort_order: 2, is_active: true },
-                    { name: "Extra Large", price: Math.round(base * 1.7), sort_order: 3, is_active: true },
-                  ]);
-                }}
+                onClick={applyStandardPizzaSizes}
               >
-                🍕 + Pizza Sizes
+                🍕 + Standard Pizza Sizes
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="default"
                 size="sm"
-                className="text-xs h-8"
-                onClick={() => {
-                  const base = Number(form.price) || 8;
-                  setVariants([
-                    { name: "Single Patty", price: base, sort_order: 0, is_active: true },
-                    { name: "Double Patty", price: Math.round(base * 1.45), sort_order: 1, is_active: true },
-                    { name: "Triple Patty", price: Math.round(base * 1.85), sort_order: 2, is_active: true },
-                  ]);
-                }}
+                className="text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                onClick={addSizeCard}
               >
-                🍔 + Burger Sizes
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                {t("menu:addSize", "Add Size")}
               </Button>
+            </div>
+          </div>
+
+          {/* Sizes Cards List */}
+          {sizes.length > 0 ? (
+            <div className="space-y-3">
+              {sizes.map((s, sIdx) => (
+                <div
+                  key={s.id || sIdx}
+                  className="rounded-xl border border-blue-500/30 bg-blue-500/[0.02] dark:bg-blue-950/10 p-4 space-y-3.5 shadow-2xs"
+                >
+                  {/* Size Card Header */}
+                  <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md">
+                        #{sIdx + 1}
+                      </span>
+                      <span className="font-bold text-sm text-foreground">
+                        {s.name ? `${s.name}${s.measurement ? ` (${s.measurement})` : ""}` : `Size #${sIdx + 1}`}
+                      </span>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        — {formatCurrency(s.price || 0)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        disabled={sIdx === 0}
+                        onClick={() => moveSize(sIdx, -1)}
+                        title="Move Up"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        disabled={sIdx === sizes.length - 1}
+                        onClick={() => moveSize(sIdx, 1)}
+                        title="Move Down"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive/80 hover:text-destructive hover:bg-destructive/10 ml-1"
+                        onClick={() => removeSize(sIdx)}
+                        title="Delete Size"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Size Fields: Name, Measurement, Price, Availability */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    <div className="sm:col-span-4">
+                      <Label className="text-xs font-semibold">{t("menu:sizeName", "Size Name")} *</Label>
+                      <Input
+                        placeholder="e.g. Small, Medium, Large, Family"
+                        value={s.name}
+                        className="h-8.5 text-sm mt-1"
+                        onChange={(e) => updateSize(sIdx, "name", e.target.value)}
+                      />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <Label className="text-xs font-semibold">{t("menu:measurement", "Measurement")}</Label>
+                      <Input
+                        placeholder='e.g. 9", 12", 14", 18"'
+                        value={s.measurement}
+                        className="h-8.5 text-sm mt-1"
+                        onChange={(e) => updateSize(sIdx, "measurement", e.target.value)}
+                      />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <Label className="text-xs font-semibold">{t("menu:price", "Price")} *</Label>
+                      <div className="relative mt-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="8.00"
+                          value={s.price ?? ""}
+                          className="h-8.5 text-sm pl-6"
+                          onChange={(e) =>
+                            updateSize(sIdx, "price", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)
+                          }
+                        />
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-semibold">
+                          {formatCurrency(0).charAt(0)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="sm:col-span-2 flex items-center gap-2 pb-1">
+                      <Switch
+                        checked={s.is_active}
+                        onCheckedChange={(val) => updateSize(sIdx, "is_active", val)}
+                      />
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {s.is_active ? t("common:active", "Active") : t("common:inactive", "Off")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Nested Flavors for this Size */}
+                  <div className="rounded-lg border border-border/80 bg-background p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-xs font-bold text-foreground">
+                          Flavors for {s.name || `Size #${sIdx + 1}`}
+                        </span>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                          {s.flavors.length} {s.flavors.length === 1 ? "flavor" : "flavors"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {sizes.length > 1 && sIdx > 0 && sizes[0].flavors.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-[11px] h-6 px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              const source = sizes[0].flavors;
+                              updateSize(sIdx, "flavors", source.map((f) => ({ id: crypto.randomUUID(), name: f.name, is_active: f.is_active })));
+                            }}
+                          >
+                            Copy from #{1}
+                          </Button>
+                        )}
+                        {sizes.length > 1 && s.flavors.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-[11px] h-6 px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => copyFlavorsToAllSizes(sIdx)}
+                          >
+                            Copy to all sizes
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-[11px] h-6 px-2"
+                          onClick={() => addFlavorToSize(sIdx)}
+                        >
+                          <Plus className="h-3 w-3 mr-0.5" />
+                          {t("menu:addFlavorToSize", "Add Flavor")}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {s.flavors.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {s.flavors.map((flv, fIdx) => (
+                          <div
+                            key={flv.id || fIdx}
+                            className="flex items-center gap-1.5 p-1.5 rounded-md border border-border/70 bg-muted/20 hover:border-primary/40 transition-colors"
+                          >
+                            <span className="text-[11px] font-semibold text-muted-foreground w-4 text-center">
+                              {fIdx + 1}.
+                            </span>
+                            <Input
+                              placeholder="e.g. Chicken Fajita, Tikka..."
+                              value={flv.name}
+                              className="h-7 text-xs flex-1"
+                              onChange={(e) => updateFlavorInSize(sIdx, fIdx, "name", e.target.value)}
+                            />
+                            <Switch
+                              checked={flv.is_active}
+                              onCheckedChange={(val) => updateFlavorInSize(sIdx, fIdx, "is_active", val)}
+                              className="scale-75"
+                              title={flv.is_active ? "Active" : "Inactive"}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive/70 hover:text-destructive hover:bg-destructive/10 shrink-0"
+                              onClick={() => removeFlavorFromSize(sIdx, fIdx)}
+                              title="Remove flavor"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground italic py-1 text-center">
+                        No flavors defined for this size. Click &apos;+ Add Flavor&apos; to add options like Chicken Fajita, Tikka, BBQ Chicken etc.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl border border-dashed border-border bg-muted/10 text-center space-y-2">
+              <p className="text-xs text-muted-foreground">
+                No pizza sizes configured for this item. Click below to add sizes or configure standalone variations.
+              </p>
+              <div className="flex items-center justify-center gap-2 flex-wrap pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-8"
+                  onClick={applyStandardPizzaSizes}
+                >
+                  🍕 + Add Pizza Sizes (Small, Medium, Large, Family)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-8"
+                  onClick={() => {
+                    setStandaloneFlavors([
+                      { id: crypto.randomUUID(), name: "Single Patty", is_active: true },
+                      { id: crypto.randomUUID(), name: "Double Beef", is_active: true },
+                      { id: crypto.randomUUID(), name: "Crispy Chicken", is_active: true },
+                    ]);
+                  }}
+                >
+                  🍔 + Burger Variations
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Standalone Variations Section (Only shown when no sizes are configured) */}
+        {sizes.length === 0 && (
+          <div className="space-y-3 border-t border-border pt-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <Label className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Standalone Variations / Flavors (Optional)
+                  {standaloneFlavors.length > 0 && (
+                    <Badge variant="secondary" className="text-xs px-2 py-0.5 ml-1">
+                      {standaloneFlavors.length}
+                    </Badge>
+                  )}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  For items like Burgers, Platters, or Drinks that don&apos;t use pizza sizes.
+                </p>
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="text-xs h-8"
                 onClick={() =>
-                  setVariants([...variants, { name: "", price: Number(form.price) || 0, sort_order: variants.length, is_active: true }])
+                  setStandaloneFlavors([
+                    ...standaloneFlavors,
+                    { id: crypto.randomUUID(), name: "", is_active: true },
+                  ])
                 }
               >
-                <Plus className="h-3.5 w-3.5 mr-1" /> Custom Size
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add Variation
               </Button>
             </div>
-          </div>
 
-          {variants.length > 0 && (
-            <div className="space-y-3 rounded-lg border border-zinc-200 p-3 bg-zinc-50">
-              {variants.map((v, idx) => (
-                <div key={idx} className="flex gap-3 items-end group">
-                  <div className="flex-1 form-field">
-                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Size / Option Name</Label>
-                    <Input
-                      placeholder="e.g. Small / Medium / Large"
-                      value={v.name || ""}
-                      onChange={(e) => {
-                        const next = [...variants];
-                        next[idx] = { ...v, name: e.target.value };
-                        setVariants(next);
-                      }}
-                    />
-                  </div>
-                  <div className="w-32 form-field">
-                    <Label className="text-[11px] uppercase tracking-wide text-zinc-500">Price ({formatCurrency(0).charAt(0)})</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={v.price ?? 0}
-                      onChange={(e) => {
-                        const next = [...variants];
-                        next[idx] = { ...v, price: parseFloat(e.target.value) || 0 };
-                        setVariants(next);
-                      }}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 text-destructive opacity-70 group-hover:opacity-100 transition-opacity"
-                    onClick={() => setVariants(variants.filter((_, i) => i !== idx))}
+            {standaloneFlavors.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 rounded-lg border border-border/80 bg-muted/10">
+                {standaloneFlavors.map((flv, idx) => (
+                  <div
+                    key={flv.id || idx}
+                    className="flex items-center gap-1.5 p-1.5 rounded-md border bg-background"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
+                    <span className="text-xs font-semibold text-muted-foreground w-4 text-center">{idx + 1}.</span>
+                    <Input
+                      placeholder="e.g. Single Patty, Crispy..."
+                      value={flv.name}
+                      className="h-7 text-xs flex-1"
+                      onChange={(e) => {
+                        const next = [...standaloneFlavors];
+                        next[idx] = { ...flv, name: e.target.value };
+                        setStandaloneFlavors(next);
+                      }}
+                    />
+                    <Switch
+                      checked={flv.is_active}
+                      onCheckedChange={(val) => {
+                        const next = [...standaloneFlavors];
+                        next[idx] = { ...flv, is_active: val };
+                        setStandaloneFlavors(next);
+                      }}
+                      className="scale-75"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setStandaloneFlavors(standaloneFlavors.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Dietary Information */}
+        <div className="form-field border-t border-border pt-3">
+          <Label>Dietary tags (comma separated)</Label>
+          <Input
+            value={tagsText}
+            onChange={(e) => {
+              setTagsText(e.target.value);
+              setForm({
+                ...form,
+                dietary_tags: e.target.value
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              });
+            }}
+            placeholder="Halal, High Protein, Gluten-Free"
+          />
         </div>
-        <div className="space-y-2 border-t border-zinc-200 pt-4">
-          <Label>Linked add-ons</Label>
-          <p className="text-xs text-zinc-500">
+        <div className="form-field">
+          <Label>Spice level (0-5)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={5}
+            value={form.spice_level || 0}
+            onChange={(e) => setForm({ ...form, spice_level: parseInt(e.target.value) || 0 })}
+          />
+        </div>
+
+        {/* Linked Addons Section */}
+        <div className="space-y-2 border-t border-border pt-4">
+          <Label>{t("menu:tabAddOns", "Add-ons / Extras")}</Label>
+          <p className="text-xs text-muted-foreground">
             {addons.length === 0
               ? "Create add-ons for this restaurant under Menu → Add-ons, then link them here."
-              : "Optional extras for this item (only add-ons defined for this restaurant)."}
+              : "Optional extras for this item (e.g. Extra Cheese, Extra Chicken, Jalapeños, Sauces)."}
           </p>
           {addons.length > 0 && (
-            <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto rounded-lg border border-zinc-200 p-2 bg-zinc-50">
+            <div className="flex flex-col gap-1.5 max-h-44 overflow-y-auto rounded-lg border border-border p-2 bg-muted/10">
               {filteredAddons.map((a) => (
                 <label
                   key={a.id}
                   className={cn(
-                    "flex items-center gap-2 text-sm cursor-pointer rounded-md px-2 py-1.5 hover:bg-white",
+                    "flex items-center gap-2 text-sm cursor-pointer rounded-md px-2 py-1.5 hover:bg-background transition-colors",
                     !a.is_active && "opacity-70",
                   )}
                 >
@@ -2267,26 +3048,33 @@ function ItemForm({
                     checked={selectedAddonIds.includes(a.id)}
                     onCheckedChange={() => toggleAddon(a.id)}
                   />
-                  <span className="flex-1">{a.name}</span>
-                  <span className="text-zinc-500 text-xs tabular-nums">{formatCurrency(a.price)}</span>
+                  <span className="flex-1 font-medium">{a.name}</span>
+                  <span className="text-muted-foreground text-xs tabular-nums font-semibold">
+                    +{formatCurrency(a.price)}
+                  </span>
                   {!a.is_active && <Badge variant="secondary" className="text-[10px] px-1 py-0">Inactive</Badge>}
                 </label>
               ))}
             </div>
           )}
         </div>
-        <div className="setting-row !bg-white">
+
+        {/* Item Level Availability */}
+        <div className="setting-row border-t border-border pt-4">
           <div className="space-y-0.5">
-            <Label>Available</Label>
-            <p className="text-xs text-zinc-500">Show this item on the menu</p>
+            <Label className="font-semibold">{t("menu:available", "Item Available")}</Label>
+            <p className="text-xs text-muted-foreground">Show this item on the menu and allow ordering</p>
           </div>
-          <Switch checked={form.is_available ?? true} onCheckedChange={(v) => setForm({ ...form, is_available: v })} />
+          <Switch
+            checked={form.is_available ?? true}
+            onCheckedChange={(v) => setForm({ ...form, is_available: v })}
+          />
         </div>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter className="border-t pt-3">
         <Button onClick={() => void handleSave()} disabled={uploading || isSaving}>
           {(uploading || isSaving) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {uploading || isSaving ? "Saving…" : "Save"}
+          {uploading || isSaving ? "Saving…" : "Save Item"}
         </Button>
       </DialogFooter>
     </DialogContent>

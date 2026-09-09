@@ -91,7 +91,9 @@ function applyScope(knex, q, table, user) {
     if (!ids.length) {
       q.whereRaw("1=0");
     } else {
-      q.whereIn("restaurants.id", ids);
+      q.where((qb) => {
+        qb.whereIn("restaurants.id", ids).orWhereIn("restaurants.parent_restaurant_id", ids);
+      });
     }
     return;
   }
@@ -133,6 +135,28 @@ function applyScope(knex, q, table, user) {
     return;
   }
 
+  if (table === "orders") {
+    const ids = user.restaurantIds || [];
+    if (!ids.length) {
+      q.whereRaw("1=0");
+    } else {
+      q.where((qb) => {
+        qb.whereIn("orders.restaurant_id", ids)
+          .orWhereIn("orders.pending_transfer_to_restaurant_id", ids)
+          .orWhereIn("orders.transferred_from_restaurant_id", ids)
+          .orWhereIn(
+            "orders.restaurant_id",
+            knex("restaurants").select("id").whereIn("parent_restaurant_id", ids),
+          )
+          .orWhereIn(
+            "orders.pending_transfer_to_restaurant_id",
+            knex("restaurants").select("id").whereIn("parent_restaurant_id", ids),
+          );
+      });
+    }
+    return;
+  }
+
   if (table === "order_items") {
     const ids = user.restaurantIds || [];
     if (!ids.length) {
@@ -140,7 +164,17 @@ function applyScope(knex, q, table, user) {
     } else {
       q.whereIn(
         "order_items.order_id",
-        knex("orders").select("id").whereIn("restaurant_id", ids),
+        knex("orders")
+          .select("id")
+          .where((qb) => {
+            qb.whereIn("restaurant_id", ids)
+              .orWhereIn("pending_transfer_to_restaurant_id", ids)
+              .orWhereIn("transferred_from_restaurant_id", ids)
+              .orWhereIn(
+                "restaurant_id",
+                knex("restaurants").select("id").whereIn("parent_restaurant_id", ids),
+              );
+          }),
       );
     }
     return;
@@ -153,7 +187,17 @@ function applyScope(knex, q, table, user) {
     } else {
       q.whereIn(
         "order_status_history.order_id",
-        knex("orders").select("id").whereIn("restaurant_id", ids),
+        knex("orders")
+          .select("id")
+          .where((qb) => {
+            qb.whereIn("restaurant_id", ids)
+              .orWhereIn("pending_transfer_to_restaurant_id", ids)
+              .orWhereIn("transferred_from_restaurant_id", ids)
+              .orWhereIn(
+                "restaurant_id",
+                knex("restaurants").select("id").whereIn("parent_restaurant_id", ids),
+              );
+          }),
       );
     }
     return;
@@ -185,6 +229,19 @@ function applyScope(knex, q, table, user) {
     return;
   }
 
+  if (table === "menu_item_variants") {
+    const ids = user.restaurantIds || [];
+    if (!ids.length) {
+      q.whereRaw("1=0");
+    } else {
+      q.whereIn(
+        "menu_item_variants.menu_item_id",
+        knex("menu_items").select("id").whereIn("restaurant_id", ids),
+      );
+    }
+    return;
+  }
+
   if (RESTAURANT_SCOPED.has(table)) {
     const ids = user.restaurantIds || [];
     if (!ids.length) {
@@ -201,7 +258,18 @@ async function assertOrdersBelongToTenant(knex, user, orderIds) {
   if (!ids.length) throw new Error("Forbidden");
   const unique = [...new Set(orderIds.filter(Boolean))];
   for (const oid of unique) {
-    const row = await knex("orders").where({ id: oid }).whereIn("restaurant_id", ids).first();
+    const row = await knex("orders")
+      .where({ id: oid })
+      .where((qb) => {
+        qb.whereIn("restaurant_id", ids)
+          .orWhereIn("pending_transfer_to_restaurant_id", ids)
+          .orWhereIn("transferred_from_restaurant_id", ids)
+          .orWhereIn(
+            "restaurant_id",
+            knex("restaurants").select("id").whereIn("parent_restaurant_id", ids),
+          );
+      })
+      .first();
     if (!row) throw new Error("Forbidden");
   }
 }
@@ -235,6 +303,17 @@ async function validateAndNormalizeInsert(knex, table, rows, user) {
   }
 
   if (table === "menu_item_addons") {
+    if (!ids.length) throw new Error("Forbidden");
+    for (const r of rows) {
+      const mid = r.menu_item_id;
+      if (!mid) throw new Error("menu_item_id required");
+      const it = await knex("menu_items").where({ id: mid }).whereIn("restaurant_id", ids).first();
+      if (!it) throw new Error("Forbidden");
+    }
+    return rows;
+  }
+
+  if (table === "menu_item_variants") {
     if (!ids.length) throw new Error("Forbidden");
     for (const r of rows) {
       const mid = r.menu_item_id;

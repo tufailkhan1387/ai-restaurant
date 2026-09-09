@@ -3,12 +3,14 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
+  Boxes,
   Clock,
   Copy,
   Layers,
   Loader2,
   Package,
   Pencil,
+  Sparkles,
   Store,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -47,6 +49,9 @@ type VariantRow = {
   price: number;
   sort_order: number;
   is_active: boolean;
+  variant_type?: "size" | "flavor";
+  measurement?: string | null;
+  parent_id?: string | null;
 };
 
 type AddonRow = {
@@ -112,7 +117,7 @@ export default function MenuItemDetail() {
           : Promise.resolve({ data: null }),
         supabase
           .from("menu_item_variants")
-          .select("id, name, price, sort_order, is_active")
+          .select("id, name, price, sort_order, is_active, variant_type, measurement, parent_id")
           .eq("menu_item_id", menuItem.id)
           .order("sort_order"),
         supabase.from("menu_item_addons").select("menu_addon_id").eq("menu_item_id", menuItem.id),
@@ -338,41 +343,129 @@ export default function MenuItemDetail() {
           </Card>
 
 
-          <Card>
-            <CardHeader className="pb-3 border-b">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <Layers className="h-4 w-4 text-primary" />
-                Sizes / Variants {variants.length > 0 ? `(${variants.length})` : ""}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {variants.length === 0 ? (
-                <p className="text-sm text-muted-foreground">None (Standard single size)</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {variants.map((v) => (
-                    <div
-                      key={v.id}
-                      className={cn(
-                        "flex items-center justify-between p-3 rounded-xl border bg-muted/30 transition-all",
-                        !v.is_active && "opacity-60 bg-muted/60"
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className="font-bold text-xs">
-                          {v.name}
-                        </Badge>
-                        {!v.is_active && <span className="text-[10px] text-muted-foreground">(Inactive)</span>}
-                      </div>
-                      <span className="font-extrabold text-foreground tabular-nums text-sm">
-                        {formatCurrency(v.price)}
-                      </span>
-                    </div>
-                  ))}
+          {/* Sizes Card */}
+          {variants.filter((v) => v.variant_type === "size").length > 0 && (
+            <Card>
+              <CardHeader className="pb-3 border-b">
+                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                  <Boxes className="h-4 w-4 text-blue-500" />
+                  Sizes & Variations ({variants.filter((v) => v.variant_type === "size").length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {variants
+                    .filter((v) => v.variant_type === "size")
+                    .map((size) => {
+                      const childFlavors = variants.filter(
+                        (v) => v.parent_id === size.id && v.variant_type !== "size"
+                      );
+                      return (
+                        <div
+                          key={size.id}
+                          className={cn(
+                            "p-3.5 rounded-xl border bg-blue-500/5 transition-all space-y-2.5",
+                            !size.is_active && "opacity-60 bg-muted/60"
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="secondary"
+                                className="font-bold text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20"
+                              >
+                                {size.name}
+                                {size.measurement ? ` — ${size.measurement}` : ""}
+                              </Badge>
+                              {!size.is_active ? (
+                                <span className="text-[10px] text-destructive font-medium">(Unavailable)</span>
+                              ) : (
+                                <span className="text-[10px] text-emerald-600 font-medium">Active</span>
+                              )}
+                            </div>
+                            <span className="font-extrabold text-foreground tabular-nums text-sm">
+                              {formatCurrency(size.price)}
+                            </span>
+                          </div>
+
+                          {/* Nested Flavors for this Size */}
+                          {childFlavors.length > 0 && (
+                            <div className="pt-2 border-t border-blue-500/15 space-y-1.5">
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                Flavors ({childFlavors.length}):
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {childFlavors.map((f) => (
+                                  <Badge
+                                    key={f.id}
+                                    variant="outline"
+                                    className={cn(
+                                      "text-xs font-medium bg-background/80",
+                                      !f.is_active && "line-through opacity-50 text-muted-foreground"
+                                    )}
+                                  >
+                                    {f.name}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Standalone Flavors Card (for items without sizes or with standalone variations) */}
+          {(variants.filter((v) => v.variant_type === "size").length === 0 ||
+            variants.filter((v) => v.variant_type !== "size" && !v.parent_id).length > 0) && (
+            <Card>
+              <CardHeader className="pb-3 border-b">
+                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Flavors & Variations{" "}
+                  {variants.filter((v) => v.variant_type !== "size" && !v.parent_id).length > 0
+                    ? `(${variants.filter((v) => v.variant_type !== "size" && !v.parent_id).length})`
+                    : ""}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                {variants.filter((v) => v.variant_type !== "size" && !v.parent_id).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">None (Standard single item)</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {variants
+                      .filter((v) => v.variant_type !== "size" && !v.parent_id)
+                      .map((v) => (
+                        <div
+                          key={v.id}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-xl border bg-muted/30 transition-all",
+                            !v.is_active && "opacity-60 bg-muted/60"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="font-bold text-xs">
+                              {v.name}
+                            </Badge>
+                            {!v.is_active ? (
+                              <span className="text-[10px] text-destructive font-medium">(Unavailable)</span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 font-medium">Active</span>
+                            )}
+                          </div>
+                          <span className="font-extrabold text-foreground tabular-nums text-sm">
+                            {Number(v.price) > 0 ? `+${formatCurrency(v.price)}` : formatCurrency(0)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader className="pb-3 border-b">

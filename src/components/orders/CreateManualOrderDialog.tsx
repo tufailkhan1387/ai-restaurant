@@ -48,11 +48,23 @@ interface MenuItem {
 }
 
 interface CartItem {
-  menu_item_id: string;
+  cart_id: string;
+  menu_item_id: string | null;
   item_name: string;
   unit_price: number;
   quantity: number;
   notes: string;
+}
+
+interface VariantItem {
+  id: string;
+  menu_item_id: string;
+  name: string;
+  price: number;
+  is_active: boolean;
+  variant_type?: "size" | "flavor";
+  measurement?: string | null;
+  parent_id?: string | null;
 }
 
 interface Props {
@@ -78,6 +90,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
 
   // Menu items & Cart
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [variants, setVariants] = useState<VariantItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [itemSearch, setItemSearch] = useState("");
   const [fallbackRestaurantId, setFallbackRestaurantId] = useState<string | null>(null);
@@ -96,13 +109,19 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
 
     async function loadData() {
       try {
-        // 1. Fetch menu items
+        // 1. Fetch menu items and variants
         let query = supabase.from("menu_items").select("id, name, price, restaurant_id, is_available, image_url");
         if (activeRestaurantId) {
           query = query.eq("restaurant_id", activeRestaurantId);
         }
 
-        const { data: itemsData, error } = await query;
+        const [{ data: itemsData, error }, { data: variantsData }] = await Promise.all([
+          query,
+          supabase
+            .from("menu_item_variants")
+            .select("id, menu_item_id, name, price, is_active, variant_type, measurement, parent_id")
+            .order("sort_order"),
+        ]);
         if (error) console.error("Error fetching menu items:", error);
 
         let finalItems = (itemsData as MenuItem[]) || [];
@@ -121,6 +140,9 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
 
         if (isMounted) {
           setMenuItems(finalItems.filter((i) => i.is_available !== false));
+          if (variantsData) {
+            setVariants((variantsData as VariantItem[]).filter((v) => v.is_active !== false));
+          }
         }
 
         // 2. Fetch fallback restaurant id if not available
@@ -154,22 +176,46 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
     return menuItems.filter((m) => m.name.toLowerCase().includes(q));
   }, [menuItems, itemSearch]);
 
-  const addToCart = (item: MenuItem | { id: string; name: string; price: number }) => {
+interface AddToCartParams {
+  id?: string;
+  cart_id?: string;
+  name?: string;
+  item_name?: string;
+  price?: number;
+  unit_price?: number;
+  menu_item_id?: string | null;
+  flavor?: string;
+  quantity?: number;
+  notes?: string;
+}
+
+  const addToCart = (item: AddToCartParams) => {
+    const cartId = item.cart_id || item.id || `item-${Date.now()}`;
+    const itemName = item.item_name || item.name || "Item";
+    const unitPrice = Number(item.unit_price !== undefined ? item.unit_price : item.price) || 0;
+    const menuItemId =
+      item.menu_item_id !== undefined
+        ? item.menu_item_id
+        : (cartId.startsWith("custom-") ? null : cartId);
+    const notes = item.notes || (item.flavor ? `Flavor: ${item.flavor}` : "");
+    const qty = item.quantity || 1;
+
     setCart((prev) => {
-      const existing = prev.find((c) => c.menu_item_id === item.id);
+      const existing = prev.find((c) => c.cart_id === cartId);
       if (existing) {
         return prev.map((c) =>
-          c.menu_item_id === item.id ? { ...c, quantity: c.quantity + 1 } : c
+          c.cart_id === cartId ? { ...c, quantity: c.quantity + qty } : c
         );
       }
       return [
         ...prev,
         {
-          menu_item_id: item.id,
-          item_name: item.name,
-          unit_price: Number(item.price) || 0,
-          quantity: 1,
-          notes: "",
+          cart_id: cartId,
+          menu_item_id: menuItemId,
+          item_name: itemName,
+          unit_price: unitPrice,
+          quantity: qty,
+          notes,
         },
       ];
     });
@@ -179,22 +225,22 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
     if (!customItemName.trim()) return;
     const priceNum = parseFloat(customItemPrice) || 0;
     const fakeId = `custom-${Date.now()}`;
-    addToCart({ id: fakeId, name: customItemName.trim(), price: priceNum });
+    addToCart({ id: fakeId, name: customItemName.trim(), price: priceNum, menu_item_id: null });
     setCustomItemName("");
     setCustomItemPrice("");
     setShowCustomItem(false);
   };
 
-  const updateQty = (id: string, delta: number) => {
+  const updateQty = (cartId: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((c) => (c.menu_item_id === id ? { ...c, quantity: c.quantity + delta } : c))
+        .map((c) => (c.cart_id === cartId ? { ...c, quantity: c.quantity + delta } : c))
         .filter((c) => c.quantity > 0)
     );
   };
 
-  const removeFromCart = (id: string) => {
-    setCart((prev) => prev.filter((c) => c.menu_item_id !== id));
+  const removeFromCart = (cartId: string) => {
+    setCart((prev) => prev.filter((c) => c.cart_id !== cartId));
   };
 
   const subtotal = cart.reduce((s, c) => s + c.unit_price * c.quantity, 0);
@@ -272,7 +318,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
       // 2. Insert order items
       const orderItemsToInsert = cart.map((c) => ({
         order_id: orderData.id,
-        menu_item_id: c.menu_item_id.startsWith("custom-") ? null : c.menu_item_id,
+        menu_item_id: c.menu_item_id || null,
         item_name: c.item_name,
         quantity: c.quantity,
         unit_price: c.unit_price,
@@ -294,6 +340,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
         new CustomEvent("new-order-created", {
           detail: {
             id: orderData.id,
+            restaurant_id: targetRestaurantId,
             order_number: orderNum,
             customer_name: customerName.trim(),
             total_amount: total,
@@ -479,7 +526,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
             </div>
 
             {/* Menu Items List / Grid */}
-            <div className="border border-border rounded-xl p-2 bg-muted/20 max-h-48 overflow-y-auto space-y-1">
+            <div className="border border-border rounded-xl p-2 bg-muted/20 max-h-48 overflow-y-auto space-y-2">
               {loadingItems ? (
                 <div className="py-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -491,7 +538,166 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
                 </div>
               ) : (
                 filteredMenuItems.map((item) => {
-                  const inCartQty = cart.find((c) => c.menu_item_id === item.id)?.quantity || 0;
+                  const itemSizes = variants.filter(
+                    (v) => v.menu_item_id === item.id && v.variant_type === "size"
+                  );
+                  const itemFlavors = variants.filter(
+                    (v) => v.menu_item_id === item.id && v.variant_type !== "size"
+                  );
+                  const standaloneFlavors = itemFlavors.filter((v) => !v.parent_id);
+                  const inCartQty = cart
+                    .filter((c) => c.menu_item_id === item.id)
+                    .reduce((sum, c) => sum + c.quantity, 0);
+
+                  if (itemSizes.length > 0 || itemFlavors.length > 0) {
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "p-2.5 rounded-lg border border-border/70 transition-all bg-card space-y-2.5",
+                          inCartQty > 0 && "border-primary/40 bg-primary/5"
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-semibold text-xs text-foreground truncate">{item.name}</span>
+                            {itemSizes.length > 0 && (
+                              <Badge variant="secondary" className="h-4 px-1.5 text-[9px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                {itemSizes.length} sizes
+                              </Badge>
+                            )}
+                            {itemFlavors.length > 0 && (
+                              <Badge variant="secondary" className="h-4 px-1.5 text-[9px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                                {itemFlavors.length} flavors
+                              </Badge>
+                            )}
+                          </div>
+                          {inCartQty > 0 && (
+                            <Badge variant="default" className="h-4 px-1.5 text-[9px] font-bold">
+                              {inCartQty} in cart
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* Sizes with their nested flavors */}
+                        {itemSizes.length > 0 && (
+                          <div className="space-y-2 pt-0.5">
+                            {itemSizes.map((s) => {
+                              const childFlavors = variants.filter(
+                                (v) => v.parent_id === s.id && v.variant_type !== "size"
+                              );
+                              const sizeLabel = `${s.name}${s.measurement ? ` (${s.measurement})` : ""}`;
+                              const sizeCartId = `${item.id}-${s.id}`;
+                              const inCartSize = cart.find((c) => c.cart_id === sizeCartId)?.quantity || 0;
+
+                              return (
+                                <div
+                                  key={s.id}
+                                  className="p-2 rounded-lg border bg-muted/30 space-y-1.5"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[11px] font-bold text-foreground">
+                                      {sizeLabel} — {formatCurrency(s.price)}
+                                    </span>
+                                    {childFlavors.length === 0 && (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={inCartSize > 0 ? "default" : "outline"}
+                                        className="h-6 text-[11px] px-2 font-medium"
+                                        onClick={() =>
+                                          addToCart({
+                                            cart_id: sizeCartId,
+                                            menu_item_id: item.id,
+                                            item_name: `${item.name} (${sizeLabel})`,
+                                            unit_price: Number(s.price),
+                                            quantity: 1,
+                                            notes: `Size: ${sizeLabel}`,
+                                          })
+                                        }
+                                      >
+                                        <Plus className="h-2.5 w-2.5 mr-1" />
+                                        Add {inCartSize > 0 && `× ${inCartSize}`}
+                                      </Button>
+                                    )}
+                                  </div>
+
+                                  {childFlavors.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                      <span className="text-[10px] font-medium text-muted-foreground mr-0.5">Flavors:</span>
+                                      {childFlavors.map((f) => {
+                                        const flavorCartId = `${item.id}-${s.id}-${f.id}`;
+                                        const inCartFlavor = cart.find((c) => c.cart_id === flavorCartId)?.quantity || 0;
+                                        return (
+                                          <Button
+                                            key={f.id}
+                                            type="button"
+                                            size="sm"
+                                            variant={inCartFlavor > 0 ? "default" : "outline"}
+                                            className="h-6 text-[10px] px-2 font-medium"
+                                            onClick={() =>
+                                              addToCart({
+                                                cart_id: flavorCartId,
+                                                menu_item_id: item.id,
+                                                item_name: `${item.name} (${sizeLabel} · ${f.name})`,
+                                                unit_price: Number(s.price),
+                                                quantity: 1,
+                                                notes: `Size: ${sizeLabel}, Flavor: ${f.name}`,
+                                              })
+                                            }
+                                          >
+                                            <Plus className="h-2.5 w-2.5 mr-1" />
+                                            {f.name}
+                                            {inCartFlavor > 0 && ` × ${inCartFlavor}`}
+                                          </Button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Standalone Flavors (for items without sizes) */}
+                        {itemSizes.length === 0 && standaloneFlavors.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase mr-1">Flavors:</span>
+                            {standaloneFlavors.map((f) => {
+                              const flavorCartId = `${item.id}-${f.id}`;
+                              const inCart = cart.find((c) => c.cart_id === flavorCartId)?.quantity || 0;
+                              const price = Number(f.price) > 0 ? Number(f.price) : Number(item.price);
+                              return (
+                                <Button
+                                  key={f.id}
+                                  type="button"
+                                  size="sm"
+                                  variant={inCart > 0 ? "default" : "outline"}
+                                  className="h-6 text-[11px] px-2 font-medium"
+                                  onClick={() =>
+                                    addToCart({
+                                      cart_id: flavorCartId,
+                                      menu_item_id: item.id,
+                                      item_name: `${item.name} (${f.name})`,
+                                      unit_price: price,
+                                      quantity: 1,
+                                      notes: `Flavor: ${f.name}`,
+                                    })
+                                  }
+                                >
+                                  <Plus className="h-2.5 w-2.5 mr-1" />
+                                  {f.name} {Number(f.price) > 0 ? `(${formatCurrency(f.price)})` : ""}
+                                  {inCart > 0 && ` × ${inCart}`}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       key={item.id}
@@ -499,7 +705,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
                         "flex items-center justify-between p-2 rounded-lg border border-transparent hover:border-border transition-all bg-card cursor-pointer group",
                         inCartQty > 0 && "border-primary/30 bg-primary/5"
                       )}
-                      onClick={() => addToCart(item)}
+                      onClick={() => addToCart({ cart_id: item.id, item_name: item.name, unit_price: Number(item.price), menu_item_id: item.id, quantity: 1 })}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="font-medium text-xs text-foreground truncate group-hover:text-primary">
@@ -522,7 +728,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
                           className="h-6 px-2 text-[10px] gap-1"
                           onClick={(e) => {
                             e.stopPropagation();
-                            addToCart(item);
+                            addToCart({ cart_id: item.id, item_name: item.name, unit_price: Number(item.price), menu_item_id: item.id, quantity: 1 });
                           }}
                         >
                           <Plus className="h-3 w-3" />
@@ -548,10 +754,10 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
               ) : (
                 <div className="border border-border rounded-xl divide-y divide-border overflow-hidden bg-card shadow-sm">
                   {cart.map((c) => (
-                    <div key={c.menu_item_id} className="flex items-center gap-3 px-3 py-2">
+                    <div key={c.cart_id} className="p-2.5 flex items-center justify-between gap-3 text-xs">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-xs truncate text-foreground">{c.item_name}</p>
-                        <p className="text-[10px] text-muted-foreground">{formatCurrency(c.unit_price)} each</p>
+                        <p className="font-semibold text-foreground truncate">{c.item_name}</p>
+                        <p className="text-muted-foreground">{formatCurrency(c.unit_price)} each</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <Button
@@ -559,7 +765,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
                           size="icon"
                           type="button"
                           className="h-6 w-6 rounded-full"
-                          onClick={() => updateQty(c.menu_item_id, -1)}
+                          onClick={() => updateQty(c.cart_id, -1)}
                         >
                           −
                         </Button>
@@ -569,7 +775,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
                           size="icon"
                           type="button"
                           className="h-6 w-6 rounded-full"
-                          onClick={() => updateQty(c.menu_item_id, 1)}
+                          onClick={() => updateQty(c.cart_id, 1)}
                         >
                           +
                         </Button>
@@ -582,7 +788,7 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
                         size="icon"
                         type="button"
                         className="h-6 w-6 text-destructive hover:bg-destructive/10"
-                        onClick={() => removeFromCart(c.menu_item_id)}
+                        onClick={() => removeFromCart(c.cart_id)}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>

@@ -7,13 +7,13 @@ function truthyYes(v) {
   if (v == null) return false;
   if (typeof v === "boolean") return v;
   const s = String(v).trim().toLowerCase();
-  return ["yes", "true", "y", "1", "ordered", "order placed"].includes(s);
+  return ["yes", "true", "y", "1", "ordered", "order placed", "oui", "vrai", "commande passée", "commande validée"].includes(s);
 }
 
 function emptyish(v) {
   if (v == null) return true;
   const s = String(v).trim().toLowerCase();
-  return !s || s === "none" || s === "null" || s === "n/a" || s === "na" || s === "unknown";
+  return !s || s === "none" || s === "null" || s === "n/a" || s === "na" || s === "unknown" || s === "aucun" || s === "aucune";
 }
 
 function mapCallStatus(raw) {

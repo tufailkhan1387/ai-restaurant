@@ -37,6 +37,7 @@ export const ALLOWED_TABLES = new Set([
   "restaurant_hours",
   "cuisines",
   "restaurant_cuisines",
+  "notifications",
 ]);
 
 /**

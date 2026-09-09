@@ -66,10 +66,12 @@ interface Restaurant {
 
 interface WorkingHour {
   id?: string;
+  restaurant_id?: string;
   day_of_week: number;
   open_time: string;
   close_time: string;
   is_closed: boolean;
+  [key: string]: unknown;
 }
 
 /** From `check-integration-status` — server `VOICE_ROUTING` + `PUBLIC_API_URL`. */
@@ -81,9 +83,18 @@ interface VoiceIntegrationInfo {
   twilio_configured: boolean;
   livekit_configured: boolean;
   deepgram_configured: boolean;
+  routing?: string;
+  urls?: {
+    twilio_inbound_webhook?: string;
+    ai_place_order?: string;
+    ai_order_status?: string;
+    elevenlabs_post_call_webhook?: string;
+    synthflow_post_call_webhook?: string;
+  };
 }
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 const AGENT_LANGUAGES = [
   { code: "en", label: "English (US / UK / Global)" },
@@ -102,6 +113,7 @@ const AGENT_LANGUAGES = [
   { code: "zh", label: "Chinese (中文)" },
   { code: "tr", label: "Turkish (Türkçe)" },
 ];
+const LANGUAGES = AGENT_LANGUAGES;
 
 function isEmpty(v: unknown): boolean {
   return v == null || String(v).trim() === "";
@@ -253,7 +265,7 @@ export default function RestaurantSettings() {
     const { error } = await supabase.from("restaurant_hours").insert(hours);
     setLoading(false);
     if (error) {
-      toast({ variant: "destructive", title: "Failed to save hours", description: error.message });
+      toast({ variant: "destructive", title: "Failed to save hours", description: (error as any)?.message });
     } else {
       toast({ title: "Working hours saved" });
       void syncMenu();
@@ -314,7 +326,7 @@ export default function RestaurantSettings() {
       toast({
         variant: "destructive",
         title: "Failed",
-        description: settingsRes.error?.message || restaurantRes.error?.message,
+        description: (settingsRes.error as any)?.message || (restaurantRes.error as any)?.message,
       });
     } else {
       toast({ title: "Settings saved" });
@@ -336,7 +348,7 @@ export default function RestaurantSettings() {
         agent_system_prompt: r.agent_system_prompt?.trim() || null,
       })
       .eq("id", r.id);
-    if (error) toast({ variant: "destructive", title: "Failed", description: error.message });
+    if (error) toast({ variant: "destructive", title: "Failed", description: (error as any)?.message });
     else {
       toast({ title: "Telephony settings saved" });
       await loadRestaurantData();
@@ -461,6 +473,7 @@ export default function RestaurantSettings() {
       const { data, error } = await supabase.functions.invoke("restaurant-create-synthflow-agent", {
         body: {
           restaurant_id: r.id,
+          synthflow_agent_id: r.synthflow_agent_id || undefined,
           language: r.agent_language || "en",
           voice_id: r.agent_voice_id?.trim() || undefined,
           first_message: r.agent_first_message?.trim() || undefined,
@@ -622,9 +635,9 @@ export default function RestaurantSettings() {
               <Store className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Restaurant settings</h1>
+              <h1 className="text-2xl font-bold tracking-tight">{t("restaurantSettings:title", "Restaurant settings")}</h1>
               <p className="text-muted-foreground text-sm">
-                Public-facing details, pricing, and phone AI — kept in sync with your live restaurant record.
+                {t("restaurantSettings:subtitle", "Public-facing details, pricing, and phone AI — kept in sync with your live restaurant record.")}
               </p>
             </div>
           </div>
@@ -637,16 +650,15 @@ export default function RestaurantSettings() {
 
       <Card className="overflow-hidden border shadow-sm">
         <CardHeader className="border-b bg-muted/30 pb-4">
-          <CardTitle className="text-lg">General</CardTitle>
+          <CardTitle className="text-lg">{t("restaurantSettings:general", "General")}</CardTitle>
           <CardDescription>
-            Name, location, and contact info. Values you entered when the restaurant was created appear here automatically
-            (we merge them from your main restaurant record if a field was left empty in storefront settings).
+            {t("restaurantSettings:generalDesc", "Name, location, and contact info. Values you entered when the restaurant was created appear here automatically (we merge them from your main restaurant record if a field was left empty in storefront settings).")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 pt-6">
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="rs-name">Restaurant name</Label>
+              <Label htmlFor="rs-name">{t("restaurantSettings:restaurantName", "Restaurant name")}</Label>
               <Input
                 id="rs-name"
                 value={String(s.name ?? "")}
@@ -657,21 +669,21 @@ export default function RestaurantSettings() {
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="rs-address" className="flex items-center gap-1.5">
                 <MapPin className="h-3.5 w-3.5" />
-                Address
+                {t("restaurantSettings:address", "Address")}
               </Label>
               <Textarea
                 id="rs-address"
                 rows={3}
                 value={String(s.address ?? "")}
                 onChange={(e) => setS({ ...s, address: e.target.value })}
-                placeholder="Street, city, postal code…"
+                placeholder={t("restaurantSettings:addressPlaceholder", "Street, city, postal code…")}
                 className="resize-y min-h-[80px]"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="rs-phone" className="flex items-center gap-1.5">
                 <Phone className="h-3.5 w-3.5" />
-                Phone
+                {t("restaurantSettings:phone", "Phone")}
               </Label>
               <Input
                 id="rs-phone"
@@ -683,7 +695,7 @@ export default function RestaurantSettings() {
             <div className="space-y-2">
               <Label htmlFor="rs-email" className="flex items-center gap-1.5">
                 <Mail className="h-3.5 w-3.5" />
-                Contact email
+                {t("restaurantSettings:contactEmail", "Contact email")}
               </Label>
               <Input
                 id="rs-email"
@@ -700,39 +712,39 @@ export default function RestaurantSettings() {
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <ImageIcon className="h-4 w-4 text-muted-foreground" />
-              Branding
+              {t("restaurantSettings:branding", "Branding")}
             </div>
             <div className="grid gap-6 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="rs-logo">Logo URL</Label>
+                <Label htmlFor="rs-logo">{t("restaurantSettings:logoUrl", "Logo URL")}</Label>
                 <Input
                   id="rs-logo"
                   value={String(s.logo_url ?? "")}
                   onChange={(e) => setS({ ...s, logo_url: e.target.value })}
-                  placeholder="https://… or path from upload"
+                  placeholder={t("restaurantSettings:logoUrlPlaceholder", "https://… or path from upload")}
                   className="font-mono text-xs sm:text-sm"
                 />
                 {logoPreview ? (
                   <div className="mt-2 overflow-hidden rounded-lg border bg-muted/30 p-2 w-fit">
-                    <img src={logoPreview} alt="Logo preview" className="h-20 w-20 rounded-md object-cover" />
+                    <img src={logoPreview} alt={t("restaurantSettings:logoPreview", "Logo preview")} className="h-20 w-20 rounded-md object-cover" />
                   </div>
                 ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rs-cover" className="flex items-center gap-1.5">
                   <Images className="h-3.5 w-3.5" />
-                  Cover image URL
+                  {t("restaurantSettings:coverImageUrl", "Cover image URL")}
                 </Label>
                 <Input
                   id="rs-cover"
                   value={String(r.cover_image_url ?? "")}
                   onChange={(e) => setR({ ...r, cover_image_url: e.target.value })}
-                  placeholder="Banner image URL"
+                  placeholder={t("restaurantSettings:coverImagePlaceholder", "Banner image URL")}
                   className="font-mono text-xs sm:text-sm"
                 />
                 {coverPreview ? (
                   <div className="mt-2 overflow-hidden rounded-lg border bg-muted/30 p-2 max-w-xs">
-                    <img src={coverPreview} alt="Cover preview" className="h-20 w-full max-w-xs rounded-md object-cover" />
+                    <img src={coverPreview} alt={t("restaurantSettings:coverPreview", "Cover preview")} className="h-20 w-full max-w-xs rounded-md object-cover" />
                   </div>
                 ) : null}
               </div>
@@ -746,13 +758,13 @@ export default function RestaurantSettings() {
               <Switch id="rs-open" checked={Boolean(s.is_open)} onCheckedChange={(v) => setS({ ...s, is_open: v })} />
               <div>
                 <Label htmlFor="rs-open" className="text-base font-medium cursor-pointer">
-                  Accepting orders
+                  {t("restaurantSettings:acceptingOrders", "Accepting orders")}
                 </Label>
-                <p className="text-xs text-muted-foreground">When off, customers may see you as closed.</p>
+                <p className="text-xs text-muted-foreground">{t("restaurantSettings:acceptingOrdersDesc", "When off, customers may see you as closed.")}</p>
               </div>
             </div>
             <Button onClick={saveSettings} className="shrink-0 sm:w-auto w-full">
-              Save general
+              {t("restaurantSettings:saveGeneral", "Save general")}
             </Button>
           </div>
         </CardContent>
@@ -760,13 +772,13 @@ export default function RestaurantSettings() {
 
       <Card className="overflow-hidden border shadow-sm">
         <CardHeader className="border-b bg-muted/30 pb-4">
-          <CardTitle className="text-lg">Pricing</CardTitle>
-          <CardDescription>Currency, tax, delivery fee, and minimum order for quotes and checkout.</CardDescription>
+          <CardTitle className="text-lg">{t("restaurantSettings:pricing", "Pricing")}</CardTitle>
+          <CardDescription>{t("restaurantSettings:pricingDesc", "Currency, tax, delivery fee, and minimum order for quotes and checkout.")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 pt-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Currency (ISO)</Label>
+              <Label>{t("restaurantSettings:currencyIso", "Currency (ISO)")}</Label>
               <Input
                 value={String(s.currency || "USD")}
                 onChange={(e) => setS({ ...s, currency: e.target.value.toUpperCase() })}
@@ -774,7 +786,7 @@ export default function RestaurantSettings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Tax rate (%)</Label>
+              <Label>{t("restaurantSettings:taxRate", "Tax rate (%)")}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -783,7 +795,7 @@ export default function RestaurantSettings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Delivery fee</Label>
+              <Label>{t("restaurantSettings:deliveryFee", "Delivery fee")}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -792,7 +804,7 @@ export default function RestaurantSettings() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Minimum order</Label>
+              <Label>{t("restaurantSettings:minimumOrder", "Minimum order")}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -802,23 +814,23 @@ export default function RestaurantSettings() {
             </div>
           </div>
           <Button variant="secondary" onClick={saveSettings}>
-            Save pricing
+            {t("restaurantSettings:savePricing", "Save pricing")}
           </Button>
         </CardContent>
       </Card>
 
       <Card className="overflow-hidden border shadow-sm">
         <CardHeader className="border-b bg-muted/30 pb-4">
-          <CardTitle className="text-lg">Fulfillment Options</CardTitle>
-          <CardDescription>Choose how you want to serve your customers.</CardDescription>
+          <CardTitle className="text-lg">{t("restaurantSettings:fulfillmentOptions", "Fulfillment Options")}</CardTitle>
+          <CardDescription>{t("restaurantSettings:fulfillmentDesc", "Choose how you want to serve your customers.")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 pt-6">
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="flex flex-col gap-4 p-4 rounded-lg border bg-muted/10">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">Allows Delivery</Label>
-                  <p className="text-xs text-muted-foreground">Customers can request delivery to their address.</p>
+                  <Label className="text-base">{t("restaurantSettings:allowsDelivery", "Allows Delivery")}</Label>
+                  <p className="text-xs text-muted-foreground">{t("restaurantSettings:allowsDeliveryDesc", "Customers can request delivery to their address.")}</p>
                 </div>
                 <Switch 
                   checked={r.allows_delivery} 
@@ -829,8 +841,8 @@ export default function RestaurantSettings() {
             <div className="flex flex-col gap-4 p-4 rounded-lg border bg-muted/10">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">Allows Self Pickup</Label>
-                  <p className="text-xs text-muted-foreground">Customers can come and collect their order.</p>
+                  <Label className="text-base">{t("restaurantSettings:allowsPickup", "Allows Self Pickup")}</Label>
+                  <p className="text-xs text-muted-foreground">{t("restaurantSettings:allowsPickupDesc", "Customers can come and collect their order.")}</p>
                 </div>
                 <Switch 
                   checked={r.allows_pickup} 
@@ -844,13 +856,13 @@ export default function RestaurantSettings() {
               allows_delivery: r.allows_delivery,
               allows_pickup: r.allows_pickup
             }).eq("id", r.id);
-            if (error) toast({ variant: "destructive", title: "Failed", description: error.message });
+            if (error) toast({ variant: "destructive", title: t("common:failed", "Failed"), description: (error as any)?.message });
             else {
-              toast({ title: "Fulfillment options saved" });
+              toast({ title: t("restaurantSettings:fulfillmentSaved", "Fulfillment options saved") });
               void syncMenu();
             }
           }}>
-            Save fulfillment
+            {t("restaurantSettings:saveFulfillment", "Save fulfillment")}
           </Button>
         </CardContent>
       </Card>
@@ -859,29 +871,29 @@ export default function RestaurantSettings() {
         <CardHeader className="border-b bg-muted/30 pb-4 flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="h-5 w-5" /> Operating Hours
+              <Clock className="h-5 w-5" /> {t("restaurantSettings:operatingHours", "Operating Hours")}
             </CardTitle>
-            <CardDescription>Set when your restaurant is open for orders.</CardDescription>
+            <CardDescription>{t("restaurantSettings:operatingHoursDesc", "Set when your restaurant is open for orders.")}</CardDescription>
           </div>
           <Button onClick={saveHours} disabled={loading} size="sm">
-            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Save Hours"}
+            {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : t("restaurantSettings:saveHours", "Save Hours")}
           </Button>
         </CardHeader>
         <CardContent className="space-y-6 pt-6">
-          {DAYS.map((dayName, dayIdx) => {
+          {DAY_KEYS.map((dayKey, dayIdx) => {
             const daySlots = hours.filter(h => h.day_of_week === dayIdx);
             return (
               <div key={dayIdx} className="space-y-3 pb-4 border-b last:border-0">
                 <div className="flex items-center justify-between">
-                  <Label className="text-base font-bold">{dayName}</Label>
+                  <Label className="text-base font-bold">{t(`restaurantSettings:days.${dayKey}`, DAYS[dayIdx])}</Label>
                   <Button variant="outline" size="sm" onClick={() => addHourSlot(dayIdx)} className="h-8">
-                    <Plus className="h-4 w-4 mr-1" /> Add Slot
+                    <Plus className="h-4 w-4 mr-1" /> {t("restaurantSettings:addSlot", "Add Slot")}
                   </Button>
                 </div>
                 
                 {daySlots.length === 0 ? (
                   <div className="p-3 rounded-lg border border-dashed text-center bg-muted/5">
-                    <p className="text-xs text-muted-foreground italic">Closed all day</p>
+                    <p className="text-xs text-muted-foreground italic">{t("restaurantSettings:closedAllDay", "Closed all day")}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -891,7 +903,7 @@ export default function RestaurantSettings() {
                         <div key={globalIdx} className="flex items-center gap-3 bg-muted/20 p-2 rounded-lg border">
                           <div className="flex-1 grid grid-cols-2 gap-2">
                             <div className="space-y-1">
-                              <span className="text-[10px] uppercase font-bold opacity-50 block ml-1">Open</span>
+                              <span className="text-[10px] uppercase font-bold opacity-50 block ml-1">{t("restaurantSettings:openTimeLabel", "Open")}</span>
                               <Input 
                                 type="time" 
                                 value={h.open_time} 
@@ -900,7 +912,7 @@ export default function RestaurantSettings() {
                               />
                             </div>
                             <div className="space-y-1">
-                              <span className="text-[10px] uppercase font-bold opacity-50 block ml-1">Close</span>
+                              <span className="text-[10px] uppercase font-bold opacity-50 block ml-1">{t("restaurantSettings:closeTimeLabel", "Close")}</span>
                               <Input 
                                 type="time" 
                                 value={h.close_time} 
@@ -932,39 +944,39 @@ export default function RestaurantSettings() {
         <CardHeader className="border-b bg-muted/30 pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Phone className="h-5 w-5" />
-            Telnyx + Synthflow (recommended)
+            {t("restaurantSettings:telnyxTitle", "Telnyx + Synthflow (recommended)")}
           </CardTitle>
           <CardDescription className="space-y-2">
             <span className="block">
-              Dedicated Telnyx number per restaurant. Synthflow AI answers calls, explains menu and coupons, takes the order, then posts results to our webhook so the order is created automatically.
+              {t("restaurantSettings:telnyxDesc", "Dedicated Telnyx number per restaurant. Synthflow AI answers calls, explains menu and coupons, takes the order, then posts results to our webhook so the order is created automatically.")}
             </span>
             <span className="block text-muted-foreground">
-              Server mode:{" "}
+              {t("restaurantSettings:serverMode", "Server mode:")}{" "}
               <span className="font-mono text-foreground">{voiceRouting}</span>
-              {isSynthflowMode ? " — this restaurant uses Synthflow." : null}
+              {isSynthflowMode ? t("restaurantSettings:usesSynthflow", " — this restaurant uses Synthflow.") : null}
             </span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5 pt-6">
           <div className="rounded-lg border bg-muted/15 px-4 py-3 text-xs text-muted-foreground space-y-1">
             <div>
-              Telnyx number:{" "}
-              <span className="font-mono text-foreground">{r.telnyx_phone_number || "not assigned"}</span>
+              {t("restaurantSettings:telnyxNumber", "Telnyx number:")}{" "}
+              <span className="font-mono text-foreground">{r.telnyx_phone_number || t("restaurantSettings:notAssigned", "not assigned")}</span>
             </div>
             <div>
-              Synthflow agent:{" "}
-              <span className="font-mono text-foreground">{r.synthflow_agent_id || "not created"}</span>
+              {t("restaurantSettings:synthflowAgent", "Synthflow agent:")}{" "}
+              <span className="font-mono text-foreground">{r.synthflow_agent_id || t("restaurantSettings:notCreated", "not created")}</span>
             </div>
             {r.synthflow_synced_at ? (
-              <div>Last synced: {new Date(r.synthflow_synced_at).toLocaleString()}</div>
+              <div>{t("restaurantSettings:lastSynced", "Last synced:")} {new Date(r.synthflow_synced_at).toLocaleString()}</div>
             ) : null}
           </div>
 
           <div className="space-y-3 rounded-lg border p-4">
-            <p className="text-sm font-medium">1. Search &amp; assign a Telnyx number</p>
+            <p className="text-sm font-medium">{t("restaurantSettings:step1Title", "1. Search & assign a Telnyx number")}</p>
             <div className="flex flex-wrap gap-2 items-end">
               <div className="space-y-1">
-                <Label className="text-xs">Area code (optional)</Label>
+                <Label className="text-xs">{t("restaurantSettings:areaCode", "Area code (optional)")}</Label>
                 <Input
                   value={telnyxAreaCode}
                   onChange={(e) => setTelnyxAreaCode(e.target.value)}
@@ -973,16 +985,16 @@ export default function RestaurantSettings() {
                 />
               </div>
               <Button type="button" variant="secondary" disabled={telnyxSearchBusy} onClick={() => void searchTelnyxNumbers()}>
-                {telnyxSearchBusy ? "Searching…" : "Search Telnyx"}
+                {telnyxSearchBusy ? t("restaurantSettings:searching", "Searching…") : t("restaurantSettings:searchTelnyx", "Search Telnyx")}
               </Button>
             </div>
 
             {telnyxCandidates.length > 0 ? (
               <div className="space-y-2">
-                <Label>Available numbers</Label>
+                <Label>{t("restaurantSettings:availableNumbers", "Available numbers")}</Label>
                 <Select value={selectedTelnyxNumber} onValueChange={setSelectedTelnyxNumber}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a number to purchase" />
+                    <SelectValue placeholder={t("restaurantSettings:selectNumberPlaceholder", "Select a number to purchase")} />
                   </SelectTrigger>
                   <SelectContent>
                     {telnyxCandidates.map((n) => (
@@ -998,13 +1010,13 @@ export default function RestaurantSettings() {
                   disabled={telnyxProvisionBusy || !selectedTelnyxNumber}
                   onClick={() => void provisionTelnyxNumber({ phone: selectedTelnyxNumber })}
                 >
-                  {telnyxProvisionBusy ? "Provisioning…" : "Purchase & assign number"}
+                  {telnyxProvisionBusy ? t("restaurantSettings:provisioning", "Provisioning…") : t("restaurantSettings:purchaseAssign", "Purchase & assign number")}
                 </Button>
               </div>
             ) : null}
 
             <div className="space-y-2 pt-2 border-t">
-              <Label>Or attach an existing Telnyx number (E.164)</Label>
+              <Label>{t("restaurantSettings:attachExistingTelnyx", "Or attach an existing Telnyx number (E.164)")}</Label>
               <div className="flex flex-wrap gap-2">
                 <Input
                   value={manualTelnyxNumber}
@@ -1018,27 +1030,27 @@ export default function RestaurantSettings() {
                   disabled={telnyxProvisionBusy}
                   onClick={() => void provisionTelnyxNumber({ skipPurchase: true, phone: manualTelnyxNumber })}
                 >
-                  Assign existing
+                  {t("restaurantSettings:assignExisting", "Assign existing")}
                 </Button>
               </div>
             </div>
           </div>
 
           <div className="space-y-3 rounded-lg border p-4">
-            <p className="text-sm font-medium">2. Create / update Synthflow AI agent</p>
+            <p className="text-sm font-medium">{t("restaurantSettings:step2Title", "2. Create / update Synthflow AI agent")}</p>
             <p className="text-xs text-muted-foreground">
-              Uses greeting and system prompt from the AI agent section below (menu + active coupons are injected automatically).
+              {t("restaurantSettings:step2Desc", "Uses greeting and system prompt from the AI agent section below (menu + active coupons are injected automatically).")}
             </p>
             <div className="flex flex-wrap gap-2">
               <Button type="button" disabled={synthflowBusy || !r.telnyx_phone_number} onClick={() => void createOrUpdateSynthflowAgent()}>
                 <Sparkles className="h-4 w-4 mr-2" />
                 {r.synthflow_agent_id
                   ? synthflowBusy
-                    ? "Updating…"
-                    : "Update Synthflow agent"
+                    ? t("restaurantSettings:updating", "Updating…")
+                    : t("restaurantSettings:updateSynthflowAgent", "Update Synthflow agent")
                   : synthflowBusy
-                    ? "Creating…"
-                    : "Create Synthflow agent"}
+                    ? t("restaurantSettings:creating", "Creating…")
+                    : t("restaurantSettings:createSynthflowAgent", "Create Synthflow agent")}
               </Button>
               <Button
                 type="button"
@@ -1047,14 +1059,14 @@ export default function RestaurantSettings() {
                 onClick={() => void syncMenuToSynthflow()}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${synthflowSyncBusy ? "animate-spin" : ""}`} />
-                {synthflowSyncBusy ? "Syncing…" : "Sync menu & coupons"}
+                {synthflowSyncBusy ? t("restaurantSettings:syncing", "Syncing…") : t("restaurantSettings:syncMenuCoupons", "Sync menu & coupons")}
               </Button>
             </div>
           </div>
 
           <div className="space-y-2 rounded-lg border bg-muted/15 p-4">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-              Post-call webhook (configured on the agent automatically)
+              {t("restaurantSettings:postCallWebhook", "Post-call webhook (configured on the agent automatically)")}
             </Label>
             <div className="flex gap-2">
               <Input value={synthflowWebhookUrl} readOnly className="font-mono text-xs" />
@@ -1063,20 +1075,19 @@ export default function RestaurantSettings() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Requires <span className="font-mono">PUBLIC_API_URL</span> to be a public HTTPS URL Synthflow can reach. After each call, order details are extracted and the order is created here.
+              {t("restaurantSettings:postCallWebhookDesc", "Requires PUBLIC_API_URL to be a public HTTPS URL Synthflow can reach. After each call, order details are extracted and the order is created here.")}
             </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Legacy Twilio + ElevenLabs UI — hidden while Synthflow/Telnyx is primary */}
+      {/* Legacy Twilio UI — hidden while Synthflow/Telnyx is primary */}
       {false && (
-      <>
       <Card className="overflow-hidden border shadow-sm">
         <CardHeader className="border-b bg-muted/30 pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Phone className="h-5 w-5" />
-            Telephony (legacy Twilio + ElevenLabs)
+            Telephony (legacy Twilio)
           </CardTitle>
           <CardDescription className="space-y-2">
             <span className="block">
@@ -1084,22 +1095,7 @@ export default function RestaurantSettings() {
               <span className="font-mono text-foreground">
                 {voiceRouting}
               </span>
-              . Set <span className="font-mono">VOICE_ROUTING</span> and <span className="font-mono">PUBLIC_API_URL</span> in{" "}
-              <span className="font-mono">backend/.env</span>, redeploy the API, then refresh this page.
             </span>
-            {voiceRouting === "elevenlabs_native" ? (
-              <span className="block text-muted-foreground">
-                Twilio is connected inside ElevenLabs; inbound audio does not hit our Twilio webhook. Orders still use the tool URLs below.
-              </span>
-            ) : voiceRouting === "synthflow_telnyx" ? (
-              <span className="block text-muted-foreground">
-                Primary path is Telnyx + Synthflow above. Legacy Twilio/ElevenLabs controls remain for restaurants not yet migrated.
-              </span>
-            ) : (
-              <span className="block text-muted-foreground">
-                Twilio &quot;A call comes in&quot; should POST to the inbound webhook so we return TwiML that streams the call to ElevenLabs.
-              </span>
-            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5 pt-6">
@@ -1121,112 +1117,26 @@ export default function RestaurantSettings() {
             />
           </div>
 
-          {voiceRouting === "twilio_webhook" && inboundWebhookUrl ? (
-            <div className="space-y-2 rounded-lg border bg-muted/15 p-4">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Inbound webhook (Twilio)</Label>
-              <div className="flex gap-2">
-                <Input value={inboundWebhookUrl} readOnly className="font-mono text-xs" />
-                <Button type="button" variant="outline" size="icon" onClick={() => copy(inboundWebhookUrl)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Set as &quot;A call comes in&quot; webhook (HTTP POST).{" "}
-                <a
-                  href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary underline inline-flex items-center gap-1"
-                >
-                  Twilio console
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </p>
-            </div>
-          ) : null}
-
-          {voiceRouting === "elevenlabs_native" ? (
-            <div className="space-y-3 rounded-lg border border-primary/20 bg-muted/20 p-4">
-              <p className="text-sm font-medium">ElevenLabs + Twilio (no Twilio webhook)</p>
-              <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
-                <li>Save this Twilio number and agent ID, then import the number into ElevenLabs (button below or ElevenLabs dashboard).</li>
-                <li>Register server tools on the agent using the URLs in the next section.</li>
-                <li>
-                  On every <span className="font-mono text-foreground">place_order</span> / <span className="font-mono text-foreground">get_order_status</span> call, include{" "}
-                  <span className="font-mono text-foreground">twilio_to</span> (this line&apos;s E.164) and/or{" "}
-                  <span className="font-mono text-foreground">elevenlabs_agent_id</span>.
-                </li>
-              </ol>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={attachTwilioBusy}
-                onClick={() => void attachTwilioInElevenLabs()}
-              >
-                {attachTwilioBusy ? "Linking…" : "Import Twilio number into ElevenLabs"}
-              </Button>
-              <p className="text-[11px] text-muted-foreground">
-                Uses server <span className="font-mono">TWILIO_*</span> and <span className="font-mono">ELEVENLABS_API_KEY</span>. Save telephony first if you changed numbers.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="space-y-3 rounded-lg border bg-muted/15 p-4">
-            <Label className="text-xs uppercase tracking-wide text-muted-foreground">ElevenLabs agent tool URLs</Label>
-            <div className="space-y-2">
-              <span className="text-[10px] uppercase text-muted-foreground">place_order → POST</span>
-              <div className="flex gap-2">
-                <Input value={placeOrderToolUrl} readOnly className="font-mono text-xs" />
-                <Button type="button" variant="outline" size="icon" onClick={() => copy(placeOrderToolUrl)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <span className="text-[10px] uppercase text-muted-foreground">get_order_status → POST</span>
-              <div className="flex gap-2">
-                <Input value={orderStatusToolUrl} readOnly className="font-mono text-xs" />
-                <Button type="button" variant="outline" size="icon" onClick={() => copy(orderStatusToolUrl)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {voiceRouting === "elevenlabs_native" ? (
-            <div className="space-y-2 rounded-lg border bg-muted/15 p-4">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Post-call webhook (optional)</Label>
-              <div className="flex gap-2">
-                <Input value={postCallWebhookUrl} readOnly className="font-mono text-xs" />
-                <Button type="button" variant="outline" size="icon" onClick={() => copy(postCallWebhookUrl)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Paste into ElevenLabs conversation / post-call webhook settings for transcripts and backup order extraction.
-              </p>
-            </div>
-          ) : null}
-
           <Button onClick={saveTelephony}>Save telephony</Button>
         </CardContent>
       </Card>
+      )}
 
+      {/* AI Voice Agent Configuration (Prompt, Language, Greeting) */}
       <Card className="overflow-hidden border shadow-sm">
         <CardHeader className="border-b bg-muted/30 pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot className="h-5 w-5" />
-            AI agent (ElevenLabs)
+            {t("restaurantSettings:aiAgentTitle", "AI Agent (Language, Voice & Prompt)")}
           </CardTitle>
           <CardDescription>
-            Voice, language, and prompts. Sync the menu after you change items so callers get accurate prices.
+            {t("restaurantSettings:aiAgentDesc", "Configure language, voice greeting, and custom system prompt for your AI phone agent.")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5 pt-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Language</Label>
+              <Label>{t("restaurantSettings:language", "Agent Language")}</Label>
               <Select value={r.agent_language || "en"} onValueChange={(v) => setR({ ...r, agent_language: v })}>
                 <SelectTrigger>
                   <SelectValue />
@@ -1241,7 +1151,7 @@ export default function RestaurantSettings() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Voice ID (optional)</Label>
+              <Label>{t("restaurantSettings:voiceId", "Voice ID (optional)")}</Label>
               <Input
                 value={r.agent_voice_id || ""}
                 onChange={(e) => setR({ ...r, agent_voice_id: e.target.value })}
@@ -1251,7 +1161,7 @@ export default function RestaurantSettings() {
           </div>
 
           <div className="space-y-2">
-            <Label>First message (optional)</Label>
+            <Label>{t("restaurantSettings:firstMessage", "First message / Greeting (optional)")}</Label>
             <Input
               value={r.agent_first_message || ""}
               onChange={(e) => setR({ ...r, agent_first_message: e.target.value })}
@@ -1260,7 +1170,7 @@ export default function RestaurantSettings() {
           </div>
 
           <div className="space-y-2">
-            <Label>System prompt (optional)</Label>
+            <Label>{t("restaurantSettings:systemPrompt", "System prompt (optional)")}</Label>
             <Textarea
               rows={5}
               value={r.agent_system_prompt || ""}
@@ -1271,60 +1181,43 @@ export default function RestaurantSettings() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={createOrUpdateAgent} disabled={agentBusy}>
+            <Button
+              type="button"
+              disabled={synthflowBusy || !r.telnyx_phone_number}
+              onClick={() => void createOrUpdateSynthflowAgent()}
+            >
               <Sparkles className="h-4 w-4 mr-2" />
-              {r.elevenlabs_agent_id
-                ? agentBusy
-                  ? "Updating…"
-                  : "Update agent on ElevenLabs"
-                : agentBusy
-                  ? "Creating…"
-                  : "Create AI agent"}
+              {synthflowBusy ? t("restaurantSettings:updating", "Updating…") : t("restaurantSettings:updateSynthflowAgent", "Update Synthflow Agent")}
             </Button>
-            <Button variant="outline" onClick={syncMenu} disabled={syncBusy || !r.elevenlabs_agent_id}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${syncBusy ? "animate-spin" : ""}`} />
-              {syncBusy ? "Syncing menu…" : "Sync menu to agent"}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={synthflowSyncBusy || !r.synthflow_agent_id}
+              onClick={() => void syncMenuToSynthflow()}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${synthflowSyncBusy ? "animate-spin" : ""}`} />
+              {synthflowSyncBusy ? t("restaurantSettings:syncing", "Syncing…") : t("restaurantSettings:syncMenuCoupons", "Sync Menu & Coupons")}
             </Button>
+            {r.elevenlabs_agent_id ? (
+              <Button onClick={createOrUpdateAgent} disabled={agentBusy} variant="secondary">
+                <Sparkles className="h-4 w-4 mr-2" />
+                {agentBusy ? "Updating ElevenLabs…" : "Update ElevenLabs Agent"}
+              </Button>
+            ) : null}
           </div>
 
-          {r.elevenlabs_agent_id ? (
+          {r.synthflow_agent_id ? (
             <div className="rounded-lg border bg-muted/15 px-4 py-3 text-xs text-muted-foreground space-y-1">
               <div>
-                Agent ID: <span className="font-mono text-foreground">{r.elevenlabs_agent_id}</span>
+                Synthflow Agent ID: <span className="font-mono text-foreground">{r.synthflow_agent_id}</span>
               </div>
-              {r.agent_menu_synced_at ? (
-                <div>Menu last synced: {new Date(r.agent_menu_synced_at).toLocaleString()}</div>
+              {r.synthflow_synced_at ? (
+                <div>Last synced: {new Date(r.synthflow_synced_at).toLocaleString()}</div>
               ) : null}
-            </div>
-          ) : null}
-
-          {placeOrderToolUrl && r.elevenlabs_agent_id ? (
-            <div className="space-y-3 pt-2 border-t">
-              <p className="text-xs font-medium text-muted-foreground">Webhook tools (ElevenLabs)</p>
-              <div className="space-y-2">
-                <Label className="text-xs">place_order (POST)</Label>
-                <div className="flex gap-2">
-                  <Input value={placeOrderToolUrl} readOnly className="font-mono text-xs" />
-                  <Button type="button" variant="outline" size="icon" onClick={() => copy(placeOrderToolUrl)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">get_order_status (POST)</Label>
-                <div className="flex gap-2">
-                  <Input value={orderStatusToolUrl} readOnly className="font-mono text-xs" />
-                  <Button type="button" variant="outline" size="icon" onClick={() => copy(orderStatusToolUrl)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
             </div>
           ) : null}
         </CardContent>
       </Card>
-      </>
-      )}
     </div>
   );
 }

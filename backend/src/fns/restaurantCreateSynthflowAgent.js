@@ -233,7 +233,17 @@ export async function restaurantCreateSynthflowAgent(req, res) {
     };
 
     if (modelId) {
-      await updateAgent(modelId, agentPayload);
+      // When updating an existing agent, omit phone_number so Synthflow doesn't reject with "Phone number already attached"
+      const { phone_number: _omitPhone, ...updatePayload } = agentPayload;
+      try {
+        await updateAgent(modelId, updatePayload);
+      } catch (upErr) {
+        if (isPhoneAlreadyAttachedError(upErr)) {
+          await updateAgent(modelId, updatePayload);
+        } else {
+          throw upErr;
+        }
+      }
       action = "updated";
     } else {
       try {

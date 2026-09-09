@@ -116,6 +116,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 function DonutChart({ data }: { data: { status: string; count: number }[] }) {
+  const { t } = useTranslation(["dashboard", "orders", "common", "superAdmin"]);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const total = data.reduce((s, d) => s + d.count, 0);
 
@@ -123,22 +124,20 @@ function DonutChart({ data }: { data: { status: string; count: number }[] }) {
     return (
       <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-2">
         <Activity className="h-8 w-8 text-muted-foreground/30" />
-        <p>No order distribution data yet</p>
+        <p>{t("superAdmin:noOrderDistribution", "No order distribution data yet")}</p>
       </div>
     );
   }
 
   const chartData = data.map((d) => {
     const key = d.status.toLowerCase();
-    const conf = STATUS_CONFIG[key] ?? {
-      label: d.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
-      color: "#94a3b8",
-    };
+    const conf = STATUS_CONFIG[key];
+    const statusLabel = getOrderStatusLabel(d.status, t) || conf?.label || d.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
     return {
-      name: conf.label,
+      name: statusLabel,
       value: d.count,
       status: d.status,
-      color: conf.color,
+      color: conf?.color || "#94a3b8",
       pct: Math.round((d.count / total) * 100),
     };
   });
@@ -186,7 +185,7 @@ function DonutChart({ data }: { data: { status: string; count: number }[] }) {
             {activeIndex !== null ? chartData[activeIndex].value : formatNumber(total)}
           </span>
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            {activeIndex !== null ? chartData[activeIndex].name : "TOTAL"}
+            {activeIndex !== null ? chartData[activeIndex].name : t("common:total", "TOTAL")}
           </span>
         </div>
       </div>
@@ -242,11 +241,12 @@ function DonutChart({ data }: { data: { status: string; count: number }[] }) {
 
 /* ─── Bar Chart (monthly revenue) ───────────────────────────── */
 function MonthlyBarChart({ data }: { data: { month: string; revenue: number; orders: number }[] }) {
+  const { t } = useTranslation(["dashboard", "orders", "common", "superAdmin"]);
   if (!data || !data.length) {
     return (
       <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-2">
         <BarChart3 className="h-8 w-8 text-muted-foreground/30" />
-        <p>No monthly data yet</p>
+        <p>{t("superAdmin:noMonthlyData", "No monthly data yet")}</p>
       </div>
     );
   }
@@ -259,11 +259,11 @@ function MonthlyBarChart({ data }: { data: { month: string; revenue: number; ord
           <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-1.5 font-semibold text-foreground">
             <span>{d.month}</span>
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">
-              {d.orders} {d.orders === 1 ? "order" : "orders"}
+              {d.orders} {d.orders === 1 ? t("orders:order", "order") : t("orders:orders", "orders")}
             </Badge>
           </div>
           <div className="flex items-center justify-between gap-2 pt-0.5">
-            <span className="text-muted-foreground">Revenue</span>
+            <span className="text-muted-foreground">{t("dashboard:revenue", "Revenue")}</span>
             <span className="font-bold text-primary text-sm tabular-nums">{formatCurrency(d.revenue)}</span>
           </div>
         </div>
@@ -312,10 +312,11 @@ function MonthlyBarChart({ data }: { data: { month: string; revenue: number; ord
 
 /* ─── Restaurant Bar Chart ───────────────────────────────────── */
 function RestaurantBarChart({ data }: { data: { name: string; revenue: number; order_count: number }[] }) {
+  const { t } = useTranslation(["dashboard", "orders", "common", "superAdmin"]);
   const maxRev = Math.max(...data.map((d) => d.revenue), 1);
   const palette = ["bg-orange-500", "bg-amber-500", "bg-emerald-500", "bg-sky-500", "bg-violet-500", "bg-pink-500", "bg-teal-500", "bg-rose-500"];
   if (!data.length) return (
-    <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">No sales data yet</div>
+    <div className="flex items-center justify-center h-28 text-muted-foreground text-sm">{t("superAdmin:noSalesData", "No sales data yet")}</div>
   );
   return (
     <div className="space-y-3">
@@ -325,7 +326,7 @@ function RestaurantBarChart({ data }: { data: { name: string; revenue: number; o
           <div key={i} className="space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-foreground truncate max-w-[55%]">{d.name}</span>
-              <span className="text-muted-foreground tabular-nums">{formatCurrency(d.revenue)} · {formatNumber(d.order_count)} orders</span>
+              <span className="text-muted-foreground tabular-nums">{formatCurrency(d.revenue)} · {formatNumber(d.order_count)} {t("orders:orders", "orders")}</span>
             </div>
             <div className="h-2 rounded-full bg-muted overflow-hidden">
               <div
@@ -367,7 +368,7 @@ function avatarTone(name: string) {
    SUPER ADMIN DASHBOARD
    ════════════════════════════════════════════════════════════ */
 function SuperAdminDashboard({ firstName }: { firstName: string }) {
-  const { t, i18n } = useTranslation(["dashboard", "sidebar", "common", "superAdmin"]);
+  const { t, i18n } = useTranslation(["superAdmin", "dashboard", "sidebar", "common", "orders"]);
   const todayLabel = useMemo(
     () => formatDate(new Date(), { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
     [i18n.language]
@@ -387,13 +388,37 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
 
   const kpis = useMemo((): { label: string; value: string; icon: LucideIcon; tone: string; sub?: string }[] => {
     const s = dash?.summary;
+    const activeCount = s?.active_restaurants ?? 0;
+    const pendingCount = s?.pending_orders ?? 0;
     return [
-      { label: "Total Restaurants", value: formatNumber(s?.total_restaurants ?? 0), icon: Store, tone: "bg-sky-50 text-sky-600", sub: `${formatNumber(s?.active_restaurants ?? 0)} active` },
-      { label: "Total Orders", value: formatNumber(s?.total_orders ?? 0), icon: ShoppingBag, tone: "bg-orange-50 text-orange-600", sub: `${formatNumber(s?.pending_orders ?? 0)} pending` },
-      { label: "Total Revenue", value: formatCurrency(s?.total_revenue ?? 0), icon: DollarSign, tone: "bg-emerald-50 text-emerald-600" },
-      { label: "Unique Customers", value: formatNumber(s?.total_customers ?? 0), icon: Users, tone: "bg-violet-50 text-violet-600" },
+      {
+        label: t("superAdmin:totalRestaurants", "Total Restaurants"),
+        value: formatNumber(s?.total_restaurants ?? 0),
+        icon: Store,
+        tone: "bg-sky-50 text-sky-600",
+        sub: t("superAdmin:activeCount", { count: activeCount, defaultValue: `${formatNumber(activeCount)} active` }),
+      },
+      {
+        label: t("superAdmin:totalOrders", "Total Orders"),
+        value: formatNumber(s?.total_orders ?? 0),
+        icon: ShoppingBag,
+        tone: "bg-orange-50 text-orange-600",
+        sub: t("superAdmin:pendingCount", { count: pendingCount, defaultValue: `${formatNumber(pendingCount)} pending` }),
+      },
+      {
+        label: t("superAdmin:totalRevenue", "Total Revenue"),
+        value: formatCurrency(s?.total_revenue ?? 0),
+        icon: DollarSign,
+        tone: "bg-emerald-50 text-emerald-600",
+      },
+      {
+        label: t("superAdmin:uniqueCustomers", "Unique Customers"),
+        value: formatNumber(s?.total_customers ?? 0),
+        icon: Users,
+        tone: "bg-violet-50 text-violet-600",
+      },
     ];
-  }, [dash]);
+  }, [dash, t]);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 animate-fade-in pb-6">
@@ -408,13 +433,15 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
               <div className="h-7 w-7 rounded-lg bg-white/20 flex items-center justify-center">
                 <Activity className="h-4 w-4" />
               </div>
-              <span className="text-sm font-semibold text-white/80 uppercase tracking-wider">Platform Overview</span>
+              <span className="text-sm font-semibold text-white/80 uppercase tracking-wider">
+                {t("superAdmin:platformOverview", "Platform Overview")}
+              </span>
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
-              Welcome back, {firstName} 👋
+              {t("superAdmin:welcomeBack", { name: firstName, defaultValue: `Welcome back, ${firstName} 👋` })}
             </h1>
             <p className="mt-1 max-w-xl text-sm text-white/70">
-              Real-time snapshot of all restaurants, orders, and platform revenue.
+              {t("superAdmin:platformOverviewDesc", "Real-time snapshot of all restaurants, orders, and platform revenue.")}
             </p>
             <p className="flex items-center gap-2 text-sm text-white/55">
               <Calendar className="h-4 w-4 shrink-0" aria-hidden />
@@ -424,12 +451,12 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
           <div className="flex items-center gap-3">
             <Link to="/restaurants">
               <Button size="sm" variant="secondary" className="gap-2 rounded-xl font-semibold bg-white/20 hover:bg-white/30 text-white border-white/30">
-                <Store className="h-4 w-4" /> Restaurants
+                <Store className="h-4 w-4" /> {t("sidebar:restaurants", "Restaurants")}
               </Button>
             </Link>
             <Link to="/earnings">
               <Button size="sm" variant="secondary" className="gap-2 rounded-xl font-semibold bg-white/20 hover:bg-white/30 text-white border-white/30">
-                <TrendingUp className="h-4 w-4" /> Earnings
+                <TrendingUp className="h-4 w-4" /> {t("sidebar:earnings", "Earnings")}
               </Button>
             </Link>
           </div>
@@ -468,9 +495,11 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
             <div>
               <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-primary" />
-                Monthly Revenue
+                {t("superAdmin:monthlyRevenueTitle", "Monthly Revenue")}
               </CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">Last 12 months · completed orders</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t("superAdmin:monthlyRevenueSubtitle", "Last 12 months · completed orders")}
+              </p>
             </div>
             <Badge variant="outline" className="text-[10px] font-bold text-primary border-primary/40 bg-primary/5">
               {dash?.monthly_revenue?.length ?? 0}M
@@ -489,9 +518,11 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
             <div>
               <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
                 <Activity className="h-4 w-4 text-primary" />
-                Order Status
+                {t("superAdmin:orderStatusTitle", "Order Status")}
               </CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">Distribution across all restaurants</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t("superAdmin:orderStatusSubtitle", "Distribution across all restaurants")}
+              </p>
             </div>
           </CardHeader>
           <CardContent className="pt-5">
@@ -508,14 +539,16 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
           <div>
             <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" />
-              Top Restaurants by Revenue
+              {t("superAdmin:topRestaurantsTitle", "Top Restaurants by Revenue")}
             </CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">Completed orders only · sorted by revenue</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t("superAdmin:topRestaurantsSubtitle", "Completed orders only · sorted by revenue")}
+            </p>
           </div>
           <Button asChild variant="outline" size="sm" className="h-8 rounded-lg gap-1.5 border-border/80">
             <Link to="/earnings">
               <ArrowUpRight className="h-3.5 w-3.5" />
-              Full Earnings
+              {t("superAdmin:fullEarnings", "Full Earnings")}
             </Link>
           </Button>
         </CardHeader>
@@ -532,12 +565,14 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
 
       {/* Quick Actions */}
       <section>
-        <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</h2>
+        <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wider mb-3">
+          {t("superAdmin:quickActions", "Quick Actions")}
+        </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
-            { href: "/restaurants", label: "Restaurants", icon: Store },
-            { href: "/earnings", label: "Earnings", icon: DollarSign },
-            { href: "/settings", label: "Settings", icon: Settings },
+            { href: "/restaurants", label: t("sidebar:restaurants", "Restaurants"), icon: Store },
+            { href: "/earnings", label: t("sidebar:earnings", "Earnings"), icon: DollarSign },
+            { href: "/settings", label: t("sidebar:settings", "Settings"), icon: Settings },
           ].map(({ href, label, icon: Icon }, index) => (
             <Link
               key={href}
@@ -568,7 +603,23 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
    ════════════════════════════════════════════════════════════ */
 function RestaurantDashboard({ firstName }: { firstName: string }) {
   const { t, i18n } = useTranslation(["dashboard", "sidebar", "common", "orders", "reports"]);
-  const { restaurantId } = useActiveRestaurant();
+  const { restaurantId, activeRestaurant, restaurants } = useActiveRestaurant();
+
+  const isBranch = Boolean(
+    activeRestaurant?.is_branch ||
+    (activeRestaurant?.parent_restaurant_id != null && activeRestaurant.parent_restaurant_id !== "")
+  );
+
+  const familyBranchIds = useMemo(() => {
+    if (!restaurantId) return [];
+    if (isBranch) return [restaurantId];
+
+    // Parent HQ Admin: rollup of parent + all child branches
+    const childBranches = restaurants.filter(
+      (r) => r.parent_restaurant_id === restaurantId || r.id === restaurantId
+    );
+    return childBranches.length > 0 ? childBranches.map((b) => b.id) : [restaurantId];
+  }, [restaurantId, isBranch, restaurants]);
 
   const todayLabel = useMemo(
     () => formatDate(new Date(), { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
@@ -594,7 +645,10 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
   }>({
     queryKey: ["dashboard-earnings", restaurantId],
     queryFn: async () => {
-      const resp = await fetch(`${getApiBase()}/api/stats/earnings`, {
+      const url = restaurantId
+        ? `${getApiBase()}/api/stats/earnings?restaurant_id=${encodeURIComponent(restaurantId)}`
+        : `${getApiBase()}/api/stats/earnings`;
+      const resp = await fetch(url, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!resp.ok) return null;
@@ -618,15 +672,20 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
   });
 
   const { data: recentOrders, isPending: ordersLoading } = useQuery({
-    queryKey: ["dashboard-recent-orders", restaurantId],
-    enabled: !!restaurantId,
+    queryKey: ["dashboard-recent-orders", familyBranchIds.join(",")],
+    enabled: familyBranchIds.length > 0,
     queryFn: async () => {
-      const { data } = await supabase
+      let q = supabase
         .from("orders")
-        .select("id,order_number,tracking_code,customer_name,customer_phone,customer_email,delivery_address,total_amount,subtotal,tax_amount,delivery_fee,status,created_at,payment_method,payment_status,source,estimated_delivery_at")
-        .eq("restaurant_id", restaurantId!)
-        .order("created_at", { ascending: false })
-        .limit(10);
+        .select("id,order_number,tracking_code,customer_name,customer_phone,customer_email,delivery_address,total_amount,subtotal,tax_amount,delivery_fee,status,created_at,payment_method,payment_status,source,estimated_delivery_at");
+
+      if (isBranch) {
+        q = q.eq("restaurant_id", restaurantId!);
+      } else {
+        q = q.in("restaurant_id", familyBranchIds);
+      }
+
+      const { data } = await q.order("created_at", { ascending: false }).limit(10);
       return (data || []) as RecentOrderRow[];
     },
     refetchInterval: 15000,
@@ -810,74 +869,6 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
                     );
                   })}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Restaurant report details */}
-          <Card className="rounded-xl border-border/80 shadow-sm overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border/40">
-              <div>
-                <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
-                  <Store className="h-4 w-4 text-primary" />
-                  {t("reports:reportDetails", "Restaurant report details")}
-                </CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {t("reports:restaurantReportDesc", "Sales and commission breakdown")}
-                </p>
-              </div>
-              <Badge variant="outline" className="text-xs font-semibold text-primary border-primary/30 bg-primary/5">
-                {earningsRestaurants.length} {earningsRestaurants.length === 1 ? t("reports:restaurant", "Restaurant") : t("reports:restaurants", "Restaurants")}
-              </Badge>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border/60">
-                    <tr>
-                      <th className="px-5 py-3.5">{t("reports:colRestaurant", "Restaurant")}</th>
-                      <th className="px-5 py-3.5 text-right">{t("reports:colOrders", "Orders")}</th>
-                      <th className="px-5 py-3.5 text-right">{t("reports:colSales", "Sales")}</th>
-                      <th className="px-5 py-3.5 text-right">{t("reports:colCommission", "Commission %")}</th>
-                      <th className="px-5 py-3.5 text-right">{t("reports:colAdminEarnings", "Admin Earnings")}</th>
-                      <th className="px-5 py-3.5 text-right">{t("reports:colRestaurantEarnings", "Restaurant Earnings")}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {earningsLoading ? (
-                      <tr>
-                        <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">
-                          <Skeleton className="h-6 w-full max-w-sm mx-auto" />
-                        </td>
-                      </tr>
-                    ) : earningsRestaurants.length > 0 ? (
-                      earningsRestaurants.map((row) => (
-                        <tr key={row.restaurant_id} className="hover:bg-muted/30 transition-colors">
-                          <td className="px-5 py-3.5 font-semibold text-foreground">{row.restaurant_name}</td>
-                          <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{row.order_count}</td>
-                          <td className="px-5 py-3.5 text-right font-medium tabular-nums">{formatCurrency(row.total_sales)}</td>
-                          <td className="px-5 py-3.5 text-right">
-                            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold">
-                              {row.commission_rate}%
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-right text-amber-600 dark:text-amber-400 font-bold tabular-nums">
-                            {formatCurrency(row.admin_earning)}
-                          </td>
-                          <td className="px-5 py-3.5 text-right text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">
-                            {formatCurrency(row.restaurant_earning)}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">
-                          {t("reports:noData", "No report data available for this restaurant.")}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
               </div>
             </CardContent>
           </Card>

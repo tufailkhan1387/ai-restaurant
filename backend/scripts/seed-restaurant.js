@@ -1,17 +1,10 @@
 /**
- * Full demo restaurant: settings, hours, cuisines, menu, add-ons, deals, coupons.
- * Idempotent — safe to re-run.
- *
- * Prerequisites:
- *   npm run db:migrate
- *   npm run db:seed:admin
- *   npm run db:seed:cuisines   (optional; cuisines are created if missing)
+ * Full demo restaurant: settings, hours, cuisines, menu, add-ons, hierarchical variants, deals, coupons.
+ * Idempotent — safe to re-run anytime on local or production database.
  *
  * Usage:
  *   npm run db:seed:restaurant --prefix backend
- *
- * Env (optional):
- *   ADMIN_EMAIL=admin@admin.com
+ *   or: node backend/scripts/seed-restaurant.js
  */
 import "dotenv/config";
 import pg from "pg";
@@ -25,8 +18,8 @@ const RESTAURANT_SLUG = "royal-restaurant";
 const RESTAURANT = {
   name: "Royal Restaurant",
   slug: RESTAURANT_SLUG,
-  phone: "+1 (555) 123-4567",
-  address: "123 Main Street, Downtown, NY 10001",
+  phone: "+1 (220) 265-0290",
+  address: "123 Gourmet Blvd, Downtown, NY 10001",
   contact_email: "orders@royalrestaurant.com",
   allows_delivery: true,
   allows_pickup: true,
@@ -35,8 +28,8 @@ const RESTAURANT = {
 
 const SETTINGS = {
   name: "Royal Restaurant",
-  address: "123 Main Street, Downtown, NY 10001",
-  phone: "+1 (555) 123-4567",
+  address: "123 Gourmet Blvd, Downtown, NY 10001",
+  phone: "+1 (220) 265-0290",
   email: "orders@royalrestaurant.com",
   currency: "USD",
   tax_rate: 8.5,
@@ -46,165 +39,415 @@ const SETTINGS = {
 };
 
 const HOURS = [
-  { day: 0, open: "11:00", close: "20:00", closed: false },
-  { day: 1, open: "10:00", close: "22:00", closed: false },
-  { day: 2, open: "10:00", close: "22:00", closed: false },
-  { day: 3, open: "10:00", close: "22:00", closed: false },
-  { day: 4, open: "10:00", close: "22:00", closed: false },
-  { day: 5, open: "10:00", close: "23:00", closed: false },
-  { day: 6, open: "10:00", close: "23:00", closed: false },
+  { day: 0, open: "10:00", close: "23:00", closed: false },
+  { day: 1, open: "10:00", close: "23:00", closed: false },
+  { day: 2, open: "10:00", close: "23:00", closed: false },
+  { day: 3, open: "10:00", close: "23:00", closed: false },
+  { day: 4, open: "10:00", close: "23:00", closed: false },
+  { day: 5, open: "10:00", close: "00:00", closed: false },
+  { day: 6, open: "10:00", close: "00:00", closed: false },
 ];
 
-const CUISINE_NAMES = ["Fast Food", "American", "BBQ"];
+const CUISINE_NAMES = ["Fast Food", "American", "Pizza", "BBQ", "Italian"];
 
 const CATEGORIES = [
-  { key: "burgers", name: "Burgers", description: "Hand-crafted burgers", sort: 1 },
-  { key: "pizza", name: "Pizza", description: "Stone-baked pizzas", sort: 2 },
-  { key: "sides", name: "Sides", description: "Fries, wings & more", sort: 3 },
-  { key: "drinks", name: "Drinks", description: "Soft drinks & shakes", sort: 4 },
+  { key: "pizza", name: "Pizzas", description: "Stone-baked authentic crust pizzas with rich toppings", sort: 1 },
+  { key: "burgers", name: "Burgers", description: "Juicy handcrafted smash & grilled burgers", sort: 2 },
+  { key: "sides", name: "Sides & Appetizers", description: "Crispy fries, wings, mozzarella sticks and more", sort: 3 },
+  { key: "drinks", name: "Beverages & Shakes", description: "Ice-cold drinks, signature milkshakes & lemonades", sort: 4 },
+  { key: "desserts", name: "Desserts", description: "Sweet indulgences and warm baked desserts", sort: 5 },
 ];
 
 const SUB_CATEGORIES = [
-  { key: "classic-burgers", category: "burgers", name: "Classic", sort: 1 },
-  { key: "premium-burgers", category: "burgers", name: "Premium", sort: 2 },
+  { key: "specialty-pizza", category: "pizza", name: "Specialty Crust", sort: 1 },
+  { key: "classic-pizza", category: "pizza", name: "Classic Pizzas", sort: 2 },
+  { key: "beef-burgers", category: "burgers", name: "Gourmet Beef Burgers", sort: 1 },
+  { key: "chicken-burgers", category: "burgers", name: "Crispy Chicken Burgers", sort: 2 },
 ];
 
 const ADDONS = [
-  { key: "extra-cheese", name: "Extra Cheese", price: 1.5, sort: 1 },
-  { key: "jalapenos", name: "Jalapeños", price: 0.99, sort: 2 },
-  { key: "garlic-sauce", name: "Garlic Sauce", price: 0.75, sort: 3 },
-  { key: "bacon", name: "Crispy Bacon", price: 2.5, sort: 4 },
+  { key: "extra-cheese", name: "Extra Mozzarella Cheese", price: 1.99, sort: 1 },
+  { key: "jalapenos", name: "Pickled Jalapeños", price: 0.99, sort: 2 },
+  { key: "garlic-sauce", name: "Creamy Garlic Dip", price: 0.75, sort: 3 },
+  { key: "chipotle-sauce", name: "Smoky Chipotle Sauce", price: 0.75, sort: 4 },
+  { key: "truffle-mayo", name: "Truffle Aioli Dip", price: 1.25, sort: 5 },
+  { key: "bacon", name: "Crispy Beef Bacon", price: 2.49, sort: 6 },
+  { key: "extra-patty", name: "Extra Angus Beef Patty", price: 3.99, sort: 7 },
+  { key: "ranch", name: "House Buttermilk Ranch", price: 0.89, sort: 8 },
+];
+
+const PIZZA_STANDARD_FLAVORS = [
+  "Chicken Fajita",
+  "Chicken Tikka",
+  "BBQ Chicken Supreme",
+  "Cheese Lover Deluxe",
+  "Pepperoni Feast",
+  "Spicy Ranch Chicken",
 ];
 
 const MENU_ITEMS = [
+  // --- PIZZAS ---
   {
-    key: "beef-burger",
-    category: "burgers",
-    subCategory: "classic-burgers",
-    name: "Beef Burger",
-    description: "Angus beef patty, lettuce, tomato, house sauce",
-    price: 12.99,
-    prep: 15,
-    tags: [],
-    spice: 0,
-    track_inventory: true,
-    stock_quantity: 50,
-    max_order_quantity: 5,
-    addonKeys: ["extra-cheese", "jalapenos", "bacon"],
-    variants: [
-      { name: "Regular", price: 12.99 },
-      { name: "Large", price: 15.99 },
+    key: "crown-crust-pizza",
+    category: "pizza",
+    subCategory: "specialty-pizza",
+    name: "Crown Crust Supreme Pizza",
+    description: "Royal stuffed crown crust loaded with savory meat, veggies, mozzarella, and special herbs",
+    price: 9.99,
+    prep: 22,
+    tags: ["chef_special", "popular"],
+    spice: 1,
+    track_inventory: false,
+    stock_quantity: null,
+    max_order_quantity: 6,
+    addonKeys: ["extra-cheese", "jalapenos", "garlic-sauce", "chipotle-sauce"],
+    sizes: [
+      { name: "Small", measurement: '9"', price: 9.99, flavors: PIZZA_STANDARD_FLAVORS },
+      { name: "Medium", measurement: '12"', price: 14.99, flavors: PIZZA_STANDARD_FLAVORS },
+      { name: "Large", measurement: '14"', price: 18.99, flavors: PIZZA_STANDARD_FLAVORS },
+      { name: "Family", measurement: '18"', price: 24.99, flavors: PIZZA_STANDARD_FLAVORS },
     ],
   },
   {
-    key: "zinger-burger",
-    category: "burgers",
-    subCategory: "premium-burgers",
-    name: "Zinger Burger",
-    description: "Spicy crispy chicken, coleslaw, mayo",
-    price: 13.99,
-    prep: 18,
-    tags: ["spicy"],
-    spice: 3,
-    track_inventory: true,
-    stock_quantity: 30,
-    max_order_quantity: 4,
-    addonKeys: ["extra-cheese", "garlic-sauce"],
-    variants: [],
+    key: "pepperoni-passion",
+    category: "pizza",
+    subCategory: "classic-pizza",
+    name: "Pepperoni Passion Pizza",
+    description: "Double layers of crisp beef pepperoni with melted premium mozzarella and Italian tomato sauce",
+    price: 8.99,
+    prep: 20,
+    tags: ["bestseller"],
+    spice: 1,
+    track_inventory: false,
+    stock_quantity: null,
+    max_order_quantity: 6,
+    addonKeys: ["extra-cheese", "jalapenos", "ranch"],
+    sizes: [
+      { name: "Small", measurement: '9"', price: 8.99, flavors: ["Classic Pepperoni", "Double Pepperoni", "Hot Honey Pepperoni"] },
+      { name: "Medium", measurement: '12"', price: 13.99, flavors: ["Classic Pepperoni", "Double Pepperoni", "Hot Honey Pepperoni"] },
+      { name: "Large", measurement: '14"', price: 17.99, flavors: ["Classic Pepperoni", "Double Pepperoni", "Hot Honey Pepperoni"] },
+      { name: "Family", measurement: '18"', price: 22.99, flavors: ["Classic Pepperoni", "Double Pepperoni", "Hot Honey Pepperoni"] },
+    ],
   },
   {
-    key: "margherita",
+    key: "margherita-deluxe",
     category: "pizza",
-    name: "Margherita Pizza",
-    description: "Tomato, mozzarella, fresh basil",
-    price: 14.5,
-    prep: 20,
+    subCategory: "classic-pizza",
+    name: "Margherita Deluxe Pizza",
+    description: "San Marzano tomato sauce, fresh buffalo mozzarella, extra virgin olive oil, and sweet basil",
+    price: 7.99,
+    prep: 18,
     tags: ["vegetarian"],
     spice: 0,
     track_inventory: false,
     stock_quantity: null,
-    max_order_quantity: 3,
-    addonKeys: ["extra-cheese"],
-    variants: [
-      { name: "10 inch", price: 14.5 },
-      { name: "14 inch", price: 19.99 },
+    max_order_quantity: 6,
+    addonKeys: ["extra-cheese", "garlic-sauce"],
+    sizes: [
+      { name: "Small", measurement: '9"', price: 7.99, flavors: ["Classic Basil & Mozzarella", "Truffle Mushroom Margherita"] },
+      { name: "Medium", measurement: '12"', price: 11.99, flavors: ["Classic Basil & Mozzarella", "Truffle Mushroom Margherita"] },
+      { name: "Large", measurement: '14"', price: 15.99, flavors: ["Classic Basil & Mozzarella", "Truffle Mushroom Margherita"] },
+      { name: "Family", measurement: '18"', price: 19.99, flavors: ["Classic Basil & Mozzarella", "Truffle Mushroom Margherita"] },
     ],
   },
   {
-    key: "pepperoni",
+    key: "bbq-chicken-supreme",
     category: "pizza",
-    name: "Pepperoni Pizza",
-    description: "Classic pepperoni with mozzarella",
-    price: 16.99,
+    subCategory: "specialty-pizza",
+    name: "Smoky BBQ Chicken Supreme",
+    description: "Tender grilled chicken, red onions, bell peppers, fresh cilantro, and smoky BBQ drizzle",
+    price: 9.49,
     prep: 20,
-    tags: [],
+    tags: ["popular"],
     spice: 1,
     track_inventory: false,
     stock_quantity: null,
-    max_order_quantity: 3,
-    addonKeys: ["extra-cheese", "jalapenos"],
-    variants: [],
+    max_order_quantity: 6,
+    addonKeys: ["extra-cheese", "jalapenos", "bacon"],
+    sizes: [
+      { name: "Small", measurement: '9"', price: 9.49, flavors: ["Smoky Sweet BBQ", "Spicy Chipotle BBQ"] },
+      { name: "Medium", measurement: '12"', price: 14.49, flavors: ["Smoky Sweet BBQ", "Spicy Chipotle BBQ"] },
+      { name: "Large", measurement: '14"', price: 18.49, flavors: ["Smoky Sweet BBQ", "Spicy Chipotle BBQ"] },
+      { name: "Family", measurement: '18"', price: 23.99, flavors: ["Smoky Sweet BBQ", "Spicy Chipotle BBQ"] },
+    ],
   },
   {
-    key: "fries",
+    key: "veggie-garden",
+    category: "pizza",
+    subCategory: "classic-pizza",
+    name: "Garden Veggie Lover Pizza",
+    description: "Baby spinach, mushrooms, red onions, kalamata olives, bell peppers, and feta crumbles",
+    price: 8.49,
+    prep: 18,
+    tags: ["vegetarian", "healthy"],
+    spice: 0,
+    track_inventory: false,
+    stock_quantity: null,
+    max_order_quantity: 6,
+    addonKeys: ["extra-cheese", "jalapenos", "garlic-sauce"],
+    sizes: [
+      { name: "Small", measurement: '9"', price: 8.49, flavors: ["Mediterranean Herb", "Garlic & Spinach Crunch"] },
+      { name: "Medium", measurement: '12"', price: 12.99, flavors: ["Mediterranean Herb", "Garlic & Spinach Crunch"] },
+      { name: "Large", measurement: '14"', price: 16.99, flavors: ["Mediterranean Herb", "Garlic & Spinach Crunch"] },
+      { name: "Family", measurement: '18"', price: 21.99, flavors: ["Mediterranean Herb", "Garlic & Spinach Crunch"] },
+    ],
+  },
+
+  // --- BURGERS ---
+  {
+    key: "royal-gourmet-beef",
+    category: "burgers",
+    subCategory: "beef-burgers",
+    name: "Royal Gourmet Angus Beef Burger",
+    description: "100% Angus beef patty, aged cheddar cheese, caramelized onions, crisp lettuce, tomato & Royal secret sauce on a toasted brioche bun",
+    price: 12.99,
+    prep: 15,
+    tags: ["bestseller"],
+    spice: 0,
+    track_inventory: true,
+    stock_quantity: 50,
+    max_order_quantity: 8,
+    addonKeys: ["extra-cheese", "bacon", "extra-patty", "jalapenos"],
+    variants: [
+      { name: "Single Patty", price: 12.99 },
+      { name: "Double Patty (+Double Cheese)", price: 15.99 },
+      { name: "Triple Monster Stack", price: 18.99 },
+    ],
+  },
+  {
+    key: "zinger-crispy-chicken",
+    category: "burgers",
+    subCategory: "chicken-burgers",
+    name: "Crunchy Zinger Chicken Burger",
+    description: "Crispy battered fried chicken breast, spicy secret seasoning, creamy coleslaw, melted American cheese & chili garlic mayo",
+    price: 11.99,
+    prep: 14,
+    tags: ["spicy", "popular"],
+    spice: 3,
+    track_inventory: true,
+    stock_quantity: 45,
+    max_order_quantity: 8,
+    addonKeys: ["extra-cheese", "chipotle-sauce", "jalapenos"],
+    variants: [
+      { name: "Classic Zinger", price: 11.99 },
+      { name: "Double Crunch Zinger", price: 14.99 },
+    ],
+  },
+  {
+    key: "smoky-bbq-bacon-burger",
+    category: "burgers",
+    subCategory: "beef-burgers",
+    name: "Smoky BBQ Bacon Burger",
+    description: "Angus beef patty, crispy beef bacon strips, smoked gouda cheese, crispy fried onion straws & honey bourbon BBQ sauce",
+    price: 13.49,
+    prep: 16,
+    tags: ["popular"],
+    spice: 1,
+    track_inventory: true,
+    stock_quantity: 40,
+    max_order_quantity: 6,
+    addonKeys: ["extra-cheese", "extra-patty", "garlic-sauce"],
+    variants: [
+      { name: "Single Patty", price: 13.49 },
+      { name: "Double Patty", price: 16.49 },
+    ],
+  },
+  {
+    key: "truffle-mushroom-swiss",
+    category: "burgers",
+    subCategory: "beef-burgers",
+    name: "Truffle Mushroom Swiss Burger",
+    description: "Sautéed garlic cremini mushrooms, melted Swiss cheese, truffle aioli, and baby arugula on a warm brioche bun",
+    price: 14.49,
+    prep: 16,
+    tags: ["gourmet"],
+    spice: 0,
+    track_inventory: true,
+    stock_quantity: 35,
+    max_order_quantity: 5,
+    addonKeys: ["extra-cheese", "truffle-mayo"],
+    variants: [],
+  },
+
+  // --- SIDES & APPETIZERS ---
+  {
+    key: "golden-crispy-fries",
     category: "sides",
-    name: "Crispy Fries",
-    description: "Golden seasoned fries",
+    name: "Golden Crispy Fries",
+    description: "Crispy skin-on french fries seasoned with house salt & herbs",
     price: 4.99,
     prep: 8,
     tags: ["vegetarian"],
     spice: 0,
     track_inventory: true,
-    stock_quantity: 100,
+    stock_quantity: 120,
     max_order_quantity: 10,
-    addonKeys: ["garlic-sauce"],
+    addonKeys: ["garlic-sauce", "chipotle-sauce"],
+    variants: [
+      { name: "Regular Size", price: 4.99 },
+      { name: "Large Share Size", price: 6.99 },
+      { name: "Family Bucket", price: 8.99 },
+    ],
+  },
+  {
+    key: "cheesy-loaded-fries",
+    category: "sides",
+    name: "Cheesy Loaded Bacon Fries",
+    description: "Crispy fries smothered in hot cheddar cheese sauce, crispy bacon bits, sliced jalapeños, and drizzled with ranch",
+    price: 7.99,
+    prep: 12,
+    tags: ["popular", "bestseller"],
+    spice: 1,
+    track_inventory: true,
+    stock_quantity: 60,
+    max_order_quantity: 6,
+    addonKeys: ["jalapenos", "ranch"],
     variants: [],
   },
   {
-    key: "wings",
+    key: "buffalo-hot-wings",
     category: "sides",
-    name: "Buffalo Wings (6pc)",
-    description: "Spicy buffalo sauce, ranch dip",
+    name: "Crispy Buffalo Chicken Wings",
+    description: "Juicy jumbo wings tossed in your choice of spicy buffalo, smoky BBQ, or sweet chili sauce. Served with ranch dip",
     price: 8.99,
     prep: 15,
-    tags: ["spicy"],
+    tags: ["spicy", "popular"],
     spice: 2,
     track_inventory: true,
-    stock_quantity: 40,
+    stock_quantity: 80,
+    max_order_quantity: 8,
+    addonKeys: ["ranch", "garlic-sauce"],
+    variants: [
+      { name: "6 Pieces", price: 8.99 },
+      { name: "12 Pieces", price: 15.99 },
+      { name: "24 Pieces Party Platter", price: 28.99 },
+    ],
+  },
+  {
+    key: "mozzarella-sticks",
+    category: "sides",
+    name: "Golden Mozzarella Sticks (6pc)",
+    description: "Crispy breaded mozzarella cheese sticks served with warm marinara dipping sauce",
+    price: 6.99,
+    prep: 10,
+    tags: ["vegetarian"],
+    spice: 0,
+    track_inventory: true,
+    stock_quantity: 50,
     max_order_quantity: 6,
     addonKeys: ["garlic-sauce"],
     variants: [],
   },
   {
-    key: "cola",
+    key: "garlic-cheesy-bread",
+    category: "sides",
+    name: "Garlic Parmesan Cheesy Breadsticks",
+    description: "Freshly baked pizza dough brushed with garlic butter, topped with mozzarella & parmesan herbs",
+    price: 5.99,
+    prep: 12,
+    tags: ["vegetarian"],
+    spice: 0,
+    track_inventory: true,
+    stock_quantity: 50,
+    max_order_quantity: 6,
+    addonKeys: ["garlic-sauce", "ranch"],
+    variants: [],
+  },
+
+  // --- BEVERAGES & SHAKES ---
+  {
+    key: "soda-drinks",
     category: "drinks",
-    name: "Cola",
-    description: "Chilled soft drink",
-    price: 2.49,
+    name: "Chilled Soft Drinks",
+    description: "Refreshing ice-cold canned or bottled beverage (Coca-Cola, Diet Coke, Sprite, Fanta)",
+    price: 1.99,
     prep: 2,
     tags: [],
     spice: 0,
     track_inventory: true,
-    stock_quantity: 200,
+    stock_quantity: 300,
     max_order_quantity: 12,
     addonKeys: [],
     variants: [
-      { name: "Regular", price: 2.49 },
-      { name: "Large", price: 3.49 },
+      { name: "Can (330ml)", price: 1.99 },
+      { name: "Bottle (500ml)", price: 2.79 },
+      { name: "Large Bottle (1.5L)", price: 3.99 },
     ],
   },
   {
-    key: "milkshake",
+    key: "belgian-chocolate-shake",
     category: "drinks",
-    name: "Chocolate Milkshake",
-    description: "Thick chocolate shake",
+    name: "Belgian Chocolate Milkshake",
+    description: "Thick and rich chocolate shake made with real dairy ice cream, Belgian cocoa, and whipped cream",
     price: 5.99,
-    prep: 5,
+    prep: 6,
+    tags: ["vegetarian", "popular"],
+    spice: 0,
+    track_inventory: false,
+    stock_quantity: null,
+    max_order_quantity: 6,
+    addonKeys: [],
+    variants: [],
+  },
+  {
+    key: "strawberry-vanilla-shake",
+    category: "drinks",
+    name: "Strawberry Cream Shake",
+    description: "Fresh strawberry purée blended with vanilla ice cream, topped with strawberry drizzle and sprinkles",
+    price: 5.99,
+    prep: 6,
     tags: ["vegetarian"],
     spice: 0,
     track_inventory: false,
     stock_quantity: null,
     max_order_quantity: 6,
+    addonKeys: [],
+    variants: [],
+  },
+  {
+    key: "fresh-mint-lemonade",
+    category: "drinks",
+    name: "Fresh Mint Lemonade",
+    description: "Freshly squeezed lemon juice with crushed mint leaves, sparkling water, and light cane sugar",
+    price: 4.49,
+    prep: 4,
+    tags: ["vegetarian", "healthy"],
+    spice: 0,
+    track_inventory: true,
+    stock_quantity: 100,
+    max_order_quantity: 8,
+    addonKeys: [],
+    variants: [],
+  },
+
+  // --- DESSERTS ---
+  {
+    key: "molten-lava-cake",
+    category: "desserts",
+    name: "Warm Molten Lava Cake",
+    description: "Decadent dark chocolate cake with a rich molten chocolate center, dusted with powdered sugar",
+    price: 6.99,
+    prep: 8,
+    tags: ["vegetarian", "popular"],
+    spice: 0,
+    track_inventory: true,
+    stock_quantity: 40,
+    max_order_quantity: 5,
+    addonKeys: [],
+    variants: [],
+  },
+  {
+    key: "new-york-cheesecake",
+    category: "desserts",
+    name: "New York Classic Cheesecake",
+    description: "Velvety smooth baked cream cheese on a buttery graham cracker crust with strawberry topping",
+    price: 5.99,
+    prep: 4,
+    tags: ["vegetarian"],
+    spice: 0,
+    track_inventory: true,
+    stock_quantity: 35,
+    max_order_quantity: 5,
     addonKeys: [],
     variants: [],
   },
@@ -212,16 +455,28 @@ const MENU_ITEMS = [
 
 const DEALS = [
   {
-    name: "Lunch Special",
-    description: "Burger + fries + drink",
-    price: 18.99,
-    original_price: 24.99,
+    name: "Family Pizza Fiesta",
+    description: "Two 14-inch Large Pizzas of any flavor + 1 Garlic Cheesy Bread + 1.5L Soft Drink",
+    price: 38.99,
+    original_price: 48.99,
   },
   {
-    name: "Family Pizza Deal",
-    description: "Two 14-inch pizzas + 2L drink",
-    price: 34.99,
-    original_price: 42.99,
+    name: "Duo Burger Combo",
+    description: "2 Burgers of your choice + 2 Large Fries + 2 Soft Drinks",
+    price: 24.99,
+    original_price: 32.99,
+  },
+  {
+    name: "Solo Pizza Combo",
+    description: "1 Small Pizza (any flavor) + 1 Soft Drink (Can) + 1 Garlic Dip",
+    price: 11.99,
+    original_price: 14.99,
+  },
+  {
+    name: "Midnight Feast Box",
+    description: "1 Medium Pizza + 6 Buffalo Wings + 1 Loaded Fries + 2 Soft Drinks",
+    price: 28.99,
+    original_price: 37.99,
   },
 ];
 
@@ -232,7 +487,7 @@ const COUPONS = [
     discount_type: "percentage",
     discount_value: 10,
     min_order_amount: 20,
-    max_uses: 500,
+    max_uses: 1000,
   },
   {
     code: "SAVE5",
@@ -242,29 +497,38 @@ const COUPONS = [
     min_order_amount: 30,
     max_uses: null,
   },
+  {
+    code: "ROYAL20",
+    description: "20% off big feast orders over $40",
+    discount_type: "percentage",
+    discount_value: 20,
+    min_order_amount: 40,
+    max_uses: 500,
+  },
 ];
 
 async function getAdminId(client) {
   const res = await client.query("SELECT id FROM profiles WHERE lower(email) = lower($1)", [ADMIN_EMAIL]);
   if (res.rowCount === 0) {
-    throw new Error(
-      `No profile for ${ADMIN_EMAIL}. Run: npm run db:seed:admin --prefix backend`,
-    );
+    // Fallback: pick the first super_admin or admin
+    const fallback = await client.query("SELECT id FROM profiles WHERE role IN ('super_admin', 'admin') LIMIT 1");
+    if (fallback.rowCount > 0) return fallback.rows[0].id;
+    throw new Error(`Admin profile not found for ${ADMIN_EMAIL}. Run 'npm run db:seed:admin' first.`);
   }
   return res.rows[0].id;
 }
 
 async function ensureRestaurant(client) {
-  const existing = await client.query("SELECT id FROM restaurants WHERE slug = $1", [RESTAURANT_SLUG]);
-  if (existing.rowCount > 0) {
-    const id = existing.rows[0].id;
+  const found = await client.query("SELECT id FROM restaurants WHERE slug = $1", [RESTAURANT.slug]);
+  if (found.rowCount > 0) {
+    const id = found.rows[0].id;
     await client.query(
       `UPDATE restaurants
-       SET name = $2, phone = $3, address = $4, contact_email = $5,
-           allows_delivery = $6, allows_pickup = $7, commission_rate = $8, is_active = true
-       WHERE id = $1`,
+       SET name = $1, phone = $2, address = $3, contact_email = $4,
+           allows_delivery = $5, allows_pickup = $6, commission_rate = $7,
+           updated_at = NOW()
+       WHERE id = $8`,
       [
-        id,
         RESTAURANT.name,
         RESTAURANT.phone,
         RESTAURANT.address,
@@ -272,9 +536,9 @@ async function ensureRestaurant(client) {
         RESTAURANT.allows_delivery,
         RESTAURANT.allows_pickup,
         RESTAURANT.commission_rate,
+        id,
       ],
     );
-    console.log("Restaurant exists, updated:", id);
     return id;
   }
 
@@ -295,25 +559,38 @@ async function ensureRestaurant(client) {
       RESTAURANT.commission_rate,
     ],
   );
-  console.log("Restaurant created:", id);
   return id;
 }
 
 async function ensureSettings(client, restaurantId) {
+  const found = await client.query("SELECT id FROM restaurant_settings WHERE restaurant_id = $1", [restaurantId]);
+  if (found.rowCount > 0) {
+    await client.query(
+      `UPDATE restaurant_settings
+       SET name = $1, address = $2, phone = $3, email = $4, currency = $5,
+           tax_rate = $6, delivery_fee = $7, min_order_amount = $8, is_open = $9,
+           updated_at = NOW()
+       WHERE restaurant_id = $10`,
+      [
+        SETTINGS.name,
+        SETTINGS.address,
+        SETTINGS.phone,
+        SETTINGS.email,
+        SETTINGS.currency,
+        SETTINGS.tax_rate,
+        SETTINGS.delivery_fee,
+        SETTINGS.min_order_amount,
+        SETTINGS.is_open,
+        restaurantId,
+      ],
+    );
+    return;
+  }
+
   await client.query(
     `INSERT INTO restaurant_settings
        (restaurant_id, name, address, phone, email, currency, tax_rate, delivery_fee, min_order_amount, is_open)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     ON CONFLICT (restaurant_id) DO UPDATE SET
-       name = EXCLUDED.name,
-       address = EXCLUDED.address,
-       phone = EXCLUDED.phone,
-       email = EXCLUDED.email,
-       currency = EXCLUDED.currency,
-       tax_rate = EXCLUDED.tax_rate,
-       delivery_fee = EXCLUDED.delivery_fee,
-       min_order_amount = EXCLUDED.min_order_amount,
-       is_open = EXCLUDED.is_open`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       restaurantId,
       SETTINGS.name,
@@ -327,56 +604,60 @@ async function ensureSettings(client, restaurantId) {
       SETTINGS.is_open,
     ],
   );
-  console.log("Restaurant settings ready.");
 }
 
 async function ensureHours(client, restaurantId) {
-  const existing = await client.query(
-    "SELECT COUNT(*)::int AS n FROM restaurant_hours WHERE restaurant_id = $1",
-    [restaurantId],
-  );
-  if (existing.rows[0].n >= 7) {
-    console.log("Opening hours already set.");
-    return;
-  }
-  await client.query("DELETE FROM restaurant_hours WHERE restaurant_id = $1", [restaurantId]);
-  for (const row of HOURS) {
-    await client.query(
-      `INSERT INTO restaurant_hours (restaurant_id, day_of_week, open_time, close_time, is_closed)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [restaurantId, row.day, row.open, row.close, row.closed],
+  for (const h of HOURS) {
+    const found = await client.query(
+      "SELECT id FROM restaurant_hours WHERE restaurant_id = $1 AND day_of_week = $2",
+      [restaurantId, h.day],
     );
+    if (found.rowCount > 0) {
+      await client.query(
+        `UPDATE restaurant_hours
+         SET open_time = $1, close_time = $2, is_closed = $3, updated_at = NOW()
+         WHERE id = $4`,
+        [h.open, h.close, h.closed, found.rows[0].id],
+      );
+    } else {
+      await client.query(
+        `INSERT INTO restaurant_hours (restaurant_id, day_of_week, open_time, close_time, is_closed)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [restaurantId, h.day, h.open, h.close, h.closed],
+      );
+    }
   }
-  console.log("Opening hours created (7 days).");
 }
 
 async function ensureCuisines(client, restaurantId) {
   for (const name of CUISINE_NAMES) {
-    let cuisine = await client.query("SELECT id FROM cuisines WHERE lower(name) = lower($1)", [name]);
-    let cuisineId;
-    if (cuisine.rowCount === 0) {
-      cuisineId = randomUUID();
-      await client.query("INSERT INTO cuisines (id, name) VALUES ($1, $2)", [cuisineId, name]);
+    let cId;
+    const found = await client.query("SELECT id FROM cuisines WHERE lower(name) = lower($1)", [name]);
+    if (found.rowCount > 0) {
+      cId = found.rows[0].id;
     } else {
-      cuisineId = cuisine.rows[0].id;
+      cId = randomUUID();
+      await client.query("INSERT INTO cuisines (id, name) VALUES ($1, $2)", [cId, name]);
     }
     await client.query(
       `INSERT INTO restaurant_cuisines (restaurant_id, cuisine_id)
-       VALUES ($1, $2) ON CONFLICT (restaurant_id, cuisine_id) DO NOTHING`,
-      [restaurantId, cuisineId],
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [restaurantId, cId],
     );
   }
-  console.log("Cuisines linked:", CUISINE_NAMES.join(", "));
 }
 
 async function ensureMembership(client, restaurantId, adminId) {
-  await client.query(
-    `INSERT INTO restaurant_members (restaurant_id, user_id, member_role)
-     VALUES ($1, $2, 'owner')
-     ON CONFLICT (restaurant_id, user_id) DO UPDATE SET member_role = 'owner'`,
+  const found = await client.query(
+    "SELECT id FROM restaurant_members WHERE restaurant_id = $1 AND user_id = $2",
     [restaurantId, adminId],
   );
-  console.log("Admin linked as restaurant owner.");
+  if (found.rowCount === 0) {
+    await client.query(
+      "INSERT INTO restaurant_members (restaurant_id, user_id, member_role) VALUES ($1, $2, 'owner')",
+      [restaurantId, adminId],
+    );
+  }
 }
 
 async function ensureCategory(client, restaurantId, cat) {
@@ -384,7 +665,16 @@ async function ensureCategory(client, restaurantId, cat) {
     "SELECT id FROM menu_categories WHERE restaurant_id = $1 AND lower(name) = lower($2)",
     [restaurantId, cat.name],
   );
-  if (found.rowCount > 0) return found.rows[0].id;
+  if (found.rowCount > 0) {
+    const id = found.rows[0].id;
+    await client.query(
+      `UPDATE menu_categories
+       SET description = $1, sort_order = $2, is_active = true, updated_at = NOW()
+       WHERE id = $3`,
+      [cat.description, cat.sort, id],
+    );
+    return id;
+  }
 
   const id = randomUUID();
   await client.query(
@@ -397,10 +687,17 @@ async function ensureCategory(client, restaurantId, cat) {
 
 async function ensureSubCategory(client, restaurantId, categoryId, sub) {
   const found = await client.query(
-    "SELECT id FROM menu_sub_categories WHERE restaurant_id = $1 AND lower(name) = lower($2)",
-    [restaurantId, sub.name],
+    "SELECT id FROM menu_sub_categories WHERE restaurant_id = $1 AND category_id = $2 AND lower(name) = lower($3)",
+    [restaurantId, categoryId, sub.name],
   );
-  if (found.rowCount > 0) return found.rows[0].id;
+  if (found.rowCount > 0) {
+    const id = found.rows[0].id;
+    await client.query(
+      "UPDATE menu_sub_categories SET sort_order = $1, is_active = true WHERE id = $2",
+      [sub.sort, id],
+    );
+    return id;
+  }
 
   const id = randomUUID();
   await client.query(
@@ -416,7 +713,16 @@ async function ensureAddon(client, restaurantId, addon) {
     "SELECT id FROM menu_addons WHERE restaurant_id = $1 AND lower(name) = lower($2)",
     [restaurantId, addon.name],
   );
-  if (found.rowCount > 0) return found.rows[0].id;
+  if (found.rowCount > 0) {
+    const id = found.rows[0].id;
+    await client.query(
+      `UPDATE menu_addons
+       SET price = $1, sort_order = $2, is_active = true, updated_at = NOW()
+       WHERE id = $3`,
+      [addon.price, addon.sort, id],
+    );
+    return id;
+  }
 
   const id = randomUUID();
   await client.query(
@@ -435,13 +741,13 @@ async function ensureMenuItem(client, restaurantId, item, categoryId, subCategor
   if (found.rowCount > 0) {
     const id = found.rows[0].id;
     await client.query(
-      `UPDATE menu_items SET
-         category_id = $2, sub_category_id = $3, description = $4, price = $5,
-         prep_time_minutes = $6, dietary_tags = $7, spice_level = $8,
-         track_inventory = $9, stock_quantity = $10, max_order_quantity = $11, is_available = true
-       WHERE id = $1`,
+      `UPDATE menu_items
+       SET category_id = $1, sub_category_id = $2, description = $3, price = $4,
+           prep_time_minutes = $5, dietary_tags = $6, spice_level = $7,
+           track_inventory = $8, stock_quantity = $9, max_order_quantity = $10,
+           is_available = true, updated_at = NOW()
+       WHERE id = $11`,
       [
-        id,
         categoryId,
         subCategoryId,
         item.description,
@@ -452,6 +758,7 @@ async function ensureMenuItem(client, restaurantId, item, categoryId, subCategor
         item.track_inventory,
         item.stock_quantity,
         item.max_order_quantity,
+        id,
       ],
     );
     return id;
@@ -483,23 +790,53 @@ async function ensureMenuItem(client, restaurantId, item, categoryId, subCategor
   return id;
 }
 
-async function ensureVariants(client, itemId, variants) {
-  for (let i = 0; i < variants.length; i++) {
-    const v = variants[i];
-    const found = await client.query(
-      "SELECT id FROM menu_item_variants WHERE menu_item_id = $1 AND lower(name) = lower($2)",
-      [itemId, v.name],
-    );
-    if (found.rowCount > 0) continue;
-    await client.query(
-      `INSERT INTO menu_item_variants (menu_item_id, name, price, sort_order, is_active)
-       VALUES ($1, $2, $3, $4, true)`,
-      [itemId, v.name, v.price, i],
-    );
+async function ensureVariants(client, itemId, item) {
+  // Clear old variants for clean re-seed
+  await client.query("DELETE FROM menu_item_variants WHERE menu_item_id = $1", [itemId]);
+
+  // If item has hierarchical sizes with flavors
+  if (Array.isArray(item.sizes) && item.sizes.length > 0) {
+    for (let sIdx = 0; sIdx < item.sizes.length; sIdx++) {
+      const size = item.sizes[sIdx];
+      const sizeId = randomUUID();
+
+      await client.query(
+        `INSERT INTO menu_item_variants
+           (id, menu_item_id, name, measurement, price, sort_order, is_active, variant_type, parent_id)
+         VALUES ($1, $2, $3, $4, $5, $6, true, 'size', NULL)`,
+        [sizeId, itemId, size.name, size.measurement || null, size.price, sIdx],
+      );
+
+      if (Array.isArray(size.flavors) && size.flavors.length > 0) {
+        for (let fIdx = 0; fIdx < size.flavors.length; fIdx++) {
+          const flvName = size.flavors[fIdx];
+          const flvId = randomUUID();
+          await client.query(
+            `INSERT INTO menu_item_variants
+               (id, menu_item_id, name, measurement, price, sort_order, is_active, variant_type, parent_id)
+             VALUES ($1, $2, $3, NULL, 0, $4, true, 'flavor', $5)`,
+            [flvId, itemId, flvName, fIdx, sizeId],
+          );
+        }
+      }
+    }
+  } else if (Array.isArray(item.variants) && item.variants.length > 0) {
+    // Flat variants (e.g. burgers / drinks)
+    for (let i = 0; i < item.variants.length; i++) {
+      const v = item.variants[i];
+      const vId = randomUUID();
+      await client.query(
+        `INSERT INTO menu_item_variants
+           (id, menu_item_id, name, price, sort_order, is_active, variant_type, parent_id)
+         VALUES ($1, $2, $3, $4, $5, true, 'size', NULL)`,
+        [vId, itemId, v.name, v.price, i],
+      );
+    }
   }
 }
 
 async function linkAddons(client, itemId, addonIds) {
+  await client.query("DELETE FROM menu_item_addons WHERE menu_item_id = $1", [itemId]);
   for (const addonId of addonIds) {
     await client.query(
       `INSERT INTO menu_item_addons (menu_item_id, menu_addon_id)
@@ -514,7 +851,15 @@ async function ensureDeal(client, restaurantId, deal) {
     "SELECT id FROM deals WHERE restaurant_id = $1 AND lower(name) = lower($2)",
     [restaurantId, deal.name],
   );
-  if (found.rowCount > 0) return;
+  if (found.rowCount > 0) {
+    await client.query(
+      `UPDATE deals
+       SET description = $1, price = $2, original_price = $3, is_active = true, updated_at = NOW()
+       WHERE id = $4`,
+      [deal.description, deal.price, deal.original_price, found.rows[0].id],
+    );
+    return;
+  }
   await client.query(
     `INSERT INTO deals (restaurant_id, name, description, price, original_price, is_active)
      VALUES ($1, $2, $3, $4, $5, true)`,
@@ -527,7 +872,23 @@ async function ensureCoupon(client, restaurantId, coupon) {
     "SELECT id FROM discounts WHERE restaurant_id = $1 AND upper(code) = upper($2)",
     [restaurantId, coupon.code],
   );
-  if (found.rowCount > 0) return;
+  if (found.rowCount > 0) {
+    await client.query(
+      `UPDATE discounts
+       SET description = $1, discount_type = $2, discount_value = $3, value = $3,
+           min_order_amount = $4, max_uses = $5, is_active = true, updated_at = NOW()
+       WHERE id = $6`,
+      [
+        coupon.description,
+        coupon.discount_type,
+        coupon.discount_value,
+        coupon.min_order_amount,
+        coupon.max_uses,
+        found.rows[0].id,
+      ],
+    );
+    return;
+  }
   await client.query(
     `INSERT INTO discounts
        (restaurant_id, code, description, discount_type, discount_value, value,
@@ -548,13 +909,13 @@ async function ensureCoupon(client, restaurantId, coupon) {
 async function seed() {
   const url = process.env.DATABASE_URL;
   if (!url?.trim()) {
-    console.error("Set DATABASE_URL in backend/.env");
+    console.error("❌ Set DATABASE_URL in backend/.env");
     process.exit(1);
   }
 
   const client = new Client({ connectionString: url.trim() });
   await client.connect();
-  console.log("Seeding full restaurant demo data…\n");
+  console.log("🌱 Seeding full restaurant catalog & menu data…\n");
 
   try {
     const adminId = await getAdminId(client);
@@ -584,43 +945,29 @@ async function seed() {
       const categoryId = categoryIds[item.category];
       const subCategoryId = item.subCategory ? subCategoryIds[item.subCategory] : null;
       const itemId = await ensureMenuItem(client, restaurantId, item, categoryId, subCategoryId);
-      await ensureVariants(client, itemId, item.variants);
+      await ensureVariants(client, itemId, item);
       const linkedAddonIds = (item.addonKeys || []).map((k) => addonIds[k]).filter(Boolean);
       await linkAddons(client, itemId, linkedAddonIds);
     }
-    console.log(`Menu seeded: ${MENU_ITEMS.length} items, ${ADDONS.length} add-ons.`);
+    console.log(`✅ Menu seeded: ${MENU_ITEMS.length} items, ${ADDONS.length} add-ons with size/flavor hierarchy.`);
 
     for (const deal of DEALS) {
       await ensureDeal(client, restaurantId, deal);
     }
-    console.log(`Deals seeded: ${DEALS.length}.`);
+    console.log(`✅ Deals seeded: ${DEALS.length} deals.`);
 
     for (const coupon of COUPONS) {
       await ensureCoupon(client, restaurantId, coupon);
     }
-    console.log(`Coupons seeded: ${COUPONS.length}.`);
+    console.log(`✅ Coupons seeded: ${COUPONS.length} discount coupons.`);
 
-    const summary = await client.query(
-      `SELECT
-         (SELECT COUNT(*) FROM restaurants) AS restaurants,
-         (SELECT COUNT(*) FROM menu_categories WHERE restaurant_id = $1) AS categories,
-         (SELECT COUNT(*) FROM menu_items WHERE restaurant_id = $1) AS menu_items,
-         (SELECT COUNT(*) FROM menu_addons WHERE restaurant_id = $1) AS addons,
-         (SELECT COUNT(*) FROM deals WHERE restaurant_id = $1) AS deals,
-         (SELECT COUNT(*) FROM discounts WHERE restaurant_id = $1) AS coupons`,
-      [restaurantId],
-    );
-
-    console.log("\nDone — Royal Restaurant is ready.");
-    console.log("Restaurant ID:", restaurantId);
-    console.log("Admin:", ADMIN_EMAIL);
-    console.log("Counts:", summary.rows[0]);
+    console.log("\n🎉 Full restaurant seeding completed successfully!");
+  } catch (e) {
+    console.error("❌ Seeding failed:", e);
+    process.exit(1);
   } finally {
     await client.end();
   }
 }
 
-seed().catch((e) => {
-  console.error("Seed failed:", e.message || e);
-  process.exit(1);
-});
+seed();

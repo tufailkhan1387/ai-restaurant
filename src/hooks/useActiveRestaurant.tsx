@@ -7,6 +7,13 @@ export interface RestaurantInfo {
   name: string;
   slug?: string;
   is_active?: boolean;
+  parent_restaurant_id?: string | null;
+  is_branch?: boolean;
+  address?: string | null;
+  service_radius_km?: number | null;
+  is_accepting_orders?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface ActiveRestaurantContextType {
@@ -41,7 +48,7 @@ export function ActiveRestaurantProvider({ children }: { children: React.ReactNo
     try {
       const { data } = await supabase
         .from("restaurants")
-        .select("id, name, slug, is_active")
+        .select("id, name, slug, is_active, parent_restaurant_id, is_branch, address, service_radius_km, is_accepting_orders, latitude, longitude")
         .order("name", { ascending: true });
       if (data) {
         setRestaurants(data as RestaurantInfo[]);
@@ -68,7 +75,7 @@ export function ActiveRestaurantProvider({ children }: { children: React.ReactNo
         // Fetch all restaurants list
         const { data: allRests } = await supabase
           .from("restaurants")
-          .select("id, name, slug, is_active")
+          .select("id, name, slug, is_active, parent_restaurant_id, is_branch, address, service_radius_km, is_accepting_orders, latitude, longitude")
           .order("name", { ascending: true });
 
         const restsList = (allRests as RestaurantInfo[]) || [];

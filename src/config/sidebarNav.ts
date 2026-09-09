@@ -7,16 +7,12 @@ export type SidebarNavSearchItem = {
   superAdminOnly?: boolean;
   /** Omit from command palette / search when user is super admin */
   hideForSuperAdmin?: boolean;
+  /** Omit from command palette / search when active restaurant is a branch */
+  hideForBranch?: boolean;
 };
 
 export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
   { label: "Dashboard", href: "/", section: "Main", keywords: ["home", "overview"] },
-  {
-    label: "Customers",
-    href: "/users/customers",
-    section: "Users",
-    keywords: ["users", "clients", "guests", "crm"],
-  },
   {
     label: "Team members",
     href: "/users/team-members",
@@ -29,21 +25,29 @@ export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
   { label: "Preparing orders", href: "/orders/preparing", section: "Orders", keywords: ["preparing", "kitchen", "chef"] },
   { label: "Out for delivery", href: "/orders/out-for-delivery", section: "Orders", keywords: ["delivery", "on the way", "shipping"] },
   { label: "Delivered orders", href: "/orders/delivered", section: "Orders", keywords: ["delivered", "completed"] },
-  { label: "Menu items", href: "/menu", section: "Menu", keywords: ["menu", "categories", "food"] },
-  { label: "Menu add-ons", href: "/menu?tab=addons", section: "Menu", keywords: ["addons", "extras", "modifiers", "options"] },
-  { label: "Menu categories", href: "/menu?tab=categories", section: "Menu", keywords: ["categories", "menu groups"] },
-  { label: "Menu sub-categories", href: "/menu?tab=sub-categories", section: "Menu", keywords: ["sub categories", "subcategories"] },
+  { label: "Menu items", href: "/menu", section: "Menu", keywords: ["menu", "categories", "food"], hideForBranch: true },
+  { label: "Menu add-ons", href: "/menu?tab=addons", section: "Menu", keywords: ["addons", "extras", "modifiers", "options"], hideForBranch: true },
+  { label: "Menu categories", href: "/menu?tab=categories", section: "Menu", keywords: ["categories", "menu groups"], hideForBranch: true },
+  { label: "Menu sub-categories", href: "/menu?tab=sub-categories", section: "Menu", keywords: ["sub categories", "subcategories"], hideForBranch: true },
 
-  { label: "Max Order", href: "/menu?tab=max-order", section: "Menu", keywords: ["max order", "limit", "quantity limit", "per order"] },
-  { label: "Deals & Offers", href: "/deals", section: "Marketing", keywords: ["deals", "offers", "discounts", "promotions"] },
-  { label: "Inventory", href: "/menu?tab=inventory", section: "Inventory", keywords: ["stock", "quantity", "inventory", "availability"] },
-  { label: "Cuisines", href: "/cuisines", section: "Marketing", keywords: ["cuisine", "food type", "restaurant cuisine"] },
+  { label: "Max Order", href: "/menu?tab=max-order", section: "Menu", keywords: ["max order", "limit", "quantity limit", "per order"], hideForBranch: true },
+  { label: "Deals & Offers", href: "/deals", section: "Marketing", keywords: ["deals", "offers", "discounts", "promotions"], hideForBranch: true },
+  { label: "Coupon Code", href: "/coupons", section: "Marketing", keywords: ["coupons", "discounts", "promo code"], hideForBranch: true },
+  { label: "Cuisines", href: "/cuisines", section: "Marketing", keywords: ["cuisine", "food type", "restaurant cuisine"], hideForBranch: true },
   {
     label: "My Restaurant",
     href: "/restaurant-settings",
     section: "Management",
     keywords: ["settings", "restaurant", "tenant"],
     hideForSuperAdmin: true,
+  },
+  {
+    label: "Branches",
+    href: "/branches",
+    section: "Management",
+    keywords: ["branch", "branches", "locations", "multi-branch", "branch portal", "add branch"],
+    hideForSuperAdmin: true,
+    hideForBranch: true,
   },
   { label: "Settings", href: "/settings", section: "Management", keywords: ["preferences", "account"] },
   {
@@ -66,18 +70,6 @@ export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
     keywords: ["reports", "menu item", "sku", "items sold", "sales by item"],
   },
   {
-    label: "Best sellers",
-    href: "/reports/best-sellers",
-    section: "Reports",
-    keywords: ["reports", "best selling", "top products", "rankings", "bestsellers"],
-  },
-  {
-    label: "Inventory report",
-    href: "/reports/inventory",
-    section: "Reports",
-    keywords: ["reports", "stock", "inventory", "low stock", "out of stock"],
-  },
-  {
     label: "Customer analytics",
     href: "/reports/customers",
     section: "Reports",
@@ -91,11 +83,12 @@ function normalize(s: string) {
 
 export function filterSidebarNavItems(
   query: string,
-  options: { isSuperAdmin: boolean },
+  options: { isSuperAdmin: boolean; isBranch?: boolean },
 ): SidebarNavSearchItem[] {
   const base = SIDEBAR_NAV_SEARCH_ITEMS.filter((i) => {
     if (i.superAdminOnly && !options.isSuperAdmin) return false;
     if (i.hideForSuperAdmin && options.isSuperAdmin) return false;
+    if (i.hideForBranch && options.isBranch) return false;
     return true;
   });
   const q = normalize(query);

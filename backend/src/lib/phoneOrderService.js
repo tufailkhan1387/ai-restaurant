@@ -1,4 +1,38 @@
 import { normalizeE164 } from "./voiceWebhookUtils.js";
+import { geocodeAddress, haversineDistanceKm } from "./geocoding.js";
+
+/**
+ * Find the nearest active branch for a parent restaurant within service radius.
+ * @param {import("knex").Knex} knex
+ * @param {string} parentRestaurantId
+ * @param {number} deliveryLat
+ * @param {number} deliveryLng
+ * @returns {Promise<{ branch: any; distance: number } | null>}
+ */
+export async function findNearestBranch(knex, parentRestaurantId, deliveryLat, deliveryLng) {
+  if (!parentRestaurantId || !Number.isFinite(deliveryLat) || !Number.isFinite(deliveryLng)) {
+    return null;
+  }
+
+  const branches = await knex("restaurants")
+    .where({ parent_restaurant_id: parentRestaurantId, is_accepting_orders: true, is_active: true })
+    .whereNotNull("latitude")
+    .whereNotNull("longitude");
+
+  let nearest = null;
+  let minDistance = Infinity;
+
+  for (const branch of branches) {
+    const distance = haversineDistanceKm(deliveryLat, deliveryLng, branch.latitude, branch.longitude);
+    const radius = Number(branch.service_radius_km || 5.0);
+    if (distance <= radius && distance < minDistance) {
+      minDistance = distance;
+      nearest = branch;
+    }
+  }
+
+  return nearest ? { branch: nearest, distance: minDistance } : null;
+}
 
 /**
  * Parse free-text item lists from AI extractors into { name, quantity, notes? }[].
@@ -171,6 +205,8 @@ export async function createPhoneOrder(knex, input) {
     call_id,
     source = "phone",
     ai_extracted_data,
+    delivery_latitude,
+    delivery_longitude,
   } = input;
 
   if (!restaurantId) throw new Error("restaurantId is required");
@@ -179,12 +215,66 @@ export async function createPhoneOrder(knex, input) {
   const parsedItems = parseOrderItemsText(items);
   if (!parsedItems.length) throw new Error("No order items to place");
 
-  const [menu, settings] = await Promise.all([
-    knex("menu_items")
-      .where({ restaurant_id: restaurantId })
-      .select("id", "name", "price", "is_available", "track_inventory", "stock_quantity"),
-    knex("restaurant_settings").where({ restaurant_id: restaurantId }).first(),
-  ]);
+  const isPickup = String(fulfillment_type || "delivery").toLowerCase() === "pickup";
+
+  // Geocode address if needed
+  let lat = Number.isFinite(Number(delivery_latitude)) ? Number(delivery_latitude) : null;
+  let lng = Number.isFinite(Number(delivery_longitude)) ? Number(delivery_longitude) : null;
+  if (!isPickup && (lat == null || lng == null) && delivery_address) {
+    const geo = await geocodeAddress(delivery_address);
+    if (geo) {
+      lat = geo.latitude;
+      lng = geo.longitude;
+    }
+  }
+
+  // Branch auto-assignment logic
+  const branches = await knex("restaurants")
+    .where({ parent_restaurant_id: restaurantId, is_active: true });
+
+  let targetRestaurantId = restaurantId;
+  let autoAssigned = false;
+  let assignedBranchDistanceKm = null;
+  let branchAssignedAt = null;
+  let assignmentStatus = "assigned";
+
+  if (branches.length > 0 && !isPickup) {
+    if (lat != null && lng != null) {
+      const nearest = await findNearestBranch(knex, restaurantId, lat, lng);
+      if (nearest) {
+        targetRestaurantId = nearest.branch.id;
+        assignedBranchDistanceKm = nearest.distance;
+        branchAssignedAt = new Date();
+        autoAssigned = true;
+        assignmentStatus = "assigned";
+      } else {
+        // Outside all branch radii -> stays with parent restaurant
+        targetRestaurantId = restaurantId;
+        assignmentStatus = "unassigned_out_of_range";
+        autoAssigned = false;
+      }
+    } else {
+      // Could not geocode address -> flag for review
+      targetRestaurantId = restaurantId;
+      assignmentStatus = "needs_review";
+      autoAssigned = false;
+    }
+  }
+
+  let menu = await knex("menu_items")
+    .where({ restaurant_id: targetRestaurantId })
+    .select("id", "name", "price", "is_available", "track_inventory", "stock_quantity");
+
+  if (!menu.length) {
+    const targetRest = await knex("restaurants").where({ id: targetRestaurantId }).first();
+    if (targetRest?.is_branch && targetRest.parent_restaurant_id) {
+      menu = await knex("menu_items")
+        .where({ restaurant_id: targetRest.parent_restaurant_id })
+        .select("id", "name", "price", "is_available", "track_inventory", "stock_quantity");
+    }
+  }
+
+  const settings = await knex("restaurant_settings").where({ restaurant_id: targetRestaurantId }).first();
 
   const { lines, unmatched, outOfStock } = matchMenuLines(menu, parsedItems);
 
@@ -195,16 +285,20 @@ export async function createPhoneOrder(knex, input) {
     throw err;
   }
 
+  // Menu/price mismatch validation
+  if (unmatched.length > 0 && assignmentStatus === "assigned") {
+    assignmentStatus = "needs_review";
+  }
+
   const subtotal = lines.reduce((s, l) => s + l.line_total, 0);
 
   const coupon = await applyCoupon(knex, {
-    restaurantId,
+    restaurantId: targetRestaurantId,
     code: coupon_code,
     subtotal,
   });
 
   const taxRate = Number(settings?.tax_rate ?? 0) / 100;
-  const isPickup = String(fulfillment_type || "delivery").toLowerCase() === "pickup";
   const deliveryFee = isPickup ? 0 : Number(settings?.delivery_fee ?? 0);
   const taxableBase = Math.max(0, subtotal - coupon.amount);
   const tax = Number((taxableBase * taxRate).toFixed(2));
@@ -221,7 +315,7 @@ export async function createPhoneOrder(knex, input) {
   const result = await knex.transaction(async (trx) => {
     const [order] = await trx("orders")
       .insert({
-        restaurant_id: restaurantId,
+        restaurant_id: targetRestaurantId,
         order_number: orderNumber,
         tracking_code: trackingCode,
         customer_name: String(customer_name).trim(),
@@ -240,9 +334,17 @@ export async function createPhoneOrder(knex, input) {
         discount_code: coupon.code,
         total_amount: total,
         call_id: call_id || null,
+        auto_assigned: autoAssigned,
+        delivery_latitude: lat,
+        delivery_longitude: lng,
+        assigned_branch_distance_km: assignedBranchDistanceKm,
+        branch_assigned_at: branchAssignedAt,
+        assignment_status: assignmentStatus,
         ai_extracted_data: {
           unmatched,
           coupon_error: coupon.error || null,
+          target_branch_id: targetRestaurantId !== restaurantId ? targetRestaurantId : null,
+          parent_restaurant_id: targetRestaurantId !== restaurantId ? restaurantId : null,
           ...(ai_extracted_data && typeof ai_extracted_data === "object" ? ai_extracted_data : {}),
         },
       })
@@ -275,6 +377,8 @@ export async function createPhoneOrder(knex, input) {
     order: result,
     unmatched,
     coupon,
+    targetRestaurantId,
+    assignmentStatus,
     totals: { subtotal, tax, deliveryFee, discount: coupon.amount, total },
   };
 }

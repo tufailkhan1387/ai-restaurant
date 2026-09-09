@@ -19,27 +19,47 @@ export async function optionalAuth(req, _res, next) {
     const [profile, roles, memberships, driverRow] = await Promise.all([
       knex("profiles").where({ id: decoded.sub }).first(),
       knex("user_roles").where({ user_id: decoded.sub }).select("role"),
-      knex("restaurant_members").where({ user_id: decoded.sub }).select("restaurant_id"),
+      knex("restaurant_members").where({ user_id: decoded.sub }).select("restaurant_id", "member_role"),
       knex("drivers").where({ user_id: decoded.sub }).first(),
     ]);
-    const fromMembers = memberships.map((m) => m.restaurant_id);
+
+    const safeRoles = (roles || []).map((r) => r.role);
+    const safeMemberships = memberships || [];
+    const directMemberIds = safeMemberships.map((m) => m.restaurant_id).filter(Boolean);
+    const ownedParentIds = safeMemberships
+      .filter((m) => m.member_role === "owner" || m.member_role === "admin")
+      .map((m) => m.restaurant_id)
+      .filter(Boolean);
+
+    let branchIds = [];
+    if (ownedParentIds.length) {
+      const branches = await knex("restaurants")
+        .whereIn("parent_restaurant_id", ownedParentIds)
+        .select("id");
+      branchIds = (branches || []).map((b) => b.id);
+    }
+
     const fromDriver = [];
     if (driverRow?.id) {
       const links = await knex("driver_restaurants").where({ driver_id: driverRow.id }).select("restaurant_id");
-      for (const l of links) fromDriver.push(l.restaurant_id);
+      for (const l of (links || [])) fromDriver.push(l.restaurant_id);
       if (driverRow.restaurant_id) fromDriver.push(driverRow.restaurant_id);
     }
-    const restaurantIds = [...new Set([...fromMembers, ...fromDriver])];
+    const restaurantIds = [...new Set([...directMemberIds, ...branchIds, ...fromDriver])];
     req.user = {
       id: decoded.sub,
       email: profile?.email ?? null,
-      roles: roles.map((r) => r.role),
+      roles: safeRoles,
       restaurantIds,
+      directMemberIds,
+      ownedParentIds,
+      memberships: safeMemberships,
     };
     next();
   } catch (e) {
     console.error("Auth middleware error:", e);
-    next(e);
+    req.user = null;
+    next();
   }
 }
 

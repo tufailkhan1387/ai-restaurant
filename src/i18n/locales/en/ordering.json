@@ -41,5 +41,13 @@
   "onTheWay": "Driver is on the way",
   "delivered": "Delivered! Enjoy your meal",
   "minutes": "mins",
-  "items": "items"
+  "items": "items",
+  "chooseFlavor": "Choose your flavor",
+  "flavor": "Flavor",
+  "flavorsAvailable": "{{count}} flavors available",
+  "chooseSize": "Choose your size",
+  "chooseSizeAndFlavor": "Choose your size & flavor",
+  "size": "Size",
+  "sizesAvailable": "{{count}} sizes available",
+  "sizesAndFlavors": "{{sizes}} sizes · {{flavors}} flavors"
 }

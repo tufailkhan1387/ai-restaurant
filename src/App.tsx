@@ -51,6 +51,7 @@ import InventoryReportPage from "@/pages/reports/InventoryReportPage";
 import CustomerAnalyticsPage from "@/pages/reports/CustomerAnalyticsPage";
 import RestaurantOwnersPage from "@/pages/users/RestaurantOwnersPage";
 import TeamMembersPage from "@/pages/users/TeamMembersPage";
+import BranchPortal from "@/pages/BranchPortal";
 
 const queryClient = new QueryClient();
 
@@ -112,6 +113,10 @@ const App = () => (
                 <Route path="vehicles" element={<Vehicles />} />
                 <Route path="drivers" element={<Drivers />} />
                 <Route path="restaurant-settings" element={<RestaurantSettings />} />
+                <Route path="branches" element={<BranchPortal />} />
+                <Route path="branches/:branchId" element={<BranchPortal />} />
+                <Route path="branch-portal" element={<BranchPortal />} />
+                <Route path="branch-portal/:branchId" element={<BranchPortal />} />
                 <Route path="restaurants" element={<Restaurants />} />
                 <Route path="restaurants/:id/details" element={<RestaurantDetails />} />
                 <Route path="restaurants/:id/configuration" element={<RestaurantConfiguration />} />

@@ -30,6 +30,7 @@ import {
   BarChart3,
   UserCircle,
   Crown,
+  Building2,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -59,6 +60,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [reportsOpen, setReportsOpen] = useState(location.pathname.startsWith("/reports"));
   const [usersOpen, setUsersOpen] = useState(location.pathname.startsWith("/users"));
 
+  const isBranch = Boolean(
+    activeRestaurant?.is_branch ||
+    (activeRestaurant?.parent_restaurant_id != null && activeRestaurant.parent_restaurant_id !== "")
+  );
+
   const ordersChildren = useMemo(
     () => [
       { icon: Inbox, label: t("sidebar:newOrders", "New"), href: "/orders/new" },
@@ -73,12 +79,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const navigationItems = useMemo(
     () => [
       { icon: LayoutDashboard, label: t("sidebar:dashboard", "Dashboard"), href: "/" },
-      { icon: Tag, label: t("sidebar:dealsAndOffers", "Deals & Offers"), href: "/deals" },
-      { icon: Boxes, label: t("sidebar:inventory", "Inventory"), href: "/menu?tab=inventory" },
-      { icon: Ticket, label: t("sidebar:couponCode", "Coupon Code"), href: "/coupons" },
-      { icon: Layers, label: t("sidebar:cuisines", "Cuisines"), href: "/cuisines" },
+      ...(!isBranch
+        ? [
+            { icon: Tag, label: t("sidebar:dealsAndOffers", "Deals & Offers"), href: "/deals" },
+            { icon: Ticket, label: t("sidebar:couponCode", "Coupon Code"), href: "/coupons" },
+            { icon: Layers, label: t("sidebar:cuisines", "Cuisines"), href: "/cuisines" },
+          ]
+        : []),
     ],
-    [t]
+    [t, isBranch]
   );
 
   const menuChildren = useMemo(
@@ -95,8 +104,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const reportsChildren = useMemo(
     () => [
       { icon: Package, label: t("sidebar:itemReport", "Item report"), href: "/reports/items" },
-      { icon: Award, label: t("sidebar:bestSellers", "Best sellers"), href: "/reports/best-sellers" },
-      { icon: Boxes, label: t("sidebar:inventoryReport", "Inventory report"), href: "/reports/inventory" },
       { icon: BarChart3, label: t("sidebar:customerAnalytics", "Customer analytics"), href: "/reports/customers" },
     ],
     [t]
@@ -104,7 +111,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const usersChildren = useMemo(
     () => [
-      { icon: UserCircle, label: t("sidebar:customers", "Customers"), href: "/users/customers" },
       { icon: Users, label: t("sidebar:teamMembers", "Team Members"), href: "/users/team-members" },
     ],
     [t]
@@ -112,10 +118,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const managementItems = useMemo(
     () => [
-      { icon: Store, label: t("sidebar:myRestaurant", "My Restaurant"), href: "/restaurant-settings" },
+      {
+        icon: Store,
+        label: isBranch ? t("sidebar:myBranch", "My Branch") : t("sidebar:myRestaurant", "My Restaurant"),
+        href: "/restaurant-settings",
+      },
+      ...(!isBranch
+        ? [{ icon: Building2, label: t("sidebar:branches", "Branches"), href: "/branches" }]
+        : []),
       { icon: Settings, label: t("sidebar:settings", "Settings"), href: "/settings" },
     ],
-    [t]
+    [t, isBranch]
   );
 
   useEffect(() => {
@@ -149,17 +162,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     }
   }, [restaurantId, activeRestaurant]);
 
-  const managementForRole =
-    role === "super_admin"
-      ? managementItems.filter((i) => i.href !== "/restaurant-settings")
-      : managementItems;
-
   const finalManagement =
     role === "super_admin"
       ? [
           { icon: Store, label: t("sidebar:restaurants", "Restaurants"), href: "/restaurants" },
           { icon: Wallet, label: t("sidebar:earnings", "Earnings"), href: "/earnings" },
-          ...managementForRole,
+          { icon: Settings, label: t("sidebar:settings", "Settings"), href: "/settings" },
         ]
       : managementItems;
 
@@ -314,14 +322,21 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             >
               <LogoIcon className="h-5 w-5 text-primary-foreground" />
             </button>
-            <span
-              className={cn(
-                "font-bold text-[15px] tracking-tight text-sidebar-accent-foreground truncate whitespace-nowrap transition-opacity duration-200",
-                collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
+            <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
+              <span
+                className={cn(
+                  "font-bold text-[15px] tracking-tight text-sidebar-accent-foreground truncate whitespace-nowrap transition-opacity duration-200",
+                  collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
+                )}
+              >
+                {role === "super_admin" ? "Super Admin" : restaurantName || "Restaurant"}
+              </span>
+              {isBranch && !collapsed && (
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-wider leading-none">
+                  Branch
+                </span>
               )}
-            >
-              {role === "super_admin" ? "Super Admin" : restaurantName || "Restaurant"}
-            </span>
+            </div>
           </div>
           <Button
             variant="ghost"
@@ -364,7 +379,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           </div>
         ) : (
-          /* ── RESTAURANT USERS: full nav ─────────────────────── */
+          /* ── RESTAURANT USERS: full nav (customized for branch vs parent) ── */
           <div className="space-y-0.5">
             <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
 
@@ -372,7 +387,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <NavItem
                 icon={Users}
                 label={t("sidebar:users", "Users")}
-                href="/users/customers"
+                href="/users/team-members"
                 activeOverride={usersGroupActive}
               />
             ) : (
@@ -421,30 +436,33 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </>
             )}
 
-            {collapsed ? (
-              <NavItem
-                icon={UtensilsCrossed}
-                label={t("sidebar:menu", "Menu")}
-                href="/menu"
-                activeOverride={menuGroupActive}
-              />
-            ) : (
-              <>
-                <GroupButton
-                  open={menuOpen}
-                  onToggleOpen={() => setMenuOpen((v) => !v)}
-                  active={menuGroupActive}
+            {/* Menu is only visible to Parent Restaurant admins, hidden for Branches */}
+            {!isBranch && (
+              collapsed ? (
+                <NavItem
                   icon={UtensilsCrossed}
                   label={t("sidebar:menu", "Menu")}
+                  href="/menu"
+                  activeOverride={menuGroupActive}
                 />
-                {menuOpen && (
-                  <div className="space-y-0.5">
-                    {menuChildren.map((item) => (
-                      <NavItem key={item.href} {...item} indent />
-                    ))}
-                  </div>
-                )}
-              </>
+              ) : (
+                <>
+                  <GroupButton
+                    open={menuOpen}
+                    onToggleOpen={() => setMenuOpen((v) => !v)}
+                    active={menuGroupActive}
+                    icon={UtensilsCrossed}
+                    label={t("sidebar:menu", "Menu")}
+                  />
+                  {menuOpen && (
+                    <div className="space-y-0.5">
+                      {menuChildren.map((item) => (
+                        <NavItem key={item.href} {...item} indent />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )
             )}
 
             {navigationItems

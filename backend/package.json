@@ -14,6 +14,8 @@
     "db:seed:restaurant": "node scripts/seed-restaurant.js",
     "db:seed:cuisines": "node scripts/seed-cuisines.js",
     "db:seed:royal": "node scripts/seed-royal-admin.js",
+    "db:export:menu": "node scripts/export-menu-seed.js",
+    "db:import:menu": "node scripts/import-menu-seed.js",
     "db:setup": "npm run db:migrate && npm run db:seed:admin && npm run db:seed:cuisines && npm run db:seed:restaurant && npm run db:seed:royal"
   },
   "dependencies": {

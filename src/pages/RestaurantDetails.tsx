@@ -26,6 +26,8 @@ import {
   User,
   Users,
   Wallet,
+  Navigation,
+  GitBranch,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,11 +35,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getToken } from "@/lib/authStorage";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { resolveMediaUrl } from "@/lib/apiBase";
+import { resolveMediaUrl, getApiBase } from "@/lib/apiBase";
 import { formatCurrency, ORDER_STATUS_COLORS, ORDER_STATUS_LABELS, type OrderStatus } from "@/lib/restaurant";
 import { cn } from "@/lib/utils";
 
@@ -183,6 +195,22 @@ export default function RestaurantDetails() {
   const [stats, setStats] = useState<CatalogStats | null>(null);
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
 
+  // Branches state
+  const [branches, setBranches] = useState<any[]>([]);
+  const [addBranchOpen, setAddBranchOpen] = useState(false);
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [branchForm, setBranchForm] = useState({
+    name: "",
+    address: "",
+    service_radius_km: "5",
+    latitude: "",
+    longitude: "",
+    owner_email: "",
+    owner_password: "",
+    owner_full_name: "",
+    phone: "",
+  });
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -285,6 +313,21 @@ export default function RestaurantDetails() {
       });
 
       setRecentOrders((recentRes.data as RecentOrder[]) ?? []);
+
+      // Load branches
+      try {
+        const token = getToken() || (await supabase.auth.getSession()).data.session?.access_token;
+        const bRes = await fetch(`${getApiBase()}/api/restaurants/${id}/branches`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (bRes.ok) {
+          const bData = await bRes.json();
+          if (!cancelled && bData?.branches) setBranches(bData.branches);
+        }
+      } catch (bErr) {
+        console.warn("Failed to load branches:", bErr);
+      }
+
       setLoading(false);
     }
     void load();
@@ -292,6 +335,77 @@ export default function RestaurantDetails() {
       cancelled = true;
     };
   }, [id]);
+
+  const handleCreateBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !branchForm.name.trim()) {
+      toast({ variant: "destructive", title: "Branch name required", description: "Please enter a name for the branch." });
+      return;
+    }
+    setCreatingBranch(true);
+    try {
+      const token = getToken() || (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch(`${getApiBase()}/api/restaurants/${id}/branches`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(branchForm),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create branch");
+
+      toast({ title: "Branch Created", description: `Branch "${branchForm.name}" was created successfully.` });
+      setAddBranchOpen(false);
+      setBranchForm({
+        name: "",
+        address: "",
+        service_radius_km: "5",
+        latitude: "",
+        longitude: "",
+        owner_email: "",
+        owner_password: "",
+        owner_full_name: "",
+        phone: "",
+      });
+
+      // Reload branches
+      const bRes = await fetch(`${getApiBase()}/api/restaurants/${id}/branches`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (bRes.ok) {
+        const bData = await bRes.json();
+        if (bData?.branches) setBranches(bData.branches);
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Failed to create branch", description: err.message });
+    } finally {
+      setCreatingBranch(false);
+    }
+  };
+
+  const handleToggleBranchOrders = async (branchId: string, checked: boolean) => {
+    try {
+      const token = getToken() || (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch(`${getApiBase()}/api/branches/${branchId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ is_accepting_orders: checked }),
+      });
+      if (!res.ok) throw new Error("Failed to update branch");
+      setBranches((prev) =>
+        prev.map((b) => (b.id === branchId ? { ...b, is_accepting_orders: checked } : b))
+      );
+      toast({ title: checked ? "Branch accepting orders" : "Branch orders paused" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update failed", description: err.message });
+    }
+  };
 
   const currency = settings?.currency ?? "USD";
   const coverSrc = resolveMediaUrl(restaurant?.cover_image_url);
@@ -492,6 +606,101 @@ export default function RestaurantDetails() {
               />
               <InfoRow icon={Link2} label="Restaurant ID" value={restaurant.id} mono />
               <InfoRow icon={CalendarClock} label="Created" value={formatDate(restaurant.created_at)} />
+            </CardContent>
+          </Card>
+
+          {/* Multi-Branch Management Section */}
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  Branches & Locations
+                  <Badge variant="secondary" className="ml-2 font-semibold">
+                    {branches.length}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  Sub-locations with independent menus, staff, and nearest-branch AI phone routing
+                </CardDescription>
+              </div>
+              <Button size="sm" onClick={() => setAddBranchOpen(true)} className="gap-1.5 flex-shrink-0">
+                <Plus className="h-4 w-4" />
+                Add Branch
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {branches.length === 0 ? (
+                <div className="rounded-xl border border-dashed p-6 text-center space-y-3 bg-muted/20">
+                  <Building2 className="h-10 w-10 text-muted-foreground/60 mx-auto" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No branches created yet</p>
+                    <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                      Create branches for this restaurant (e.g. DHA, Downtown). Voice orders will automatically route to the nearest branch based on customer location.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setAddBranchOpen(true)} className="gap-1.5">
+                    <Plus className="h-4 w-4" />
+                    Add First Branch
+                  </Button>
+                </div>
+              ) : (
+                <div className="divide-y border rounded-xl overflow-hidden">
+                  {branches.map((b) => (
+                    <div
+                      key={b.id}
+                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm text-foreground truncate">{b.name}</span>
+                          <Badge variant="outline" className="text-xs gap-1 bg-primary/5 text-primary border-primary/20">
+                            <Navigation className="h-3 w-3" />
+                            {b.service_radius_km || 5.0} km radius
+                          </Badge>
+                          {b.is_accepting_orders ? (
+                            <Badge variant="outline" className="text-xs border-emerald-500/40 text-emerald-600 bg-emerald-500/10">
+                              Accepting orders
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs border-amber-500/40 text-amber-600 bg-amber-500/10">
+                              Paused
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1.5 truncate">
+                          <MapPin className="h-3.5 w-3.5 text-muted-foreground/70 flex-shrink-0" />
+                          {b.address || "Address not specified"}
+                        </p>
+                        {b.members && b.members.length > 0 && (
+                          <p className="text-xs text-muted-foreground/80">
+                            Manager: <span className="font-medium text-foreground">{b.members[0].full_name || b.members[0].email}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="flex items-center gap-2 mr-1">
+                          <Label htmlFor={`order-toggle-${b.id}`} className="text-xs text-muted-foreground hidden sm:inline">
+                            Accept Orders
+                          </Label>
+                          <Switch
+                            id={`order-toggle-${b.id}`}
+                            checked={b.is_accepting_orders ?? true}
+                            onCheckedChange={(checked) => handleToggleBranchOrders(b.id, checked)}
+                          />
+                        </div>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to={`/branch-portal/${b.id}`}>
+                            Branch Portal
+                            <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -904,6 +1113,135 @@ export default function RestaurantDetails() {
           </Card>
         </div>
       </div>
+
+      {/* Add Branch Modal Dialog */}
+      <Dialog open={addBranchOpen} onOpenChange={setAddBranchOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              Add New Branch
+            </DialogTitle>
+            <DialogDescription>
+              Create a new physical branch location under {restaurant.name}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateBranch} className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="branch-name">Branch Name *</Label>
+              <Input
+                id="branch-name"
+                placeholder="e.g. DHA Phase 5 or Downtown Branch"
+                value={branchForm.name}
+                onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="branch-address">Physical Address</Label>
+              <Input
+                id="branch-address"
+                placeholder="e.g. Commercial Area, Sector C, DHA"
+                value={branchForm.address}
+                onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="branch-radius">Service Radius (km)</Label>
+                <Input
+                  id="branch-radius"
+                  type="number"
+                  step="0.5"
+                  value={branchForm.service_radius_km}
+                  onChange={(e) => setBranchForm({ ...branchForm, service_radius_km: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="branch-phone">Branch Phone</Label>
+                <Input
+                  id="branch-phone"
+                  placeholder="Optional contact phone"
+                  value={branchForm.phone}
+                  onChange={(e) => setBranchForm({ ...branchForm, phone: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="branch-lat">Latitude (optional)</Label>
+                <Input
+                  id="branch-lat"
+                  placeholder="Auto-geocoded if empty"
+                  value={branchForm.latitude}
+                  onChange={(e) => setBranchForm({ ...branchForm, latitude: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="branch-lng">Longitude (optional)</Label>
+                <Input
+                  id="branch-lng"
+                  placeholder="Auto-geocoded if empty"
+                  value={branchForm.longitude}
+                  onChange={(e) => setBranchForm({ ...branchForm, longitude: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <Separator className="my-2" />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Branch Manager Account (Optional)
+            </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="branch-manager-name">Manager Full Name</Label>
+              <Input
+                id="branch-manager-name"
+                placeholder="e.g. John Doe"
+                value={branchForm.owner_full_name}
+                onChange={(e) => setBranchForm({ ...branchForm, owner_full_name: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="branch-manager-email">Manager Email</Label>
+                <Input
+                  id="branch-manager-email"
+                  type="email"
+                  placeholder="manager@branch.com"
+                  value={branchForm.owner_email}
+                  onChange={(e) => setBranchForm({ ...branchForm, owner_email: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="branch-manager-pwd">Temporary Password</Label>
+                <Input
+                  id="branch-manager-pwd"
+                  type="password"
+                  placeholder="Min 6 characters"
+                  value={branchForm.owner_password}
+                  onChange={(e) => setBranchForm({ ...branchForm, owner_password: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="pt-3">
+              <Button type="button" variant="outline" onClick={() => setAddBranchOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingBranch} className="gap-2">
+                {creatingBranch ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Create Branch
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

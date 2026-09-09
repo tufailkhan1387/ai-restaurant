@@ -50,7 +50,7 @@ export async function aiPlaceOrder(req, res) {
       callId = c?.id ?? null;
     }
 
-    const { order, unmatched, coupon, totals } = await createPhoneOrder(knex, {
+    const { order, unmatched, coupon, totals, targetRestaurantId, assignmentStatus } = await createPhoneOrder(knex, {
       restaurantId,
       customer_name: body.customer_name,
       customer_phone: body.customer_phone,
@@ -60,12 +60,14 @@ export async function aiPlaceOrder(req, res) {
       coupon_code: body.coupon_code || body.discount_code || null,
       payment_method: body.payment_method ?? "cash",
       fulfillment_type: body.fulfillment_type || "delivery",
+      delivery_latitude: body.delivery_latitude ?? body.latitude ?? null,
+      delivery_longitude: body.delivery_longitude ?? body.longitude ?? null,
       call_id: callId,
       source: "phone",
       ai_extracted_data: { unmatched, raw: body, provider: "elevenlabs" },
     });
 
-    console.log(`✅ Order saved: id=${order.id} order_number=${order.order_number} restaurant_id=${restaurantId}`);
+    console.log(`✅ Order saved: id=${order.id} order_number=${order.order_number} restaurant_id=${order.restaurant_id} status=${assignmentStatus}`);
 
     const couponNote =
       coupon?.amount > 0

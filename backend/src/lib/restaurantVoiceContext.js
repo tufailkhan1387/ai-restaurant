@@ -8,6 +8,7 @@ export function buildRestaurantVoiceKnowledge({
   items,
   deals,
   discounts,
+  variants = [],
 }) {
   const lines = [];
   lines.push(`# ${restaurantName} — Menu, promotions, and ordering rules`);
@@ -21,6 +22,13 @@ export function buildRestaurantVoiceKnowledge({
     lines.push(`Minimum order: ${settings.min_order_amount ?? 0}`);
     lines.push(`Currently accepting orders: ${settings.is_open === false ? "no" : "yes"}`);
     lines.push("");
+  }
+
+  const variantMap = new Map();
+  for (const v of variants) {
+    if (v.is_active === false) continue;
+    if (!variantMap.has(v.menu_item_id)) variantMap.set(v.menu_item_id, []);
+    variantMap.get(v.menu_item_id).push(v);
   }
 
   lines.push("## Menu");
@@ -39,9 +47,40 @@ export function buildRestaurantVoiceKnowledge({
     for (const it of list) {
       const tags = (it.dietary_tags || []).join(", ");
       const desc = it.description ? ` — ${it.description}` : "";
-      lines.push(
-        `- ${it.name}: ${Number(it.price).toFixed(2)}${desc}${tags ? ` [${tags}]` : ""}`,
-      );
+      const itemVars = variantMap.get(it.id) || [];
+      const sizes = itemVars.filter((v) => v.variant_type === "size");
+      const standaloneFlavors = itemVars.filter((v) => v.variant_type !== "size" && !v.parent_id);
+
+      const extras = [];
+      if (sizes.length > 0) {
+        const sizeDescs = sizes.map((s) => {
+          const childFlavors = itemVars.filter((v) => v.parent_id === s.id && v.variant_type !== "size");
+          const sizeLabel = s.measurement ? `${s.name} ${s.measurement}` : s.name;
+          const priceStr = `$${Number(s.price).toFixed(2)}`;
+          if (childFlavors.length > 0) {
+            return `${sizeLabel} (${priceStr}, flavors: ${childFlavors.map((f) => f.name).join(", ")})`;
+          }
+          return `${sizeLabel} (${priceStr})`;
+        });
+        extras.push(`Sizes: ${sizeDescs.join("; ")}`);
+      }
+      if (standaloneFlavors.length > 0) {
+        extras.push(
+          `Flavors: ${standaloneFlavors
+            .map((f) => (Number(f.price) > 0 ? `${f.name} (+$${Number(f.price).toFixed(2)})` : f.name))
+            .join(", ")}`
+        );
+      }
+
+      if (extras.length > 0) {
+        lines.push(
+          `- ${it.name}: [${extras.join(" | ")}]${desc}${tags ? ` [${tags}]` : ""}`,
+        );
+      } else {
+        lines.push(
+          `- ${it.name}: ${Number(it.price).toFixed(2)}${desc}${tags ? ` [${tags}]` : ""}`,
+        );
+      }
     }
   }
   const uncategorized = byCategory.get("uncategorized") || [];
@@ -49,7 +88,34 @@ export function buildRestaurantVoiceKnowledge({
     lines.push("");
     lines.push("### Other items");
     for (const it of uncategorized) {
-      lines.push(`- ${it.name}: ${Number(it.price).toFixed(2)}`);
+      const itemVars = variantMap.get(it.id) || [];
+      const sizes = itemVars.filter((v) => v.variant_type === "size");
+      const standaloneFlavors = itemVars.filter((v) => v.variant_type !== "size" && !v.parent_id);
+      const extras = [];
+      if (sizes.length > 0) {
+        const sizeDescs = sizes.map((s) => {
+          const childFlavors = itemVars.filter((v) => v.parent_id === s.id && v.variant_type !== "size");
+          const sizeLabel = s.measurement ? `${s.name} ${s.measurement}` : s.name;
+          const priceStr = `$${Number(s.price).toFixed(2)}`;
+          if (childFlavors.length > 0) {
+            return `${sizeLabel} (${priceStr}, flavors: ${childFlavors.map((f) => f.name).join(", ")})`;
+          }
+          return `${sizeLabel} (${priceStr})`;
+        });
+        extras.push(`Sizes: ${sizeDescs.join("; ")}`);
+      }
+      if (standaloneFlavors.length > 0) {
+        extras.push(
+          `Flavors: ${standaloneFlavors
+            .map((f) => (Number(f.price) > 0 ? `${f.name} (+$${Number(f.price).toFixed(2)})` : f.name))
+            .join(", ")}`
+        );
+      }
+      if (extras.length > 0) {
+        lines.push(`- ${it.name}: [${extras.join(" | ")}]`);
+      } else {
+        lines.push(`- ${it.name}: ${Number(it.price).toFixed(2)}`);
+      }
     }
   }
 
@@ -132,7 +198,7 @@ export function defaultSynthflowGreeting(restaurantName) {
 
 /** Load restaurant catalog used for Synthflow prompt sync. */
 export async function loadRestaurantVoiceCatalog(knex, restaurantId) {
-  const [settings, categories, items, deals, discounts] = await Promise.all([
+  const [settings, categories, items, deals, discounts, variants] = await Promise.all([
     knex("restaurant_settings").where({ restaurant_id: restaurantId }).first(),
     knex("menu_categories").where({ restaurant_id: restaurantId }).orderBy("sort_order", "asc"),
     knex("menu_items").where({ restaurant_id: restaurantId }).orderBy("sort_order", "asc"),
@@ -145,6 +211,10 @@ export async function loadRestaurantVoiceCatalog(knex, restaurantId) {
       .andWhere((qb) => {
         qb.whereNull("ends_at").orWhere("ends_at", ">", knex.fn.now());
       }),
+    knex("menu_item_variants")
+      .whereIn("menu_item_id", knex("menu_items").select("id").where({ restaurant_id: restaurantId }))
+      .andWhere({ is_active: true })
+      .orderBy("sort_order", "asc"),
   ]);
-  return { settings, categories, items, deals, discounts };
+  return { settings, categories, items, deals, discounts, variants };
 }

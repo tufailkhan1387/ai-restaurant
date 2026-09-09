@@ -56,7 +56,9 @@ async function apiQuery(body: Record<string, unknown>) {
   return { data: json.data ?? null, error: json.error ?? null, count: json.count as number | undefined };
 }
 
-class SelectBuilder implements PromiseLike<{ data: unknown; error: unknown; count?: number }> {
+export type SupabaseResponse<T = unknown> = { data: T; error: { message: string } | null; count?: number };
+
+class SelectBuilder implements PromiseLike<{ data: unknown; error: { message: string } | null; count?: number }> {
   constructor(
     private readonly table: string,
     private readonly columns: string,
@@ -116,11 +118,11 @@ class SelectBuilder implements PromiseLike<{ data: unknown; error: unknown; coun
     return this.clone({ singleMode: "one" }).execute();
   }
 
-  then<TResult1 = { data: unknown; error: unknown; count?: number }, TResult2 = never>(
-    onfulfilled?: ((value: { data: unknown; error: unknown; count?: number }) => TResult1 | PromiseLike<TResult1>) | null,
+  then<TResult1 = { data: unknown; error: { message: string } | null; count?: number }, TResult2 = never>(
+    onfulfilled?: ((value: { data: unknown; error: { message: string } | null; count?: number }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
-    return this.execute().then(onfulfilled as never, onrejected as never);
+    return (this.execute() as Promise<{ data: unknown; error: { message: string } | null; count?: number }>).then(onfulfilled as never, onrejected as never);
   }
 
   private execute() {
@@ -141,7 +143,7 @@ class SelectBuilder implements PromiseLike<{ data: unknown; error: unknown; coun
   }
 }
 
-class InsertWithReturning implements PromiseLike<{ data: unknown; error: unknown }> {
+class InsertWithReturning implements PromiseLike<{ data: any; error: { message: string } | null }> {
   constructor(private table: string, private rows: Record<string, unknown>[], private onConflict?: string) {}
 
   single() {
@@ -151,8 +153,8 @@ class InsertWithReturning implements PromiseLike<{ data: unknown; error: unknown
     return this.run("maybe");
   }
 
-  then<TResult1 = { data: unknown; error: unknown }, TResult2 = never>(
-    onfulfilled?: ((value: { data: unknown; error: unknown }) => TResult1 | PromiseLike<TResult1>) | null,
+  then<TResult1 = { data: any; error: { message: string } | null }, TResult2 = never>(
+    onfulfilled?: ((value: { data: any; error: { message: string } | null }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     return this.runMany().then(onfulfilled as never, onrejected as never);
@@ -182,15 +184,15 @@ class InsertWithReturning implements PromiseLike<{ data: unknown; error: unknown
   }
 }
 
-class InsertBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
+class InsertBuilder implements PromiseLike<{ data: any; error: { message: string } | null }> {
   constructor(private table: string, private rows: Record<string, unknown>[], private onConflict?: string) {}
 
   select(_columns?: string) {
     return new InsertWithReturning(this.table, this.rows, this.onConflict);
   }
 
-  then<TResult1 = { data: unknown; error: unknown }, TResult2 = never>(
-    onfulfilled?: ((value: { data: unknown; error: unknown }) => TResult1 | PromiseLike<TResult1>) | null,
+  then<TResult1 = { data: any; error: { message: string } | null }, TResult2 = never>(
+    onfulfilled?: ((value: { data: any; error: { message: string } | null }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     const body: Record<string, unknown> = {
@@ -229,15 +231,21 @@ class TableQuery {
   }
 }
 
-class UpdateBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
+class UpdateBuilder implements PromiseLike<{ data: any; error: { message: string } | null }> {
   constructor(private table: string, private values: Record<string, unknown>, private filters: Filter[]) {}
 
   eq(column: string, value: unknown) {
     return new UpdateBuilder(this.table, this.values, [...this.filters, { type: "eq", column, value }]);
   }
+  neq(column: string, value: unknown) {
+    return new UpdateBuilder(this.table, this.values, [...this.filters, { type: "neq", column, value }]);
+  }
+  in(column: string, values: unknown[]) {
+    return new UpdateBuilder(this.table, this.values, [...this.filters, { type: "in", column, values }]);
+  }
 
-  then<TResult1 = { data: unknown; error: unknown }, TResult2 = never>(
-    onfulfilled?: ((value: { data: unknown; error: unknown }) => TResult1 | PromiseLike<TResult1>) | null,
+  then<TResult1 = { data: any; error: { message: string } | null }, TResult2 = never>(
+    onfulfilled?: ((value: { data: any; error: { message: string } | null }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     return apiQuery({
@@ -249,7 +257,7 @@ class UpdateBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
   }
 }
 
-class DeleteBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
+class DeleteBuilder implements PromiseLike<{ data: any; error: { message: string } | null }> {
   constructor(private table: string, private filters: Filter[]) {}
 
   eq(column: string, value: unknown) {
@@ -259,8 +267,8 @@ class DeleteBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
     return new DeleteBuilder(this.table, [...this.filters, { type: "in", column, values }]);
   }
 
-  then<TResult1 = { data: unknown; error: unknown }, TResult2 = never>(
-    onfulfilled?: ((value: { data: unknown; error: unknown }) => TResult1 | PromiseLike<TResult1>) | null,
+  then<TResult1 = { data: any; error: { message: string } | null }, TResult2 = never>(
+    onfulfilled?: ((value: { data: any; error: { message: string } | null }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     return apiQuery({

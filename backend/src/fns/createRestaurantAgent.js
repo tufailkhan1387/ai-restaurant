@@ -117,6 +117,7 @@ export async function createRestaurantAgent(req, res) {
         const conversation_config = {
           agent: {
             first_message: firstMessage,
+            language: r.agent_language || "en",
             prompt: { prompt: systemPrompt },
             ...(toolIds.length > 0 ? { tools: toolIds.map(id => ({ type: "webhook", tool_id: id })) } : {})
           }

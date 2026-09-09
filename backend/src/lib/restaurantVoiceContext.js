@@ -57,7 +57,17 @@ export function buildRestaurantVoiceKnowledge({
     const itemVars = variantMap.get(it.id) || [];
     const itemAds = addonMap.get(it.id) || [];
 
-    const sizes = itemVars.filter((v) => v.variant_type === "size");
+    const rawSizes = itemVars.filter((v) => v.variant_type === "size");
+    const seenSizes = new Set();
+    const sizes = [];
+    for (const s of rawSizes) {
+      const key = `${(s.name || "").trim().toLowerCase()}_${(s.measurement || "").trim().toLowerCase()}_${Number(s.price).toFixed(2)}`;
+      if (!seenSizes.has(key)) {
+        seenSizes.add(key);
+        sizes.push(s);
+      }
+    }
+
     // Collect all distinct flavor names for this item
     const allFlavorNames = Array.from(
       new Set(itemVars.filter((v) => v.variant_type !== "size").map((f) => f.name.trim()))
@@ -70,10 +80,15 @@ export function buildRestaurantVoiceKnowledge({
       for (const s of sizes) {
         const sizeLabel = s.measurement ? `${s.name} (${s.measurement})` : s.name;
         const sizePrice = `$${Number(s.price).toFixed(2)}`;
-        const sFlavors = itemVars.filter((v) => v.parent_id === s.id && v.variant_type !== "size");
-        if (sFlavors.length > 0) {
-          const flvNames = sFlavors.map((f) => (Number(f.price) > 0 ? `${f.name} (+$${Number(f.price).toFixed(2)})` : f.name)).join(", ");
-          itemLines.push(`    - ${sizeLabel}: ${sizePrice} | Flavors available for this size: ${flvNames}`);
+        const sFlavors = itemVars.filter((v) => (v.parent_id === s.id || (!v.parent_id && rawSizes.length === 1)) && v.variant_type !== "size");
+        const uniqueFlv = Array.from(
+          new Set(
+            sFlavors.map((f) => (Number(f.price) > 0 ? `${f.name} (+$${Number(f.price).toFixed(2)})` : f.name))
+          )
+        ).filter(Boolean);
+
+        if (uniqueFlv.length > 0) {
+          itemLines.push(`    - ${sizeLabel}: ${sizePrice} | Flavors available for this size: ${uniqueFlv.join(", ")}`);
         } else {
           itemLines.push(`    - ${sizeLabel}: ${sizePrice}`);
         }

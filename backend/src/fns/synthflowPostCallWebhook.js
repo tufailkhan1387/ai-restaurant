@@ -219,12 +219,49 @@ export async function synthflowPostCallWebhook(req, res) {
     const restaurant = await resolveRestaurant(knex, payload);
     const callMeta = payload.call || {};
     const lead = payload.lead || {};
-    const synthflowCallId = String(callMeta.call_id || payload.call_id || "").trim() || null;
+    const synthflowCallId = String(payload.call_id || callMeta.call_id || lead.call_id || "").trim() || null;
     const callerPhone =
+      normalizeE164(payload.phone_number_from) ||
       normalizeE164(lead.phone_number) ||
       normalizeE164(callMeta.from) ||
       normalizeE164(callMeta.phone) ||
+      normalizeE164(payload.caller_phone) ||
       "Unknown";
+
+    const recordingUrl =
+      payload.recording_url ||
+      payload.recording ||
+      callMeta.recording_url ||
+      callMeta.recording ||
+      payload.audio_url ||
+      null;
+
+    const rawTranscript =
+      payload.transcript ||
+      callMeta.transcript ||
+      payload.conversation_history ||
+      payload.transcript_object ||
+      null;
+    const transcript =
+      typeof rawTranscript === "object" && rawTranscript !== null
+        ? JSON.stringify(rawTranscript)
+        : rawTranscript;
+
+    const durationSeconds =
+      Number(payload.recording_duration || callMeta.recording_duration || callMeta.duration || payload.duration || 0) || 0;
+
+    const rawNotes =
+      payload.analysis?.call_summary ||
+      payload.analysis?.summary ||
+      payload.analysis?.call_summary_feedback ||
+      payload.analysis?.all_feedback ||
+      payload.summary ||
+      payload.call_summary ||
+      null;
+    const callNotes =
+      typeof rawNotes === "object" && rawNotes !== null
+        ? JSON.stringify(rawNotes)
+        : rawNotes;
 
     let callRow = null;
     if (synthflowCallId) {
@@ -233,17 +270,17 @@ export async function synthflowPostCallWebhook(req, res) {
 
     const callPatch = {
       phone_number: callerPhone,
-      status: mapCallStatus(callMeta.status || payload.status),
+      status: mapCallStatus(callMeta.status || payload.status || payload.call_status),
       direction: "inbound",
-      duration_seconds: Number(callMeta.duration || 0) || 0,
-      recording_url: callMeta.recording_url || null,
-      transcript: callMeta.transcript || null,
-      notes: payload.analysis?.call_summary_feedback || payload.analysis?.all_feedback || null,
+      duration_seconds: durationSeconds,
+      recording_url: recordingUrl,
+      transcript: transcript,
+      notes: callNotes,
       synthflow_call_id: synthflowCallId,
       restaurant_id: restaurant?.id || null,
       provider: "synthflow",
       ended_at: new Date().toISOString(),
-      started_at: callMeta.start_time || null,
+      started_at: callMeta.start_time || payload.start_time || null,
     };
 
     if (callRow) {
@@ -301,6 +338,23 @@ export async function synthflowPostCallWebhook(req, res) {
       });
     }
 
+    function cleanEmail(v) {
+      if (emptyish(v)) return null;
+      const s = String(v).trim().toLowerCase();
+      if (
+        s === "none" ||
+        s === "null" ||
+        s === "n/a" ||
+        s === "no" ||
+        s === "skip" ||
+        s.endsWith("@example.com") ||
+        s.endsWith("@test.com")
+      ) {
+        return null;
+      }
+      return s.includes("@") && s.includes(".") ? s : null;
+    }
+
     const couponRaw = emptyish(fields.coupon_code) ? null : fields.coupon_code;
     const notesRaw = emptyish(fields.special_notes) ? null : fields.special_notes;
     const phone =
@@ -310,7 +364,7 @@ export async function synthflowPostCallWebhook(req, res) {
       restaurantId: restaurant.id,
       customer_name: fields.customer_name,
       customer_phone: phone,
-      customer_email: emptyish(fields.customer_email) ? null : fields.customer_email,
+      customer_email: cleanEmail(fields.customer_email),
       delivery_address: fields.delivery_address,
       delivery_notes: notesRaw,
       items,
@@ -322,9 +376,12 @@ export async function synthflowPostCallWebhook(req, res) {
       ai_extracted_data: {
         provider: "synthflow",
         synthflow_call_id: synthflowCallId,
+        recording_url: recordingUrl,
+        transcript: transcript,
+        call_summary: callNotes,
         fields,
         raw_status: payload.status,
-        end_call_reason: callMeta.end_call_reason,
+        end_call_reason: callMeta.end_call_reason || payload.end_call_reason,
       },
     });
 

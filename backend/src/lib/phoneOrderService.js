@@ -89,7 +89,7 @@ export function parseOrderItemsText(raw) {
 }
 
 /**
- * Match items to menu and compute line totals, factoring in sizes and add-ons.
+ * Match items to menu and compute line totals, factoring in flavors, sizes, and add-ons.
  */
 export function matchMenuLines(menu, items, variants = [], addons = [], itemAddons = []) {
   const lines = [];
@@ -98,6 +98,7 @@ export function matchMenuLines(menu, items, variants = [], addons = [], itemAddo
 
   const variantByItem = new Map();
   for (const v of variants || []) {
+    if (v.is_active === false) continue;
     if (!variantByItem.has(v.menu_item_id)) variantByItem.set(v.menu_item_id, []);
     variantByItem.get(v.menu_item_id).push(v);
   }
@@ -107,18 +108,37 @@ export function matchMenuLines(menu, items, variants = [], addons = [], itemAddo
   for (const link of itemAddons || []) {
     if (!addonsByItem.has(link.menu_item_id)) addonsByItem.set(link.menu_item_id, []);
     const ad = addonById.get(link.menu_addon_id);
-    if (ad) addonsByItem.get(link.menu_item_id).push(ad);
+    if (ad && ad.is_active !== false) addonsByItem.get(link.menu_item_id).push(ad);
   }
 
   for (const it of items) {
     const qty = Math.max(1, Number(it.quantity ?? 1) || 1);
-    const needle = (it.name || "").trim().toLowerCase();
+    const rawName = String(it.name || "").trim();
+    const needle = rawName.toLowerCase();
+    const notesStr = String(it.notes || "").toLowerCase();
+    const combined = `${needle} ${notesStr}`.trim();
+
+    // 1. Direct or substring match in menu_items
     let m = menu.find((x) => x.name.toLowerCase() === needle);
     if (!m) {
       m = menu.find(
         (x) => x.name.toLowerCase().includes(needle) || needle.includes(x.name.toLowerCase()),
       );
     }
+
+    // 2. If not matched in menu_items, check if needle matches a flavor or variant (e.g. "Chicken Fajita", "Malai Boti")
+    if (!m) {
+      for (const v of variants || []) {
+        if (v.is_active === false) continue;
+        const vName = (v.name || "").toLowerCase().trim();
+        if (vName && vName.length >= 3 && (needle.includes(vName) || vName.includes(needle))) {
+          m = menu.find((x) => x.id === v.menu_item_id);
+          if (m) break;
+        }
+      }
+    }
+
+    // 3. If matched with a menu_item:
     if (m) {
       const isUnavailable =
         m.is_available === false ||
@@ -128,56 +148,89 @@ export function matchMenuLines(menu, items, variants = [], addons = [], itemAddo
         outOfStock.push(m.name);
       }
 
-      let price = Number(m.price);
+      let price = Number(m.price || 0);
       const itemVars = variantByItem.get(m.id) || [];
       const itemAds = addonsByItem.get(m.id) || [];
 
-      // Check for size match in needle
+      // Check for size match in needle or notes
       const sizes = itemVars.filter((v) => v.variant_type === "size");
+      let matchedSize = null;
       for (const s of sizes) {
-        const sName = (s.name || "").toLowerCase();
+        const sName = (s.name || "").toLowerCase().trim();
         const sMeas = (s.measurement || "").toLowerCase().replace(/["\s]/g, "");
         if (
-          (sName && needle.includes(sName)) ||
-          (sMeas && needle.replace(/["\s]/g, "").includes(sMeas))
+          (sName && (combined.includes(sName) || sName.includes(needle))) ||
+          (sMeas && combined.replace(/["\s]/g, "").includes(sMeas))
         ) {
-          price = Number(s.price);
+          matchedSize = s;
+          price = Number(s.price || 0);
           break;
         }
       }
 
+      // If item has sizes but no specific size was matched and base price is 0, pick the first size price
+      if (sizes.length > 0 && !matchedSize && price <= 0) {
+        price = Number(sizes[0].price || 0);
+      }
+
       // Check for add-ons in needle or notes
-      const notesAndName = `${needle} ${(it.notes || "").toLowerCase()}`;
       for (const ad of itemAds) {
-        const adName = (ad.name || "").toLowerCase();
-        if (adName && notesAndName.includes(adName)) {
-          price += Number(ad.price || 0);
+        const adName = (ad.name || "").toLowerCase().trim();
+        if (adName && adName.length >= 3 && combined.includes(adName)) {
+          if (needle !== adName) {
+            price += Number(ad.price || 0);
+          }
         }
       }
 
       lines.push({
         menu_item_id: m.id,
-        item_name: it.name || m.name,
+        item_name: rawName || m.name,
         quantity: qty,
-        unit_price: price,
-        line_total: price * qty,
+        unit_price: Number(price.toFixed(2)),
+        line_total: Number((price * qty).toFixed(2)),
         notes: it.notes ?? null,
         matched: true,
         is_available: !isUnavailable,
       });
-    } else {
-      unmatched.push(it.name);
+      continue;
+    }
+
+    // 4. Check if this is a standalone add-on (e.g. "Extra Cheese", "Creamy Garlic Dip")
+    const matchedAddon = (addons || []).find((a) => {
+      if (a.is_active === false) return false;
+      const aName = (a.name || "").toLowerCase().trim();
+      return aName && (aName === needle || needle.includes(aName) || aName.includes(needle));
+    });
+
+    if (matchedAddon) {
+      const addonPrice = Number(matchedAddon.price || 0);
       lines.push({
         menu_item_id: null,
-        item_name: it.name,
+        item_name: rawName || matchedAddon.name,
         quantity: qty,
-        unit_price: 0,
-        line_total: 0,
+        unit_price: Number(addonPrice.toFixed(2)),
+        line_total: Number((addonPrice * qty).toFixed(2)),
         notes: it.notes ?? null,
-        matched: false,
+        matched: true,
         is_available: true,
       });
+      continue;
     }
+
+    // 5. Unmatched item
+    const fallbackUnitPrice = Number(it.unit_price || it.price || 0);
+    unmatched.push(rawName);
+    lines.push({
+      menu_item_id: null,
+      item_name: rawName,
+      quantity: qty,
+      unit_price: fallbackUnitPrice,
+      line_total: Number((fallbackUnitPrice * qty).toFixed(2)),
+      notes: it.notes ?? null,
+      matched: false,
+      is_available: true,
+    });
   }
   return { lines, unmatched, outOfStock };
 }

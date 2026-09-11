@@ -219,6 +219,7 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       greeting_message: greeting,
       llm: body.llm || "gpt-4.1-Mini",
       language: lang,
+      voice_speed: 0.88,
       ...(voiceId ? { voice_id: voiceId } : {}),
     };
 
@@ -233,6 +234,7 @@ export async function restaurantCreateSynthflowAgent(req, res) {
     // Create/update agent FIRST (extractors used to run first and often timed out)
     const agentPayload = {
       name: agentName,
+      is_recording: true,
       ...(phoneInfo.phone ? { phone_number: phoneInfo.phone } : {}),
       ...(webhookUrl ? { external_webhook_url: webhookUrl } : {}),
       agent: agentConfig,

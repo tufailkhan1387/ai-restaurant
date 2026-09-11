@@ -38,10 +38,12 @@ export async function syncRestaurantMenuToSynthflow(req, res) {
 
     await updateAgent(r.synthflow_agent_id, {
       // Do not re-send phone_number — number is already attached; re-sending can fail.
+      is_recording: true,
       ...(webhookUrl ? { external_webhook_url: webhookUrl } : {}),
       agent: {
         prompt,
         greeting_message: greeting,
+        voice_speed: 0.88,
       },
     });
 

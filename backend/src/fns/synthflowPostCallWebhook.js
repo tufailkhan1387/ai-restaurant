@@ -101,6 +101,88 @@ export function extractSynthflowFields(payload) {
   return out;
 }
 
+export function supplementFieldsFromTranscript(fields, transcript) {
+  if (!transcript || typeof transcript !== "string") return fields;
+  const turns = parseTranscriptIntoTurns(transcript);
+  const out = { ...fields };
+
+  for (let i = 0; i < turns.length; i++) {
+    const turn = turns[i];
+    const prevTurn = i > 0 ? turns[i - 1] : null;
+
+    if (turn.speaker === "customer" && turn.message) {
+      const msg = turn.message.trim();
+      const prevBotMsg = prevTurn?.speaker === "ai" ? prevTurn.message.toLowerCase() : "";
+
+      // 1. Customer Name fallback
+      if (emptyish(out.customer_name)) {
+        if (
+          prevBotMsg.includes("name") ||
+          prevBotMsg.includes("who am i speaking") ||
+          prevBotMsg.includes("naam")
+        ) {
+          const clean = msg
+            .replace(/^(my name is|i am|this is|mera naam|mera nam|it's|it is)\s+/i, "")
+            .replace(/[.!?,]$/, "")
+            .trim();
+          if (clean && clean.length <= 60 && !/^(delivery|pickup|yes|no|order|food)/i.test(clean)) {
+            out.customer_name = clean;
+          }
+        }
+      }
+
+      // 2. Delivery Address fallback
+      if (emptyish(out.delivery_address)) {
+        if (
+          prevBotMsg.includes("address") ||
+          prevBotMsg.includes("location") ||
+          prevBotMsg.includes("where should we deliver") ||
+          prevBotMsg.includes("delivery address") ||
+          prevBotMsg.includes("pata")
+        ) {
+          const clean = msg
+            .replace(/^(my address is|delivery address is|it's|it is|address is|address)\s+/i, "")
+            .replace(/[.!?,]$/, "")
+            .trim();
+          if (clean && clean.length >= 3 && !/^(pickup|takeaway|no|yes|none|null)$/i.test(clean)) {
+            out.delivery_address = clean;
+          }
+        }
+      }
+
+      // 3. Customer Phone fallback
+      if (emptyish(out.customer_phone)) {
+        if (
+          prevBotMsg.includes("phone") ||
+          prevBotMsg.includes("contact number") ||
+          prevBotMsg.includes("mobile") ||
+          prevBotMsg.includes("number")
+        ) {
+          const phoneMatch = msg.match(/(\+?\d[\d\s\-]{8,}\d)/);
+          if (phoneMatch) {
+            out.customer_phone = phoneMatch[1].replace(/\s+/g, "");
+          }
+        }
+      }
+    }
+  }
+
+  // Also check if summary turn has "For [Customer Name], delivery to [Address]"
+  if (emptyish(out.customer_name) || emptyish(out.delivery_address)) {
+    const summaryMatch = transcript.match(/for\s+([A-Za-z\s]{2,40}),\s+delivery\s+to\s+([^,.]+)/i);
+    if (summaryMatch) {
+      if (emptyish(out.customer_name) && summaryMatch[1]) {
+        out.customer_name = summaryMatch[1].trim();
+      }
+      if (emptyish(out.delivery_address) && summaryMatch[2]) {
+        out.delivery_address = summaryMatch[2].trim();
+      }
+    }
+  }
+
+  return out;
+}
+
 async function resolveRestaurant(knex, payload) {
   const modelId =
     payload?.call?.model_id ||
@@ -338,11 +420,12 @@ export async function synthflowPostCallWebhook(req, res) {
       }
     }
 
-    const fields = extractSynthflowFields(payload);
+    const rawFields = extractSynthflowFields(payload);
+    const fields = supplementFieldsFromTranscript(rawFields, transcript);
     const orderPlaced = truthyYes(fields.order_placed);
     const items = parseOrderItemsText(fields.order_items);
     const hasCustomer = !emptyish(fields.customer_name);
-    const shouldCreate = (orderPlaced || items.length > 0) && hasCustomer && items.length > 0;
+    const shouldCreate = (orderPlaced || items.length > 0) && items.length > 0;
 
     if (!restaurant) {
       console.warn("Synthflow webhook: restaurant not resolved");
@@ -424,10 +507,10 @@ export async function synthflowPostCallWebhook(req, res) {
 
     const { order, unmatched, coupon, totals } = await createPhoneOrder(knex, {
       restaurantId: restaurant.id,
-      customer_name: fields.customer_name,
+      customer_name: (!emptyish(fields.customer_name) && fields.customer_name) || "Phone Customer",
       customer_phone: phone,
       customer_email: cleanEmail(fields.customer_email),
-      delivery_address: fields.delivery_address,
+      delivery_address: (!emptyish(fields.delivery_address) && fields.delivery_address) || (String(fields.fulfillment_type || "").toLowerCase() === "pickup" ? "Pickup" : null),
       delivery_notes: notesRaw,
       items,
       coupon_code: couponRaw,

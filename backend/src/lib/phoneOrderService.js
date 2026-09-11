@@ -91,7 +91,7 @@ export function parseOrderItemsText(raw) {
 /**
  * Match items to menu and compute line totals, factoring in flavors, sizes, and add-ons.
  */
-export function matchMenuLines(menu, items, variants = [], addons = [], itemAddons = []) {
+export function matchMenuLines(menu, items, variants = [], addons = [], itemAddons = [], deals = []) {
   const lines = [];
   const unmatched = [];
   const outOfStock = [];
@@ -218,7 +218,30 @@ export function matchMenuLines(menu, items, variants = [], addons = [], itemAddo
       continue;
     }
 
-    // 5. Unmatched item
+    // 5. Check if this is an active Deal (e.g. "Zinger Crave Deal", "Family Pizza Feast")
+    const matchedDeal = (deals || []).find((d) => {
+      if (d.is_active === false) return false;
+      const dName = (d.name || "").toLowerCase().trim();
+      return dName && (dName === needle || needle.includes(dName) || dName.includes(needle));
+    });
+
+    if (matchedDeal) {
+      const dealPrice = Number(matchedDeal.price || 0);
+      lines.push({
+        menu_item_id: null,
+        deal_id: matchedDeal.id,
+        item_name: rawName || matchedDeal.name,
+        quantity: qty,
+        unit_price: Number(dealPrice.toFixed(2)),
+        line_total: Number((dealPrice * qty).toFixed(2)),
+        notes: it.notes ?? null,
+        matched: true,
+        is_available: true,
+      });
+      continue;
+    }
+
+    // 6. Unmatched item
     const fallbackUnitPrice = Number(it.unit_price || it.price || 0);
     unmatched.push(rawName);
     lines.push({
@@ -371,7 +394,7 @@ export async function createPhoneOrder(knex, input) {
   }
 
   const menuItemIds = menu.map((m) => m.id);
-  const [variants, addons, itemAddons] = await Promise.all([
+  const [variants, addons, itemAddons, deals] = await Promise.all([
     menuItemIds.length
       ? knex("menu_item_variants").whereIn("menu_item_id", menuItemIds).andWhere({ is_active: true })
       : [],
@@ -379,11 +402,12 @@ export async function createPhoneOrder(knex, input) {
     menuItemIds.length
       ? knex("menu_item_addons").whereIn("menu_item_id", menuItemIds)
       : [],
+    knex("deals").where({ restaurant_id: effectiveMenuRestId, is_active: true }),
   ]);
 
   const settings = await knex("restaurant_settings").where({ restaurant_id: targetRestaurantId }).first();
 
-  const { lines, unmatched, outOfStock } = matchMenuLines(menu, parsedItems, variants, addons, itemAddons);
+  const { lines, unmatched, outOfStock } = matchMenuLines(menu, parsedItems, variants, addons, itemAddons, deals);
 
   if (outOfStock.length > 0) {
     const err = new Error(`Item "${outOfStock.join(", ")}" is currently out of order / out of stock.`);

@@ -133,8 +133,20 @@ export function buildRestaurantVoiceKnowledge({
     lines.push("");
     lines.push("## Active Deals and Promotions");
     for (const d of deals) {
-      lines.push(`- ${d.name}: $${Number(d.price).toFixed(2)}${d.description ? ` — ${d.description}` : ""}`);
+      const orig =
+        d.original_price && Number(d.original_price) > Number(d.price)
+          ? ` (Original: $${Number(d.original_price).toFixed(2)})`
+          : "";
+      lines.push(
+        `- **${d.name}**: $${Number(d.price).toFixed(2)}${orig}${
+          d.description ? ` — Details: ${d.description}` : ""
+        }`
+      );
     }
+  } else {
+    lines.push("");
+    lines.push("## Active Deals and Promotions");
+    lines.push("No active combo deals or special packages currently available.");
   }
 
   if (discounts?.length) {
@@ -206,17 +218,27 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - NEVER quote the base small price ($2.53) for Medium ($5.78) or Large ($7.95)!
 
 4. ONE-BY-ONE DETAIL COLLECTION & 1-TURN ADDRESS ACCEPTANCE:
-   - Ask for ONE detail at a time, then STOP and wait for the reply:
+   - Collect details in strict single-turn questions (ask 1 question, then STOP and wait for response):
      1. Items, Size & Flavor -> state price -> ask: "Would you like anything else, or may I take your delivery details?" -> WAIT.
-     2. Name -> ask: "May I have your name please?" -> WAIT.
-     3. Address -> ask: "What is your delivery address?" -> ACCEPT whatever address/area/landmark caller states on the VERY FIRST try ("Got your address, [Address]"). NEVER ask again or ask for house numbers if a location is given! -> WAIT.
+     2. Name -> ask: "May I have your full name please?" -> Listen carefully and accurately record whatever name the caller speaks (e.g. Tufail Khan, Zain, Bilal, etc.). Acknowledge: "Thank you, [Name]!" -> WAIT.
+     3. Address -> ask: "What is your complete delivery address?" -> ACCEPT and record the ENTIRE address/sector/street/area/colony/landmark/city the caller states on the VERY FIRST try without truncating or asking again (e.g., "Got your address: [Complete Address]"). -> WAIT.
      4. Email -> ask: "May I have your email for the receipt?" -> If given, note it; if declined/skipped, say "No problem!" and proceed without any fake email. -> WAIT.
-     5. Phone -> ask: "And what is your contact phone number?" -> WAIT.
+     5. Phone -> ask: "And what is your contact phone number?" -> Note down the phone number -> WAIT.
    - Payment is standard Cash on Delivery (COD) — do NOT ask caller how they will pay.
 
 5. SINGLE FINAL ORDER SUMMARY BEFORE ENDING:
-   - Before ending, state ONE complete summary:
-     "Here is your order summary: [Qty] [Size] [Flavor] [Item Name] for $[Price]. For [Customer Name], delivery to [Address], phone [Phone Number]. Total bill is $[Total Bill], payable by Cash on Delivery upon arrival. Your order is confirmed!"
+   - Before ending the call, state ONE complete summary clearly:
+     "Here is your order summary: [Qty] [Size] [Flavor] [Item Name] for $[Price]. For [Customer Full Name], delivery to [Complete Delivery Address], phone [Phone Number]. Total bill is $[Total Bill], payable by Cash on Delivery upon arrival. Your order is confirmed!"
+
+6. DEALS, PROMOTIONS & OFFERS (ACCURATE DESCRIPTION & CHOICES):
+   - ONLY quote deals or discount codes if they are explicitly listed in the "Active Deals and Promotions" or "Coupon Codes" section below.
+   - When explaining any deal to the customer, state its name, exact price, and faithfully explain its description (including what items are included, any special discounts like student off, or choices offered).
+   - If the deal description offers a choice (for example: "Choice of 1 Zinger Burger OR 1 Zinger Shawarma"):
+     * Explain the choices clearly to the caller.
+     * If the caller orders the deal without specifying their choice, ask: "Which option would you prefer in your deal: [Option A] or [Option B]?"
+     * Once selected, confirm the choice and deal price immediately.
+   - If no deals or coupons are active, or if caller asks for deals when none are listed, state: "Currently we do not have any special combo deals or discount codes, but you can order any item from our regular menu."
+   - NEVER invent or hallucinate fake deals, combos, or discounts!
 
 ${knowledge}`;
 }

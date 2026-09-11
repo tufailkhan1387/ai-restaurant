@@ -1110,17 +1110,25 @@ export default function OrderDetail() {
                   <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Email Address</p>
                   <p className="font-semibold text-xs text-foreground flex items-center gap-1.5 pt-0.5 truncate">
                     <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    {order.customer_email || "customer@gmail.com"}
+                    {order.customer_email ? (
+                      order.customer_email
+                    ) : (
+                      <span className="text-muted-foreground font-normal italic">None</span>
+                    )}
                   </p>
                   <div className="pt-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
-                      onClick={() => copyText("Email", order.customer_email || "customer@gmail.com")}
-                    >
-                      <Copy className="h-3 w-3 mr-1" /> Copy
-                    </Button>
+                    {order.customer_email ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+                        onClick={() => copyText("Email", order.customer_email || "")}
+                      >
+                        <Copy className="h-3 w-3 mr-1" /> Copy
+                      </Button>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">Not provided</span>
+                    )}
                   </div>
                 </div>
               </div>

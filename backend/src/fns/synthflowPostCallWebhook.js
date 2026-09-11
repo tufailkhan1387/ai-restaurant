@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getKnex } from "../db.js";
 import { createPhoneOrder, parseOrderItemsText } from "../lib/phoneOrderService.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
+import { parseTranscriptIntoTurns } from "./synthflowSyncCalls.js";
 
 function truthyYes(v) {
   if (v == null) return false;
@@ -290,6 +291,53 @@ export async function synthflowPostCallWebhook(req, res) {
       callRow = created;
     }
 
+    // Save conversation turns into conversations table
+    if (callRow?.id && transcript) {
+      try {
+        const turns = parseTranscriptIntoTurns(transcript);
+        if (turns.length > 0) {
+          await knex("conversations").where({ call_id: callRow.id }).del();
+          await knex("conversations").insert(
+            turns.map((t) => ({
+              call_id: callRow.id,
+              speaker: t.speaker,
+              message: t.message,
+              timestamp: new Date().toISOString(),
+            }))
+          );
+        }
+      } catch (convErr) {
+        console.warn("Could not insert conversations for call:", convErr.message);
+      }
+    }
+
+    // Also link any existing order by same caller phone for this restaurant
+    if (callRow?.id && callerPhone !== "Unknown" && restaurant?.id) {
+      try {
+        const recentOrderByPhone = await knex("orders")
+          .where({ restaurant_id: restaurant.id, customer_phone: callerPhone })
+          .whereNull("call_id")
+          .orderBy("created_at", "desc")
+          .first();
+        if (recentOrderByPhone) {
+          const currentAiData = recentOrderByPhone.ai_extracted_data || {};
+          await knex("orders").where({ id: recentOrderByPhone.id }).update({
+            call_id: callRow.id,
+            ai_extracted_data: {
+              ...currentAiData,
+              synthflow_call_id: synthflowCallId,
+              recording_url: recordingUrl || currentAiData.recording_url,
+              transcript: transcript || currentAiData.transcript,
+              call_summary: callNotes || currentAiData.call_summary,
+              provider: "synthflow",
+            },
+          });
+        }
+      } catch (linkErr) {
+        console.warn("Could not auto-link recent order by phone:", linkErr.message);
+      }
+    }
+
     const fields = extractSynthflowFields(payload);
     const orderPlaced = truthyYes(fields.order_placed);
     const items = parseOrderItemsText(fields.order_items);
@@ -306,12 +354,26 @@ export async function synthflowPostCallWebhook(req, res) {
       });
     }
 
-    // Idempotency: one order per Synthflow call
+    // Idempotency: one order per Synthflow call - update recording & transcript if exists
     if (synthflowCallId) {
       const existing = await knex("orders")
         .whereRaw("ai_extracted_data->>'synthflow_call_id' = ?", [synthflowCallId])
         .first();
       if (existing) {
+        const currentAiData = existing.ai_extracted_data || {};
+        const updatedAiData = {
+          ...currentAiData,
+          synthflow_call_id: synthflowCallId,
+          recording_url: recordingUrl || currentAiData.recording_url,
+          transcript: transcript || currentAiData.transcript,
+          call_summary: callNotes || currentAiData.call_summary,
+          provider: "synthflow",
+        };
+        await knex("orders").where({ id: existing.id }).update({
+          call_id: callRow?.id || existing.call_id,
+          ai_extracted_data: updatedAiData,
+        });
+
         return res.json({
           success: true,
           call_id: callRow?.id,

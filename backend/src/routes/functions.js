@@ -22,6 +22,7 @@ import {
 import { restaurantCreateSynthflowAgent } from "../fns/restaurantCreateSynthflowAgent.js";
 import { syncRestaurantMenuToSynthflow } from "../fns/syncRestaurantMenuToSynthflow.js";
 import { synthflowPostCallWebhook } from "../fns/synthflowPostCallWebhook.js";
+import { synthflowSyncCalls } from "../fns/synthflowSyncCalls.js";
 
 const router = Router();
 
@@ -31,6 +32,8 @@ const PUBLIC_HANDLERS = {
   "ai-order-status": aiOrderStatus,
   "elevenlabs-conversation-webhook": elevenlabsConversationWebhook,
   "synthflow-post-call-webhook": synthflowPostCallWebhook,
+  "synthflow-sync-calls": synthflowSyncCalls,
+  "synthflow-sync-call": synthflowSyncCalls,
 };
 
 const AUTH_HANDLERS = {

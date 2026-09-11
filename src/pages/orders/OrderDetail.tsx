@@ -59,7 +59,8 @@ import {
 } from "@/lib/restaurant";
 import { OrderFulfillmentTimeline } from "@/components/orders/OrderFulfillmentTimeline";
 import { OrderCallRecording, CallData, ConversationTurn } from "@/components/orders/OrderCallRecording";
-import { resolveMediaUrl } from "@/lib/apiBase";
+import { resolveMediaUrl, getApiBase } from "@/lib/apiBase";
+import { getToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { getOrderStatusLabel, formatDate } from "@/i18n/formatters";
@@ -571,7 +572,7 @@ export default function OrderDetail() {
           setConversations([]);
         }
       } else {
-        setConversations([]);
+      setConversations([]);
       }
     } catch (e: any) {
       console.error("Order load error:", e);
@@ -580,6 +581,34 @@ export default function OrderDetail() {
       setLoading(false);
     }
   }, [id]);
+
+  const handleSyncCall = useCallback(async () => {
+    try {
+      setCallLoading(true);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const t = getToken();
+      if (t) headers.Authorization = `Bearer ${t}`;
+
+      const res = await fetch(`${getApiBase()}/api/functions/synthflow-sync-calls`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          order_id: id,
+          restaurant_id: order?.restaurant_id,
+        }),
+      });
+
+      if (res.ok) {
+        toast({ title: "Call audio and transcript synced successfully!" });
+      }
+      await load();
+    } catch (err: any) {
+      console.warn("Sync calls error:", err);
+      await load();
+    } finally {
+      setCallLoading(false);
+    }
+  }, [id, order?.restaurant_id, load, toast]);
 
   useEffect(() => {
     void load();
@@ -714,6 +743,21 @@ export default function OrderDetail() {
               {t("orders:liveTrackPage", "Live Track Page")}
             </Link>
           </Button>
+
+          {(call?.recording_url || order.ai_extracted_data?.recording_url || order.source === "phone" || order.source === "call") && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-2 text-xs font-semibold bg-orange-50/80 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-900/60 shadow-xs hover:bg-orange-100 dark:hover:bg-orange-900/60"
+              onClick={() => {
+                const el = document.getElementById("order-call-recording-section");
+                el?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              <PhoneCall className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+              Call Audio & Transcript
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1304,7 +1348,7 @@ export default function OrderDetail() {
         orderSource={order.source}
         aiExtractedData={order.ai_extracted_data}
         loading={callLoading}
-        onRefresh={load}
+        onRefresh={handleSyncCall}
       />
 
       {/* Interactive Receipt Preview Modal */}

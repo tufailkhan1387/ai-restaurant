@@ -219,7 +219,10 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       greeting_message: greeting,
       llm: body.llm || "gpt-4.1-Mini",
       language: lang,
-      voice_speed: 0.88,
+      voice_speed: 0.85,
+      min_words_to_interrupt: 1,
+      interruption_fade_out: 1,
+      send_user_idle_reminders: false,
       ...(voiceId ? { voice_id: voiceId } : {}),
     };
 

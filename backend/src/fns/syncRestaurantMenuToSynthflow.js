@@ -43,7 +43,10 @@ export async function syncRestaurantMenuToSynthflow(req, res) {
       agent: {
         prompt,
         greeting_message: greeting,
-        voice_speed: 0.88,
+        voice_speed: 0.85,
+        min_words_to_interrupt: 1,
+        interruption_fade_out: 1,
+        send_user_idle_reminders: false,
       },
     });
 

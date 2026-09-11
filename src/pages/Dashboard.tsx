@@ -21,7 +21,9 @@ import {
   BarChart3,
   Activity,
   Clock,
+  List,
 } from "lucide-react";
+import { format, subDays, startOfDay, eachDayOfInterval, isSameDay, parseISO } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,8 @@ import {
   PieChart,
   Pie,
   Cell,
+  AreaChart,
+  Area,
 } from "recharts";
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -601,6 +605,282 @@ function SuperAdminDashboard({ firstName }: { firstName: string }) {
 /* ════════════════════════════════════════════════════════════
    RESTAURANT DASHBOARD
    ════════════════════════════════════════════════════════════ */
+/* ─── Restaurant Order Overview Chart (Main Area) ───────────── */
+type OrderGraphPeriod = "7d" | "14d" | "30d";
+type ChartViewMode = "both" | "orders" | "sales";
+
+function RestaurantOrderOverviewChart({
+  orders,
+  currency,
+}: {
+  orders: RecentOrderRow[];
+  currency?: string;
+}) {
+  const { t } = useTranslation(["dashboard", "orders", "common", "reports"]);
+  const [period, setPeriod] = useState<OrderGraphPeriod>("14d");
+  const [viewMode, setViewMode] = useState<ChartViewMode>("both");
+
+  const daysCount = period === "7d" ? 7 : period === "14d" ? 14 : 30;
+
+  const { chartData, totalPeriodOrders, totalPeriodRevenue, avgDailyOrders } = useMemo(() => {
+    const end = new Date();
+    const start = startOfDay(subDays(end, daysCount - 1));
+    const intervalDays = eachDayOfInterval({ start, end });
+
+    let orderSum = 0;
+    let revSum = 0;
+
+    const data = intervalDays.map((day) => {
+      const dayOrders = orders.filter((o) => {
+        if (!o.created_at) return false;
+        try {
+          const dt = typeof o.created_at === "string" ? parseISO(o.created_at) : new Date(o.created_at);
+          return isSameDay(dt, day);
+        } catch {
+          return false;
+        }
+      });
+
+      const orderCount = dayOrders.length;
+      const revenue = dayOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+
+      orderSum += orderCount;
+      revSum += revenue;
+
+      return {
+        date: format(day, "yyyy-MM-dd"),
+        label: format(day, daysCount > 14 ? "d MMM" : "EEE d"),
+        orders: orderCount,
+        revenue,
+      };
+    });
+
+    const avg = daysCount > 0 ? (orderSum / daysCount).toFixed(1) : "0";
+
+    return {
+      chartData: data,
+      totalPeriodOrders: orderSum,
+      totalPeriodRevenue: revSum,
+      avgDailyOrders: avg,
+    };
+  }, [orders, daysCount]);
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const d = payload[0].payload;
+      return (
+        <div className="rounded-xl border border-border/80 bg-popover/95 p-3 shadow-xl backdrop-blur-md text-xs space-y-1.5 min-w-[150px] animate-in fade-in-0 zoom-in-95">
+          <div className="border-b border-border/50 pb-1 font-semibold text-foreground">
+            {formatDate(d.date, { weekday: "short", day: "numeric", month: "short" })}
+          </div>
+          <div className="space-y-1.5 pt-0.5">
+            {(viewMode === "both" || viewMode === "orders") && (
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-orange-500" />
+                  {t("orders:title", "Orders")}:
+                </span>
+                <span className="font-bold text-orange-500 tabular-nums">{d.orders}</span>
+              </div>
+            )}
+            {(viewMode === "both" || viewMode === "sales") && (
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  {t("reports:totalSales", "Sales")}:
+                </span>
+                <span className="font-bold text-emerald-500 tabular-nums">{formatCurrency(d.revenue, currency)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Top Filter & Summary Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border/40">
+        {/* Dynamic Period Stats Pills */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-700 dark:text-orange-400 font-medium">
+            <span className="h-2 w-2 rounded-full bg-orange-500" />
+            <span>
+              <strong className="font-bold text-orange-600 dark:text-orange-300">{totalPeriodOrders}</strong>{" "}
+              {t("orders:orders", "orders")}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-medium">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span>
+              <strong className="font-bold text-emerald-600 dark:text-emerald-300">
+                {formatCurrency(totalPeriodRevenue, currency)}
+              </strong>{" "}
+              {t("reports:totalSales", "sales")}
+            </span>
+          </div>
+
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/60 border border-border/50 text-muted-foreground text-[11px]">
+            <span>Avg: <strong className="text-foreground">{avgDailyOrders}</strong> / day</span>
+          </div>
+        </div>
+
+        {/* View Toggle & Period Switcher Controls */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          {/* Mode Switcher */}
+          <div className="flex items-center rounded-lg bg-muted/60 p-0.5 border border-border/50 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setViewMode("both")}
+              className={cn(
+                "px-2 py-0.5 font-medium rounded-md transition-all",
+                viewMode === "both"
+                  ? "bg-background text-foreground shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t("common:all", "Both")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("orders")}
+              className={cn(
+                "px-2 py-0.5 font-medium rounded-md transition-all",
+                viewMode === "orders"
+                  ? "bg-orange-500 text-white shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t("orders:title", "Orders")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("sales")}
+              className={cn(
+                "px-2 py-0.5 font-medium rounded-md transition-all",
+                viewMode === "sales"
+                  ? "bg-emerald-600 text-white shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t("reports:totalSales", "Sales")}
+            </button>
+          </div>
+
+          {/* Period Filter (7D, 14D, 30D) */}
+          <div className="flex items-center rounded-lg bg-muted/80 p-0.5 border border-border/60">
+            {(["7d", "14d", "30d"] as OrderGraphPeriod[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPeriod(p)}
+                className={cn(
+                  "px-2.5 py-0.5 text-[11px] font-bold uppercase rounded-md transition-all",
+                  period === p
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Chart Canvas with Dual or Single Y-Axis */}
+      <div className="h-52 w-full pt-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 10, right: viewMode === "both" ? 15 : 10, left: -20, bottom: 0 }}>
+            <defs>
+              <linearGradient id="orderAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f97316" stopOpacity={0.45} />
+                <stop offset="100%" stopColor="#f97316" stopOpacity={0.02} />
+              </linearGradient>
+              <linearGradient id="revenueAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+                <stop offset="100%" stopColor="#10b981" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border)/0.5)" />
+            <XAxis
+              dataKey="label"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10, fontWeight: 500 }}
+              dy={6}
+            />
+
+            {/* Orders Left Axis */}
+            {(viewMode === "both" || viewMode === "orders") && (
+              <YAxis
+                yAxisId="orders"
+                orientation="left"
+                axisLine={false}
+                tickLine={false}
+                allowDecimals={false}
+                domain={[0, (dataMax: number) => Math.max(dataMax + 1, 4)]}
+                tick={{ fill: "#ea580c", fontSize: 10, fontWeight: 600 }}
+                width={28}
+              />
+            )}
+
+            {/* Sales Right Axis */}
+            {(viewMode === "both" || viewMode === "sales") && (
+              <YAxis
+                yAxisId="revenue"
+                orientation={viewMode === "sales" ? "left" : "right"}
+                axisLine={false}
+                tickLine={false}
+                domain={[0, (dataMax: number) => Math.max(Math.ceil(dataMax * 1.15 / 50) * 50, 50)]}
+                tick={{ fill: "#059669", fontSize: 10, fontWeight: 600 }}
+                tickFormatter={(v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v}`)}
+                width={36}
+              />
+            )}
+
+            <RechartsTooltip content={<CustomTooltip />} />
+
+            {(viewMode === "both" || viewMode === "orders") && (
+              <Area
+                yAxisId="orders"
+                type="monotone"
+                dataKey="orders"
+                stroke="#f97316"
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: "#f97316", strokeWidth: 1, stroke: "#fff" }}
+                activeDot={{ r: 5, strokeWidth: 2 }}
+                fill="url(#orderAreaGrad)"
+                animationDuration={600}
+              />
+            )}
+
+            {(viewMode === "both" || viewMode === "sales") && (
+              <Area
+                yAxisId="revenue"
+                type="monotone"
+                dataKey="revenue"
+                stroke="#10b981"
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: "#10b981", strokeWidth: 1, stroke: "#fff" }}
+                activeDot={{ r: 5, strokeWidth: 2 }}
+                fill="url(#revenueAreaGrad)"
+                animationDuration={600}
+              />
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   RESTAURANT DASHBOARD
+   ════════════════════════════════════════════════════════════ */
 function RestaurantDashboard({ firstName }: { firstName: string }) {
   const { t, i18n } = useTranslation(["dashboard", "sidebar", "common", "orders", "reports"]);
   const { restaurantId, activeRestaurant, restaurants } = useActiveRestaurant();
@@ -685,7 +965,7 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
         q = q.in("restaurant_id", familyBranchIds);
       }
 
-      const { data } = await q.order("created_at", { ascending: false }).limit(10);
+      const { data } = await q.order("created_at", { ascending: false }).limit(100);
       return (data || []) as RecentOrderRow[];
     },
     refetchInterval: 15000,
@@ -756,184 +1036,143 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-        <div className="xl:col-span-8 space-y-5">
-          {/* Restaurant status */}
-          <Card className="rounded-xl border-border/80 shadow-sm overflow-hidden">
-            <CardContent className="p-0">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-l-4 border-l-status-available bg-card px-5 py-4">
-                <div className="min-w-0 space-y-1">
-                  <h3 className="text-lg font-bold tracking-tight">{restaurantInfo?.name || "Restaurant"}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {restaurantInfo?.is_active ? t("orders:acceptingOrders", "Accepting orders") : t("menu:unavailable", "Currently closed")}
-                  </p>
-                </div>
-                <Badge className="shrink-0 rounded-md bg-status-available/12 text-status-available border border-status-available/25 hover:bg-status-available/12">
-                  ● {t("dashboard:statusLive", "Live")}
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Unified Sales & Revenue Overview */}
-          <Card className="rounded-xl border-border/80 shadow-sm overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border/40">
-              <div>
-                <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
-                  <DollarSign className="h-4 w-4 text-primary" />
-                  {t("dashboard:revenueOverview", "Sales & Revenue Overview")}
-                </CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {t("dashboard:salesAndRevenueDesc", "Key sales metrics and order channels breakdown")}
+      <div className="space-y-5">
+        {/* Restaurant status */}
+        <Card className="rounded-xl border-border/80 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-l-4 border-l-status-available bg-card px-5 py-4">
+              <div className="min-w-0 space-y-1">
+                <h3 className="text-lg font-bold tracking-tight">{restaurantInfo?.name || "Restaurant"}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {restaurantInfo?.is_active ? t("orders:acceptingOrders", "Accepting orders") : t("menu:unavailable", "Currently closed")}
                 </p>
               </div>
-            </CardHeader>
-            <CardContent className="p-5 space-y-5">
-              {/* Primary KPI Metrics */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-border/70 bg-gradient-to-br from-emerald-500/5 to-card p-4 transition-all hover:border-emerald-500/30">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {t("reports:totalSales", "Total Sales")}
-                    </p>
-                    <div className="rounded-lg p-2 bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-                      <DollarSign className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-foreground">
-                    {earningsLoading ? "…" : formatCurrency(earningsSummary?.total_sales ?? 0)}
-                  </p>
-                </div>
+              <Badge className="shrink-0 rounded-md bg-status-available/12 text-status-available border border-status-available/25 hover:bg-status-available/12">
+                ● {t("dashboard:statusLive", "Live")}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
 
-                <div className="rounded-xl border border-border/70 bg-gradient-to-br from-orange-500/5 to-card p-4 transition-all hover:border-orange-500/30">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {t("reports:totalOrders", "Total Orders")}
-                    </p>
-                    <div className="rounded-lg p-2 bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400">
-                      <ShoppingBag className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-foreground">
-                    {earningsLoading ? "…" : formatNumber(earningsSummary?.total_orders ?? 0)}
+        {/* Unified Sales & Revenue Overview */}
+        <Card className="rounded-xl border-border/80 shadow-sm overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border/40">
+            <div>
+              <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-primary" />
+                {t("dashboard:revenueOverview", "Sales & Revenue Overview")}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t("dashboard:salesAndRevenueDesc", "Key sales metrics and order channels breakdown")}
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="p-5 space-y-5">
+            {/* Primary KPI Metrics */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-xl border border-border/70 bg-gradient-to-br from-emerald-500/5 to-card p-4 transition-all hover:border-emerald-500/30">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {t("reports:totalSales", "Total Sales")}
                   </p>
-                </div>
-
-                <div className="rounded-xl border border-border/70 bg-gradient-to-br from-sky-500/5 to-card p-4 transition-all hover:border-sky-500/30">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {t("reports:colRestaurantEarnings", "Restaurant Earnings")}
-                    </p>
-                    <div className="rounded-lg p-2 bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400">
-                      <Store className="h-4 w-4" />
-                    </div>
+                  <div className="rounded-lg p-2 bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                    <DollarSign className="h-4 w-4" />
                   </div>
-                  <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-emerald-600 dark:text-emerald-400">
-                    {earningsLoading ? "…" : formatCurrency(earningsSummary?.total_restaurant_earning ?? 0)}
-                  </p>
                 </div>
-
-                <div className="rounded-xl border border-border/70 bg-gradient-to-br from-amber-500/5 to-card p-4 transition-all hover:border-amber-500/30">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {t("reports:colAdminEarnings", "Admin Earnings")}
-                    </p>
-                    <div className="rounded-lg p-2 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
-                      <Tag className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-amber-600 dark:text-amber-400">
-                    {earningsLoading ? "…" : formatCurrency(earningsSummary?.total_admin_earning ?? 0)}
-                  </p>
-                </div>
+                <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-foreground">
+                  {earningsLoading ? "…" : formatCurrency(earningsSummary?.total_sales ?? 0)}
+                </p>
               </div>
 
-              {/* Order Channels Breakdown */}
-              <div className="pt-3 border-t border-border/60">
-                <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
-                  {t("dashboard:orderChannels", "Order Channels")}
+              <div className="rounded-xl border border-border/70 bg-gradient-to-br from-orange-500/5 to-card p-4 transition-all hover:border-orange-500/30">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {t("reports:totalOrders", "Total Orders")}
+                  </p>
+                  <div className="rounded-lg p-2 bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400">
+                    <ShoppingBag className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-foreground">
+                  {earningsLoading ? "…" : formatNumber(earningsSummary?.total_orders ?? 0)}
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {sourceBreakdown.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <div key={item.label} className="flex items-center gap-3 rounded-xl border border-border/70 bg-gradient-to-br from-muted/30 to-card p-3.5 transition-colors hover:border-primary/25">
-                        <div className={cn("rounded-lg p-2", item.tone)}>
-                          <Icon className="h-4 w-4" aria-hidden />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p>
-                          <p className="text-lg font-extrabold tabular-nums tracking-tight text-foreground">{formatNumber(Number(item.value))}</p>
-                        </div>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-gradient-to-br from-sky-500/5 to-card p-4 transition-all hover:border-sky-500/30">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {t("reports:colRestaurantEarnings", "Restaurant Earnings")}
+                  </p>
+                  <div className="rounded-lg p-2 bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400">
+                    <Store className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-emerald-600 dark:text-emerald-400">
+                  {earningsLoading ? "…" : formatCurrency(earningsSummary?.total_restaurant_earning ?? 0)}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-gradient-to-br from-amber-500/5 to-card p-4 transition-all hover:border-amber-500/30">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {t("reports:colAdminEarnings", "Admin Earnings")}
+                  </p>
+                  <div className="rounded-lg p-2 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+                    <Tag className="h-4 w-4" />
+                  </div>
+                </div>
+                <p className="text-2xl font-extrabold tabular-nums tracking-tight mt-1 text-amber-600 dark:text-amber-400">
+                  {earningsLoading ? "…" : formatCurrency(earningsSummary?.total_admin_earning ?? 0)}
+                </p>
+              </div>
+            </div>
+
+            {/* Order Channels Breakdown */}
+            <div className="pt-3 border-t border-border/60">
+              <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
+                {t("dashboard:orderChannels", "Order Channels")}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {sourceBreakdown.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} className="flex items-center gap-3 rounded-xl border border-border/70 bg-gradient-to-br from-muted/30 to-card p-3.5 transition-colors hover:border-primary/25">
+                      <div className={cn("rounded-lg p-2", item.tone)}>
+                        <Icon className="h-4 w-4" aria-hidden />
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p>
+                        <p className="text-lg font-extrabold tabular-nums tracking-tight text-foreground">{formatNumber(Number(item.value))}</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Order History — right column */}
-        <div className="xl:col-span-4">
-          <Card className="rounded-xl border-border/80 shadow-sm h-full">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
-              <CardTitle className="text-base font-bold tracking-tight">{t("orders:title", "Order History")}</CardTitle>
-              <Button asChild variant="outline" size="sm" className="h-8 rounded-lg gap-1.5 border-border/80">
-                <Link to="/orders">
-                  <Filter className="h-3.5 w-3.5" aria-hidden />
-                  {t("common:filter", "Filter")}
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {ordersLoading && restaurantId ? (
-                <div className="space-y-3">
-                  {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
-                </div>
-              ) : recentOrders && recentOrders.length > 0 ? (
-                <ul className="space-y-1 max-h-[640px] overflow-y-auto custom-scrollbar -mx-1 px-1">
-                  {recentOrders.map((o) => (
-                    <li key={o.id}>
-                      <Link to={`/orders/${o.id}`} className="flex items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-muted/70">
-                        <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm font-bold", avatarTone(o.customer_name || o.order_number))}>
-                          {(o.customer_name || "?").charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-foreground truncate">{o.customer_name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{o.order_number}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-bold tabular-nums text-foreground">{formatCurrency(Number(o.total_amount))}</p>
-                          <p className="text-[11px] text-muted-foreground whitespace-nowrap">
-                            {formatDate(o.created_at, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short", year: "numeric" })}
-                          </p>
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-4 py-12 text-center">
-                  <ShoppingBag className="h-8 w-8 text-muted-foreground mb-3" aria-hidden />
-                  <p className="font-medium text-foreground text-sm">
-                    {restaurantId ? t("orders:noOrdersFound", "No recent orders yet") : t("reports:selectRestaurant", "Pick a restaurant context")}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground max-w-[220px]">
-                    {restaurantId
-                      ? t("ordering:emptyCartPrompt", "New orders will show up here as customers check out.")
-                      : t("superAdmin:manageConfiguration", "Resolve an active restaurant to load order history.")}
-                  </p>
-                  {restaurantId && (
-                    <Button asChild className="mt-4 rounded-lg" size="sm">
-                      <Link to="/orders">{t("dashboard:viewAllOrders", "Go to orders")}</Link>
-                    </Button>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        {/* Orders & Sales Trend Area Chart */}
+        <Card className="rounded-xl border-border/80 shadow-sm overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border/40">
+            <div>
+              <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                {t("dashboard:ordersTrend", "Orders & Sales Trend")}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t("dashboard:salesToday", "Daily order volume and completed sales performance")}
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4 pb-3">
+            {ordersLoading && restaurantId ? (
+              <Skeleton className="h-48 w-full rounded-lg" />
+            ) : (
+              <RestaurantOrderOverviewChart orders={recentOrders || []} />
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

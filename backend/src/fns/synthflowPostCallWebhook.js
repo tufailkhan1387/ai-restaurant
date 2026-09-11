@@ -72,6 +72,7 @@ export function extractSynthflowFields(payload) {
   const aliases = {
     customer_name: ["customer_name", "name", "user_name", "full_name"],
     customer_phone: ["customer_phone", "phone", "phone_number", "caller_phone"],
+    customer_email: ["customer_email", "email", "email_address", "user_email"],
     delivery_address: ["delivery_address", "address", "shipping_address"],
     order_items: ["order_items", "items", "ordered_items", "food_items"],
     coupon_code: ["coupon_code", "promo_code", "discount_code", "coupon"],
@@ -309,6 +310,7 @@ export async function synthflowPostCallWebhook(req, res) {
       restaurantId: restaurant.id,
       customer_name: fields.customer_name,
       customer_phone: phone,
+      customer_email: emptyish(fields.customer_email) ? null : fields.customer_email,
       delivery_address: fields.delivery_address,
       delivery_notes: notesRaw,
       items,

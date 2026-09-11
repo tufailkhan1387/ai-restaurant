@@ -122,7 +122,7 @@ export function OrderReceipt({ order, items, restaurantName, isPrintOnly = false
                 </span>
               </div>
               {item.notes && (
-                <p className="text-[11px] text-zinc-600 italic pl-10 pt-0.5">
+                <p className="text-[11px] text-zinc-600 italic pl-8 pt-0.5">
                   ↳ {item.notes}
                 </p>
               )}

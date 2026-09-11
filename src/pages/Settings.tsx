@@ -3,9 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
 import { GeneralSettings } from "@/components/settings/GeneralSettings";
 import { NotificationSettings } from "@/components/settings/NotificationSettings";
-import { IntegrationSettings } from "@/components/settings/IntegrationSettings";
 import { SecuritySettings } from "@/components/settings/SecuritySettings";
-import { AgentKnowledge } from "@/components/settings/AgentKnowledge";
 import { UserManagement } from "@/components/settings/UserManagement";
 
 export default function Settings() {
@@ -24,8 +22,6 @@ export default function Settings() {
           <TabsTrigger value="general">{t("settings:tabGeneral", "General")}</TabsTrigger>
           <TabsTrigger value="notifications">{t("settings:tabNotifications", "Notifications")}</TabsTrigger>
           {isManagement && <TabsTrigger value="users">{t("settings:tabUserManagement", "Users")}</TabsTrigger>}
-          {isManagement && <TabsTrigger value="agent-knowledge">{t("sidebar:agents", "Agent Knowledge")}</TabsTrigger>}
-          <TabsTrigger value="integrations">{t("settings:tabIntegrations", "Integrations")}</TabsTrigger>
           {isManagement && <TabsTrigger value="security">{t("settings:tabSecurity", "Security")}</TabsTrigger>}
         </TabsList>
 
@@ -42,16 +38,6 @@ export default function Settings() {
             <UserManagement />
           </TabsContent>
         )}
-
-        {isManagement && (
-          <TabsContent value="agent-knowledge" className="space-y-6">
-            <AgentKnowledge />
-          </TabsContent>
-        )}
-
-        <TabsContent value="integrations" className="space-y-6">
-          <IntegrationSettings />
-        </TabsContent>
 
         {isManagement && (
           <TabsContent value="security" className="space-y-6">

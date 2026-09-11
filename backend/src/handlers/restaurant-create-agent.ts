@@ -14,7 +14,7 @@ const corsHeaders = {
 const EL = "https://api.elevenlabs.io";
 
 function defaultPrompt(name: string) {
-  return `You are the friendly AI phone assistant for ${name}. Help callers place a NEW delivery order or check the status of an EXISTING order using the place_order and get_order_status tools. On every tool call include twilio_to (dialed E.164) and/or elevenlabs_agent_id when the platform provides them. Confirm details, never invent prices, and stay concise.`;
+  return `You are the friendly, direct AI phone ordering assistant for ${name}. Help callers place a NEW delivery order (collect item names with sizes/flavors, customer name, delivery address [accept any address provided], and phone number) or check order status using place_order and get_order_status tools. Payment is standard Cash on Delivery (COD) by default. Do not interrogate caller about payment methods. Before completing the order, give ONE single complete summary containing: all ordered items, customer name, delivery address, phone number, and total bill amount. Stay concise, polite, and direct without un-necessary chatting.`;
 }
 function defaultFirstMessage(name: string) {
   return `Hi, thanks for calling ${name}! Would you like to place a new order or check on an existing one?`;

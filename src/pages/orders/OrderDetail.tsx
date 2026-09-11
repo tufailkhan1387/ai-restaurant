@@ -58,6 +58,8 @@ import {
   OrderStatus,
 } from "@/lib/restaurant";
 import { OrderFulfillmentTimeline } from "@/components/orders/OrderFulfillmentTimeline";
+import { OrderCallRecording, CallData, ConversationTurn } from "@/components/orders/OrderCallRecording";
+import { resolveMediaUrl } from "@/lib/apiBase";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { getOrderStatusLabel, formatDate } from "@/i18n/formatters";
@@ -90,6 +92,7 @@ type OrderRow = {
   total_amount: number;
   driver_id: string | null;
   call_id: string | null;
+  ai_extracted_data?: any;
   assigned_at: string | null;
   verified_at: string | null;
   delivered_at: string | null;
@@ -108,6 +111,7 @@ type OrderItemRow = {
   notes: string | null;
   menu_item_id?: string | null;
   image_url?: string | null;
+  menu_item_price?: number | null;
 };
 
 type HistoryRow = {
@@ -135,22 +139,163 @@ function fmtWhen(iso: string | null | undefined): string {
     });
 }
 
+function parseItemDisplay(rawName: string, itemNotes?: string | null) {
+  let name = (rawName || "").trim();
+  let size: string | null = null;
+  let flavor: string | null = null;
+  let modifier: string | null = null;
+  let cleanNotes = (itemNotes || "").trim();
+
+  // Extract Flavor from notes if formatted as "Flavor: XYZ"
+  if (cleanNotes) {
+    const flavorMatch = cleanNotes.match(/flavor:\s*([^,\n;]+)/i);
+    if (flavorMatch) {
+      flavor = flavorMatch[1].trim();
+      cleanNotes = cleanNotes.replace(flavorMatch[0], "").trim();
+      cleanNotes = cleanNotes.replace(/^[,;\s]+|[,;\s]+$/g, "");
+    }
+    const sizeMatch = cleanNotes.match(/size:\s*([^,\n;]+)/i);
+    if (sizeMatch) {
+      size = sizeMatch[1].trim();
+      cleanNotes = cleanNotes.replace(sizeMatch[0], "").trim();
+      cleanNotes = cleanNotes.replace(/^[,;\s]+|[,;\s]+$/g, "");
+    }
+  }
+
+  // 1. Match parentheses details e.g. "Malai Boti Pizza (Large)", "(12 inch)", "(Spicy)"
+  const parenMatch = name.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    const inside = parenMatch[1].trim();
+    if (/^(small|medium|large|regular|xl|extra\s+large|\d+[\s-]*(inch|cm|pcs|pieces|slice|slices))/i.test(inside)) {
+      if (!size) size = inside;
+    } else {
+      if (!flavor) flavor = inside;
+    }
+    name = name.replace(parenMatch[0], "").trim();
+  }
+
+  // 2. Match plus add-ons e.g. "Pizza + Extra Cheese"
+  if (name.includes("+")) {
+    const parts = name.split("+");
+    name = parts[0].trim();
+    modifier = parts.slice(1).join(" + ").trim();
+  }
+
+  // 3. Match dash variants e.g. "Pizza - Fajita" or "Burger - Large"
+  if (name.includes(" - ")) {
+    const parts = name.split(" - ");
+    name = parts[0].trim();
+    const secondPart = parts.slice(1).join(" - ").trim();
+    if (/^(small|medium|large|regular|xl|extra\s+large|\d+[\s-]*(inch|cm|pcs|pieces))/i.test(secondPart)) {
+      if (!size) size = secondPart;
+    } else {
+      if (!flavor) flavor = secondPart;
+    }
+  }
+
+  // 4. Match leading size words e.g. "large Malai Boti pizza", "Small Pepperoni", "Medium Fries"
+  const sizePrefixMatch = name.match(/^(small|medium|large|regular|xl|extra\s+large|double|single|family|party|personal)\s+(.*)$/i);
+  if (sizePrefixMatch) {
+    if (!size) {
+      size = sizePrefixMatch[1].charAt(0).toUpperCase() + sizePrefixMatch[1].slice(1).toLowerCase();
+    }
+    name = sizePrefixMatch[2].trim();
+  }
+
+  // 5. Capitalize name words nicely
+  const formattedName = name
+    .split(/\s+/)
+    .map((w) => (w.length > 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ""))
+    .join(" ");
+
+  return {
+    displayName: formattedName || rawName,
+    size,
+    flavor,
+    modifier,
+    cleanNotes: cleanNotes || null,
+  };
+}
+
+const FALLBACK_FOOD_IMAGES: { regex: RegExp; url: string }[] = [
+  {
+    regex: /piz+a|margherita|pepperoni|fajita|calzone|slice/i,
+    url: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /burg|zinger|patty|sandwich|slider|bun|cheeseburg/i,
+    url: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /broast|fried chicken|crispy|wing|nugget|tender|drumstick|popcorn|chicken piece/i,
+    url: "https://images.unsplash.com/photo-1562967914-608f82629710?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /tikka|boti|malai|kebab|kabab|seekh|bbq|grill|tandoori|sajji|chops|steak|ribs|beef|mutton|meat/i,
+    url: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /biryani|pulao|rice|mandi|fried rice/i,
+    url: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /karahi|handi|curry|gravy|qorma|korma|nihari|haleem|daal|masala/i,
+    url: "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /pasta|spaghetti|macaroni|lasagna|penne|alfredo|fettuccine|ravioli/i,
+    url: "https://images.unsplash.com/photo-1621996346565-e3d5d6281290?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /roll|shawarma|wrap|paratha|naan|roti|puri|burrito|taco|quesadilla/i,
+    url: "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /fries|chips|potato|wedges|onion ring|loaded/i,
+    url: "https://images.unsplash.com/photo-1576107232684-1279f3908594?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /salad|green|healthy|diet|caesar|coleslaw|veggie|bowl/i,
+    url: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /soup|chowder|broth|corn soup/i,
+    url: "https://images.unsplash.com/photo-1547592166-23ac45744acd?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /fish|seafood|prawn|shrimp|salmon|calamari|crab/i,
+    url: "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /coke|pepsi|sprite|fanta|soda|juice|mojito|lemonade|water|drink|beverage|shake|smoothie|coffee|latte|cappuccino|tea|chai/i,
+    url: "https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /cake|sweet|dessert|ice cream|pastry|donut|doughnut|brownie|halwa|gulab|kheer|sundae|waffle|pancake|cookie/i,
+    url: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&auto=format&fit=crop&q=80",
+  },
+  {
+    regex: /deal|combo|feast|platter|box|family|bucket|bundle/i,
+    url: "https://images.unsplash.com/photo-1544025162-d76694265947?w=400&auto=format&fit=crop&q=80",
+  },
+];
+
+const DEFAULT_FOOD_IMAGE = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&auto=format&fit=crop&q=80";
+
 function getItemImage(name: string, imageUrl?: string | null): string {
-  if (imageUrl) return imageUrl;
-  const n = name.toLowerCase();
-  if (n.includes("pizza"))
-    return "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300&auto=format&fit=crop&q=80";
-  if (n.includes("burger"))
-    return "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&auto=format&fit=crop&q=80";
-  if (n.includes("pasta") || n.includes("spaghetti"))
-    return "https://images.unsplash.com/photo-1621996346565-e3d5d6281290?w=300&auto=format&fit=crop&q=80";
-  if (n.includes("salad"))
-    return "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=300&auto=format&fit=crop&q=80";
-  if (n.includes("fries") || n.includes("snack"))
-    return "https://images.unsplash.com/photo-1576107232684-1279f3908594?w=300&auto=format&fit=crop&q=80";
-  if (n.includes("drink") || n.includes("beverage") || n.includes("coke") || n.includes("juice") || n.includes("coffee"))
-    return "https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=300&auto=format&fit=crop&q=80";
-  return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&auto=format&fit=crop&q=80";
+  const resolved = resolveMediaUrl(imageUrl);
+  if (resolved) return resolved;
+
+  const n = (name || "").toLowerCase().trim();
+  if (!n) return DEFAULT_FOOD_IMAGE;
+
+  for (const entry of FALLBACK_FOOD_IMAGES) {
+    if (entry.regex.test(n)) {
+      return entry.url;
+    }
+  }
+
+  return DEFAULT_FOOD_IMAGE;
 }
 
 export default function OrderDetail() {
@@ -169,6 +314,9 @@ export default function OrderDetail() {
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [call, setCall] = useState<CallData | null>(null);
+  const [conversations, setConversations] = useState<ConversationTurn[]>([]);
+  const [callLoading, setCallLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -182,13 +330,12 @@ export default function OrderDetail() {
 
     try {
       // Parallel fetch for optimal load speed
-      const [oRes, itemsRes, historyRes, driversRes, restaurantsRes, menuItemsRes] = await Promise.all([
+      const [oRes, itemsRes, historyRes, driversRes, restaurantsRes] = await Promise.all([
         supabase.from("orders").select("*").eq("id", id).maybeSingle(),
         supabase.from("order_items").select("*").eq("order_id", id).order("created_at", { ascending: true }),
         supabase.from("order_status_history").select("*").eq("order_id", id).order("created_at", { ascending: true }),
         supabase.from("drivers").select("id, full_name, phone, status").limit(100),
         supabase.from("restaurants").select("id, name").limit(100),
-        supabase.from("menu_items").select("id, name, image_url").limit(200),
       ]);
 
       if (oRes.error) throw oRes.error;
@@ -210,24 +357,141 @@ export default function OrderDetail() {
       };
       setOrder(normalized);
 
-      // Build image lookup map from menu_items
-      const imageMap: Record<string, string> = {};
-      if (menuItemsRes.data) {
-        (menuItemsRes.data as any[]).forEach((m) => {
-          if (m.image_url) imageMap[m.id] = m.image_url;
-        });
+      // Fetch menu items and variants for this restaurant (or fallback to all)
+      let menuItemsQuery = supabase.from("menu_items").select("id, restaurant_id, name, price, image_url");
+      if (o.restaurant_id) {
+        menuItemsQuery = menuItemsQuery.eq("restaurant_id", o.restaurant_id);
       }
+      const [{ data: menuItemsData }, { data: variantsData }] = await Promise.all([
+        menuItemsQuery.limit(500),
+        supabase.from("menu_item_variants").select("id, menu_item_id, name, price, variant_type").limit(1000),
+      ]);
 
-      // Line items with images
+      const allMenuItems = (menuItemsData as any[]) || [];
+      const allVariants = (variantsData as any[]) || [];
+      const imageMapById: Record<string, string> = {};
+
+      allMenuItems.forEach((m) => {
+        if (m.id && m.image_url) {
+          const resolved = resolveMediaUrl(m.image_url) || m.image_url;
+          imageMapById[m.id] = resolved;
+          const cleanMName = String(m.name || "").toLowerCase().trim();
+          if (cleanMName && !imageMapById[cleanMName]) {
+            imageMapById[cleanMName] = resolved;
+          }
+        }
+      });
+
+      // Line items with images and automatic price resolution
       if (itemsRes.data) {
+        const rawItems = itemsRes.data as any[];
         setItems(
-          (itemsRes.data as any[]).map((r) => ({
-            ...r,
-            quantity: Number(r.quantity ?? 1),
-            unit_price: Number(r.unit_price ?? 0),
-            line_total: Number(r.line_total ?? 0),
-            image_url: r.menu_item_id ? imageMap[r.menu_item_id] : null,
-          }))
+          rawItems.map((r) => {
+            const rawName = String(r.item_name || "").trim();
+            const rawQty = Math.max(1, Number(r.quantity ?? 1));
+            const rawUnitPrice = Number(r.unit_price ?? 0);
+            const rawLineTotal = Number(r.line_total ?? 0);
+
+            // Clean item name for matching
+            const cleanLower = rawName
+              .toLowerCase()
+              .replace(/^(small|medium|large|regular|xl|extra\s+large)\s+/i, "")
+              .replace(/\([^)]+\)/g, "")
+              .replace(/\+.*$/, "")
+              .replace(/-.*$/, "")
+              .trim();
+
+            // Find matching menu item by ID or Name
+            let matchedMenuItem = r.menu_item_id ? allMenuItems.find((m) => m.id === r.menu_item_id) : null;
+            if (!matchedMenuItem && cleanLower) {
+              matchedMenuItem = allMenuItems.find((m) => {
+                const mName = String(m.name || "").toLowerCase().trim();
+                return mName === cleanLower || cleanLower.includes(mName) || mName.includes(cleanLower);
+              });
+            }
+
+            // Find matching variant if available
+            let matchedVariant = null;
+            if (matchedMenuItem) {
+              matchedVariant = allVariants.find((v) => {
+                if (v.menu_item_id !== matchedMenuItem?.id) return false;
+                const vName = String(v.name || "").toLowerCase().trim();
+                return rawName.toLowerCase().includes(vName) || (r.notes && String(r.notes).toLowerCase().includes(vName));
+              });
+            }
+
+            // High reliability image resolution
+            const resolvedImg =
+              (r.menu_item_id && imageMapById[r.menu_item_id]) ||
+              (matchedMenuItem?.id && imageMapById[matchedMenuItem.id]) ||
+              (matchedMenuItem?.image_url ? resolveMediaUrl(matchedMenuItem.image_url) : null) ||
+              resolveMediaUrl(r.image_url) ||
+              imageMapById[cleanLower] ||
+              getItemImage(rawName, null);
+
+            let quantity = rawQty;
+            let unitPrice = rawUnitPrice;
+            let lineTotal = rawLineTotal;
+
+            // Mathematical integrity normalization:
+            // Ensure: unitPrice * quantity === lineTotal ALWAYS!
+            if (rawLineTotal > 0) {
+              if (rawUnitPrice > 0) {
+                // If unitPrice * rawQty exactly equals lineTotal
+                if (Math.abs(rawUnitPrice * rawQty - rawLineTotal) < 0.01) {
+                  quantity = rawQty;
+                  unitPrice = rawUnitPrice;
+                  lineTotal = rawLineTotal;
+                } else if (
+                  rawQty === 1 &&
+                  rawUnitPrice > 0 &&
+                  Math.abs(Math.round(rawLineTotal / rawUnitPrice) * rawUnitPrice - rawLineTotal) < 0.01 &&
+                  Math.round(rawLineTotal / rawUnitPrice) >= 2
+                ) {
+                  // Line total is an exact multiple of the unit price (e.g. $25.00 total is 2 x $12.50)
+                  quantity = Math.round(rawLineTotal / rawUnitPrice);
+                  unitPrice = rawUnitPrice;
+                  lineTotal = rawLineTotal;
+                } else {
+                  // The line total in the order is authoritative; recompute unit price per item
+                  quantity = rawQty;
+                  unitPrice = Number((rawLineTotal / rawQty).toFixed(2));
+                  lineTotal = rawLineTotal;
+                }
+              } else {
+                // Unit price missing, calculate from line total
+                quantity = rawQty;
+                unitPrice = Number((rawLineTotal / rawQty).toFixed(2));
+                lineTotal = rawLineTotal;
+              }
+            } else if (rawUnitPrice > 0) {
+              // Line total missing, calculate from unit price
+              quantity = rawQty;
+              unitPrice = rawUnitPrice;
+              lineTotal = Number((rawUnitPrice * rawQty).toFixed(2));
+            } else {
+              // Both missing: fallback to matched variant price or menu item price
+              const fallbackPrice = Number(matchedVariant?.price || matchedMenuItem?.price || 0);
+              if (fallbackPrice > 0) {
+                unitPrice = fallbackPrice;
+                lineTotal = Number((fallbackPrice * rawQty).toFixed(2));
+                quantity = rawQty;
+              } else if (rawItems.length === 1 && (normalized.subtotal > 0 || normalized.total_amount > 0)) {
+                lineTotal = normalized.subtotal || normalized.total_amount;
+                unitPrice = Number((lineTotal / rawQty).toFixed(2));
+                quantity = rawQty;
+              }
+            }
+
+            return {
+              ...r,
+              quantity,
+              unit_price: unitPrice,
+              line_total: lineTotal,
+              image_url: resolvedImg,
+              menu_item_price: matchedMenuItem?.price ? Number(matchedMenuItem.price) : null,
+            };
+          })
         );
       }
 
@@ -251,6 +515,63 @@ export default function OrderDetail() {
       const matchedRestaurant = allRestaurants.find((r) => r.id === o.restaurant_id);
       if (matchedRestaurant) {
         setRestaurantName(matchedRestaurant.name);
+      }
+
+      // Fetch linked call recording & transcript
+      let callData: CallData | null = null;
+      try {
+        if (o.call_id) {
+          const { data: cData } = await supabase.from("calls").select("*").eq("id", o.call_id).maybeSingle();
+          if (cData) callData = cData as CallData;
+        }
+
+        if (!callData && o.ai_extracted_data?.synthflow_call_id) {
+          const { data: cData } = await supabase
+            .from("calls")
+            .select("*")
+            .eq("synthflow_call_id", o.ai_extracted_data.synthflow_call_id)
+            .maybeSingle();
+          if (cData) callData = cData as CallData;
+        }
+
+        if (!callData && o.ai_extracted_data?.elevenlabs_conversation_id) {
+          const { data: cData } = await supabase
+            .from("calls")
+            .select("*")
+            .eq("elevenlabs_conversation_id", o.ai_extracted_data.elevenlabs_conversation_id)
+            .maybeSingle();
+          if (cData) callData = cData as CallData;
+        }
+
+        if (!callData && (o.source === "phone" || o.source === "call") && o.customer_phone) {
+          const { data: cData } = await supabase
+            .from("calls")
+            .select("*")
+            .eq("phone_number", o.customer_phone)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (cData) callData = cData as CallData;
+        }
+      } catch (callErr) {
+        console.warn("Could not fetch linked call for order:", callErr);
+      }
+      setCall(callData);
+
+      if (callData?.id) {
+        try {
+          const { data: convData } = await supabase
+            .from("conversations")
+            .select("*")
+            .eq("call_id", callData.id)
+            .order("timestamp", { ascending: true });
+          setConversations((convData as ConversationTurn[]) || []);
+        } catch (convErr) {
+          console.warn("Could not fetch conversations for call:", convErr);
+          setConversations([]);
+        }
+      } else {
+        setConversations([]);
       }
     } catch (e: any) {
       console.error("Order load error:", e);
@@ -592,62 +913,78 @@ export default function OrderDetail() {
               {/* Item Cards List */}
               <div className="space-y-3.5">
                 {items.map((it) => {
-                  const sizeMatch = it.item_name.match(/\(([^)]+)\)/);
-                  const addMatch = it.item_name.includes("+") ? it.item_name.split("+")[1] : null;
-                  let baseName = it.item_name;
-                  if (sizeMatch) baseName = baseName.replace(sizeMatch[0], "").trim();
-                  if (addMatch) baseName = baseName.split("+")[0].trim();
-
-                  const fallbackImg = getItemImage(it.item_name, it.image_url);
+                  const parsed = parseItemDisplay(it.item_name, it.notes);
+                  const fallbackImg = it.image_url || getItemImage(it.item_name, null);
+                  const qty = Math.max(1, Number(it.quantity || 1));
 
                   return (
                     <div
                       key={it.id}
-                      className="p-4 rounded-xl border border-border/60 bg-card hover:border-border transition-colors flex flex-col sm:flex-row sm:items-start gap-4 shadow-2xs"
+                      className="p-4 rounded-2xl border border-border/60 bg-card hover:border-border transition-all flex flex-col sm:flex-row sm:items-center gap-4 shadow-2xs group"
                     >
-                      {/* Food Thumbnail */}
-                      <img
-                        src={fallbackImg}
-                        alt={baseName}
-                        className="w-18 h-18 sm:w-20 sm:h-20 rounded-xl object-cover border border-border/50 shrink-0 bg-muted"
-                      />
+                      {/* Food Thumbnail with auto-fallback error handling */}
+                      <div className="relative w-20 h-20 sm:w-22 sm:h-22 rounded-xl overflow-hidden border border-border/50 shrink-0 bg-muted/60 shadow-2xs">
+                        <img
+                          src={fallbackImg}
+                          alt={parsed.displayName}
+                          loading="lazy"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            const backup = getItemImage(it.item_name, null);
+                            if (target.src !== backup) {
+                              target.src = backup;
+                            } else if (target.src !== DEFAULT_FOOD_IMAGE) {
+                              target.src = DEFAULT_FOOD_IMAGE;
+                            }
+                          }}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
+                      </div>
 
                       {/* Content details */}
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <h3 className="font-bold text-sm text-foreground leading-tight">{baseName}</h3>
-                            {sizeMatch && (
-                              <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                                {sizeMatch[1]}
-                              </p>
-                            )}
-                          </div>
-                          <span className="text-xs font-bold text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-md border border-border/40 shrink-0">
-                            Qty: {it.quantity}
-                          </span>
-                        </div>
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <h3 className="font-bold text-base text-foreground leading-snug">
+                              {parsed.displayName}
+                            </h3>
 
-                        {/* Modifiers / Addons */}
-                        <div className="space-y-1 pt-1">
-                          {addMatch && (
-                            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                              <Plus className="h-3 w-3" /> {addMatch.trim()}
-                            </p>
-                          )}
-                          {it.notes && (
-                            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" /> {it.notes}
-                            </p>
-                          )}
+                            {/* Badges / Flavors / Sizes / Modifiers row */}
+                            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                              {parsed.flavor && (
+                                <Badge variant="outline" className="text-[11px] font-semibold bg-amber-50/70 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/70">
+                                  Flavor: {parsed.flavor}
+                                </Badge>
+                              )}
+                              {parsed.size && (
+                                <Badge variant="outline" className="text-[11px] font-semibold bg-orange-50/70 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400 border-orange-200/70">
+                                  Size: {parsed.size}
+                                </Badge>
+                              )}
+                              {parsed.modifier && (
+                                <Badge variant="outline" className="text-[11px] font-semibold bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/70 flex items-center gap-1">
+                                  <Plus className="h-3 w-3" /> {parsed.modifier}
+                                </Badge>
+                              )}
+                              {parsed.cleanNotes && (
+                                <span className="text-xs text-muted-foreground italic flex items-center gap-1 bg-muted/40 px-2 py-0.5 rounded-md border border-border/30">
+                                  📝 {parsed.cleanNotes}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <span className="text-xs font-bold text-foreground bg-muted/80 px-3 py-1 rounded-lg border border-border/50 shrink-0">
+                            Qty: {qty}
+                          </span>
                         </div>
 
                         {/* Price Breakdown Footer */}
-                        <div className="flex items-baseline justify-between pt-2 border-t border-border/30">
-                          <span className="text-xs text-muted-foreground font-medium">
-                            {formatCurrency(it.unit_price)} each
+                        <div className="flex items-baseline justify-between pt-2 border-t border-border/40">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {formatCurrency(it.unit_price)} each × {qty}
                           </span>
-                          <span className="text-base font-extrabold text-foreground">
+                          <span className="text-base font-extrabold text-foreground tabular-nums">
                             {formatCurrency(it.line_total)}
                           </span>
                         </div>
@@ -959,6 +1296,16 @@ export default function OrderDetail() {
           </Card>
         </div>
       </div>
+
+      {/* 5. AI Voice Call Audio Recording & Full Transcript (Bottom / Last Section) */}
+      <OrderCallRecording
+        call={call}
+        conversations={conversations}
+        orderSource={order.source}
+        aiExtractedData={order.ai_extracted_data}
+        loading={callLoading}
+        onRefresh={load}
+      />
 
       {/* Interactive Receipt Preview Modal */}
       <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>

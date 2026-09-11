@@ -41,6 +41,12 @@ const ORDER_EXTRACTORS = [
     examples: ["+15551234567", "555-123-4567"],
   },
   {
+    kind: "OPEN_QUESTION",
+    identifier: "customer_email",
+    description: "What is the customer's email address if provided? (Optional, answer none if skipped or not provided)",
+    examples: ["customer@gmail.com", "none"],
+  },
+  {
     kind: "SINGLE_CHOICE",
     identifier: "fulfillment_type",
     description: "Did the customer choose delivery or pickup?",
@@ -49,8 +55,8 @@ const ORDER_EXTRACTORS = [
   {
     kind: "OPEN_QUESTION",
     identifier: "delivery_address",
-    description: "What is the delivery address? If pickup, answer Pickup.",
-    examples: ["123 Main Street Apt 4", "Pickup"],
+    description: "What is the full delivery address provided by the customer? Record whatever address description is stated (house/flat, street, area, colony, or landmark). If pickup, answer Pickup.",
+    examples: ["House 12, Street 4, Sector G-9, Islamabad", "Flat 302 Al-Rahim Heights", "Near Shell Pump, Main Road", "Pickup"],
   },
   {
     kind: "OPEN_QUESTION",
@@ -74,7 +80,7 @@ const ORDER_EXTRACTORS = [
   {
     kind: "SINGLE_CHOICE",
     identifier: "payment_method",
-    description: "How does the customer plan to pay?",
+    description: "Payment method (default is cash on delivery unless caller explicitly specifies card)",
     choices: ["cash", "card"],
   },
 ];

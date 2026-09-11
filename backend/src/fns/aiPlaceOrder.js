@@ -54,6 +54,7 @@ export async function aiPlaceOrder(req, res) {
       restaurantId,
       customer_name: body.customer_name,
       customer_phone: body.customer_phone,
+      customer_email: body.customer_email || body.email || null,
       delivery_address: body.delivery_address,
       delivery_notes: body.delivery_notes || body.notes || null,
       items: body.items,
@@ -82,7 +83,7 @@ export async function aiPlaceOrder(req, res) {
       tracking_code: order.tracking_code,
       total: totals.total,
       discount_amount: coupon.amount,
-      message: `Order ${order.order_number} placed successfully. Your tracking code is ${order.tracking_code}. Total is ${totals.total.toFixed(2)}.${couponNote}`,
+      message: `Order ${order.order_number} placed successfully. Tracking code: ${order.tracking_code}. Total bill is ${totals.total.toFixed(2)}. Payment will be Cash on Delivery upon arrival.${couponNote}`,
     });
   } catch (e) {
     console.error("❌ Order Error:", e);

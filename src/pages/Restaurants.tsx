@@ -642,11 +642,11 @@ export default function Restaurants() {
               <div>
                 <Label>Platform Commission (%)</Label>
                 <div className="flex items-center gap-2">
-                  <Input 
-                    type="number" 
-                    step="0.01" 
-                    value={form.commission_rate} 
-                    onChange={(e) => setForm({ ...form, commission_rate: parseFloat(e.target.value) || 0 })} 
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={form.commission_rate}
+                    onChange={(e) => setForm({ ...form, commission_rate: parseFloat(e.target.value) || 0 })}
                   />
                   <span className="text-muted-foreground">%</span>
                 </div>
@@ -655,22 +655,22 @@ export default function Restaurants() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t pt-3 mt-2">
                 <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="delivery" 
+                  <input
+                    type="checkbox"
+                    id="delivery"
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                    checked={form.allows_delivery} 
-                    onChange={(e) => setForm({ ...form, allows_delivery: e.target.checked })} 
+                    checked={form.allows_delivery}
+                    onChange={(e) => setForm({ ...form, allows_delivery: e.target.checked })}
                   />
                   <Label htmlFor="delivery" className="cursor-pointer text-sm font-medium">Allows Delivery</Label>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="pickup" 
+                  <input
+                    type="checkbox"
+                    id="pickup"
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                    checked={form.allows_pickup} 
-                    onChange={(e) => setForm({ ...form, allows_pickup: e.target.checked })} 
+                    checked={form.allows_pickup}
+                    onChange={(e) => setForm({ ...form, allows_pickup: e.target.checked })}
                   />
                   <Label htmlFor="pickup" className="cursor-pointer text-sm font-medium">Allows Self Pickup</Label>
                 </div>
@@ -798,7 +798,7 @@ export default function Restaurants() {
 
               <div className="border-t pt-3 mt-2 space-y-3">
                 <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <Bot className="h-4 w-4" /> AI agent (ElevenLabs)
+                  <Bot className="h-4 w-4" /> AI agent
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -908,7 +908,7 @@ export default function Restaurants() {
                         <code className="text-xs text-muted-foreground">/{r.slug}</code>
                       </TableCell>
                       <TableCell>
-                        <Badge 
+                        <Badge
                           variant={r.is_active ? "default" : "secondary"}
                           className={cn(r.is_active ? "bg-green-500/10 text-green-600 border-green-500/20" : "")}
                         >
@@ -953,11 +953,11 @@ export default function Restaurants() {
                           <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" onClick={() => openEdit(r)} title={t("common:edit", "Edit")}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            size="icon" 
-                            variant="ghost" 
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             className="h-8 w-8 rounded-full"
-                            onClick={() => toggleActive(r)} 
+                            onClick={() => toggleActive(r)}
                             title={r.is_active ? t("common:pause", "Pause") : t("common:resume", "Resume")}
                           >
                             {r.is_active ? <Pause className="h-4 w-4 text-orange-500" /> : <Play className="h-4 w-4 text-green-500" />}

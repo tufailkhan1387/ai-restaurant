@@ -53,6 +53,7 @@ interface MenuItemVariant {
   is_active: boolean;
   variant_type?: "size" | "flavor";
   parent_id?: string | null;
+  max_order_quantity?: number | null;
 }
 interface MenuAddon {
   id: string;
@@ -404,6 +405,8 @@ export default function Menu() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilterId, setCategoryFilterId] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [limitFilter, setLimitFilter] = useState("all");
+  const [flavorFilter, setFlavorFilter] = useState("all");
 
   const load = useCallback(async () => {
     if (!restaurantId) return;
@@ -467,12 +470,102 @@ export default function Menu() {
     return list;
   }, [displayedItems, categoryFilterId, statusFilter, searchQuery]);
 
+  const flattenedMaxOrderRows = useMemo(() => {
+    const rows: {
+      item: MenuItem;
+      flavor: string | null;
+      maxOrderQuantity: number | null;
+      key: string;
+    }[] = [];
+
+    for (const it of items) {
+      if (categoryFilterId !== 'all' && String(it.category_id) !== String(categoryFilterId)) {
+        continue;
+      }
+
+      const itemVars = itemVariants.filter((v) => v.menu_item_id === it.id);
+      const flavorVars = itemVars.filter((v) => v.variant_type !== 'size');
+      const uniqueFlavors = Array.from(new Set(flavorVars.map((f) => f.name.trim()))).filter(Boolean);
+
+      if (flavorFilter === 'with_flavors' && uniqueFlavors.length === 0) {
+        continue;
+      } else if (flavorFilter === 'without_flavors' && uniqueFlavors.length > 0) {
+        continue;
+      }
+
+      if (uniqueFlavors.length > 0) {
+        for (const flv of uniqueFlavors) {
+          const matchingVariants = flavorVars.filter((v) => v.name.trim() === flv);
+          const flvMaxOrder = matchingVariants.find((v) => v.max_order_quantity != null)?.max_order_quantity ?? null;
+
+          if (limitFilter === 'limited' && (flvMaxOrder == null || flvMaxOrder <= 0)) {
+            continue;
+          } else if (limitFilter === 'unlimited' && flvMaxOrder != null && flvMaxOrder > 0) {
+            continue;
+          }
+
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            const matchesItem =
+              it.name.toLowerCase().includes(q) ||
+              (it.description && it.description.toLowerCase().includes(q));
+            const matchesFlavor = flv.toLowerCase().includes(q);
+            if (!matchesItem && !matchesFlavor) {
+              continue;
+            }
+          }
+          rows.push({
+            item: it,
+            flavor: flv,
+            maxOrderQuantity: flvMaxOrder,
+            key: `${it.id}-flv-${flv}`,
+          });
+        }
+      } else {
+        const itemMaxOrder = it.max_order_quantity ?? null;
+
+        if (limitFilter === 'limited' && (itemMaxOrder == null || itemMaxOrder <= 0)) {
+          continue;
+        } else if (limitFilter === 'unlimited' && itemMaxOrder != null && itemMaxOrder > 0) {
+          continue;
+        }
+
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const matchesItem =
+            it.name.toLowerCase().includes(q) ||
+            (it.description && it.description.toLowerCase().includes(q));
+          if (!matchesItem) {
+            continue;
+          }
+        }
+        rows.push({
+          item: it,
+          flavor: null,
+          maxOrderQuantity: itemMaxOrder,
+          key: `${it.id}-standard`,
+        });
+      }
+    }
+
+    return rows;
+  }, [items, categoryFilterId, limitFilter, flavorFilter, searchQuery, itemVariants]);
+
   const hasActiveFilters = searchQuery !== "" || categoryFilterId !== "all" || statusFilter !== "all" || (isSuperAdmin && restaurantFilterId !== "all");
+
+  const hasActiveMaxOrderFilters = searchQuery !== "" || limitFilter !== "all" || flavorFilter !== "all" || (isSuperAdmin && restaurantFilterId !== "all");
 
   const clearFilters = () => {
     setSearchQuery("");
     setCategoryFilterId("all");
     setStatusFilter("all");
+    if (isSuperAdmin) setRestaurantFilterId("all");
+  };
+
+  const clearMaxOrderFilters = () => {
+    setSearchQuery("");
+    setLimitFilter("all");
+    setFlavorFilter("all");
     if (isSuperAdmin) setRestaurantFilterId("all");
   };
 
@@ -559,16 +652,23 @@ export default function Menu() {
   }, [restaurantId, activeRestaurantLoading, load]);
 
   useEffect(() => {
-    if (!isSuperAdmin || (!itemDialog && !addonDialog && !catDialog && !subCatDialog)) return;
+    if (!isSuperAdmin) return;
     void (async () => {
       const { data, error } = await supabase.from("restaurants").select("id, name").order("name");
       if (error) {
         console.error(error);
         return;
       }
-      setRestaurantPickerList((data as { id: string; name: string }[]) ?? []);
+      const list = (data as { id: string; name: string }[]) ?? [];
+      setAllRestaurants(list);
+      setRestaurantPickerList(list);
+      const map: Record<string, string> = {};
+      list.forEach((r) => {
+        map[r.id] = r.name;
+      });
+      setRestaurantMap(map);
     })();
-  }, [isSuperAdmin, itemDialog, addonDialog, catDialog, subCatDialog]);
+  }, [isSuperAdmin]);
 
   const beginEditItem = async (it: MenuItem) => {
     setEditItem(it);
@@ -656,6 +756,7 @@ export default function Menu() {
             is_active: f.is_active ?? true,
             variant_type: "flavor" as const,
             parent_id: resolvedParentId,
+            max_order_quantity: f.max_order_quantity ?? null,
           };
         });
 
@@ -673,6 +774,7 @@ export default function Menu() {
         is_active: f.is_active ?? true,
         variant_type: "flavor" as const,
         parent_id: null,
+        max_order_quantity: f.max_order_quantity ?? null,
       }));
 
       const { error: flvErr } = await supabase.from("menu_item_variants").insert(flavorRows);
@@ -955,23 +1057,47 @@ export default function Menu() {
     void triggerMenuSync();
   };
 
-  const saveMaxOrderQuantity = async (item: MenuItem, raw: string) => {
+  const saveMaxOrderQuantity = async (item: MenuItem, flavor: string | null, raw: string) => {
     const trimmed = raw.trim();
     const maxOrderQty = trimmed === "" ? null : Math.max(1, parseInt(trimmed, 10) || 1);
-    setSavingItemId(item.id);
-    const { error } = await supabase
-      .from("menu_items")
-      .update({ max_order_quantity: maxOrderQty })
-      .eq("id", item.id);
-    setSavingItemId(null);
-    if (error) {
-      toast({ variant: "destructive", title: "Failed", description: (error as any)?.message || "Failed to update max order quantity" });
-      return;
+
+    if (flavor) {
+      const saveKey = `${item.id}-flv-${flavor}`;
+      setSavingItemId(saveKey);
+      const { error } = await supabase
+        .from("menu_item_variants")
+        .update({ max_order_quantity: maxOrderQty })
+        .eq("menu_item_id", item.id)
+        .eq("name", flavor);
+      setSavingItemId(null);
+      if (error) {
+        toast({ variant: "destructive", title: "Failed", description: (error as any)?.message || "Failed to update max order quantity" });
+        return;
+      }
+      setItemVariants((prev) =>
+        prev.map((v) =>
+          v.menu_item_id === item.id && v.name.trim() === flavor.trim()
+            ? { ...v, max_order_quantity: maxOrderQty }
+            : v
+        )
+      );
+      toast({ title: `Max order updated for "${flavor}"` });
+    } else {
+      setSavingItemId(item.id);
+      const { error } = await supabase
+        .from("menu_items")
+        .update({ max_order_quantity: maxOrderQty })
+        .eq("id", item.id);
+      setSavingItemId(null);
+      if (error) {
+        toast({ variant: "destructive", title: "Failed", description: (error as any)?.message || "Failed to update max order quantity" });
+        return;
+      }
+      setItems((prev) =>
+        prev.map((row) => (row.id === item.id ? { ...row, max_order_quantity: maxOrderQty } : row))
+      );
+      toast({ title: `Max order updated for "${item.name}"` });
     }
-    setItems((prev) =>
-      prev.map((row) => (row.id === item.id ? { ...row, max_order_quantity: maxOrderQty } : row)),
-    );
-    toast({ title: "Max order updated" });
     void triggerMenuSync();
   };
 
@@ -1407,45 +1533,264 @@ export default function Menu() {
               ⚠️ {t("menu:selectRestaurantWarning", "To set and edit maximum order quantities, please select a specific restaurant using the filter dropdown above.")}
             </div>
           )}
-          <Card>
+          <Card className="border shadow-sm">
+            <CardHeader className="p-4 pb-3 border-b bg-card">
+              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                {/* Search input */}
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder={t("menu:searchMaxOrderPlaceholder", "Search by item or flavor name...")}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 h-9 text-sm bg-background"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filters */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Limit status filter */}
+                  <Select value={limitFilter} onValueChange={setLimitFilter}>
+                    <SelectTrigger className="w-[140px] h-9 text-sm">
+                      <SelectValue placeholder={t("common:limit", "Limit")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("common:allLimits", "All Limits")}</SelectItem>
+                      <SelectItem value="limited">{t("menu:limitedOnly", "Limited Only")}</SelectItem>
+                      <SelectItem value="unlimited">{t("menu:unlimitedOnly", "Unlimited")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Flavors filter */}
+                  <Select value={flavorFilter} onValueChange={setFlavorFilter}>
+                    <SelectTrigger className="w-[145px] h-9 text-sm">
+                      <SelectValue placeholder="Flavors" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Items</SelectItem>
+                      <SelectItem value="with_flavors">With Flavors</SelectItem>
+                      <SelectItem value="without_flavors">No Flavors</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Restaurants filter for Super Admin */}
+                  {isSuperAdmin && (
+                    <Select value={restaurantFilterId} onValueChange={setRestaurantFilterId}>
+                      <SelectTrigger className="w-[150px] h-9 text-sm">
+                        <SelectValue placeholder={t("superAdmin:restaurants", "Restaurants")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t("superAdmin:allRestaurants", "All Restaurants")}</SelectItem>
+                        {allRestaurants.map((r) => (
+                          <SelectItem key={r.id} value={String(r.id)}>
+                            {r.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  {/* Clear filters button */}
+                  {hasActiveMaxOrderFilters && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearMaxOrderFilters}
+                      className="h-9 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <FilterX className="h-3.5 w-3.5 mr-1" />
+                      {t("menu:clearFilters", "Clear filters")}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[480px]">
-                  <thead className="text-left bg-muted/50">
+                <table className="w-full text-sm min-w-[760px] border-collapse">
+                  <thead className="text-left bg-muted/40 text-muted-foreground border-b text-xs font-semibold uppercase tracking-wider">
                     <tr>
-                      <th className="p-3">{t("menu:itemName", "Item")}</th>
-                      <th className="p-3 whitespace-nowrap">{t("menu:maxOrderQuantity", "Max per order")}</th>
-                      <th className="p-3">{t("common:limit", "Limit")}</th>
+                      <th className="py-3 px-4 w-12 text-center">{t("menu:itemNumber", "ITEM #")}</th>
+                      <th className="py-3 px-4 min-w-[220px]">{t("menu:itemName", "ITEM NAME")}</th>
+                      <th className="py-3 px-4 min-w-[200px]">{t("menu:flavor", "FLAVOR")}</th>
+                      <th className="py-3 px-4 w-44 whitespace-nowrap">{t("menu:maxOrderQuantity", "MAX ORDER QUANTITY")}</th>
+                      <th className="py-3 px-4 w-32 whitespace-nowrap">{t("common:limit", "LIMIT STATUS")}</th>
+                      <th className="py-3 px-4 w-20 text-right">{t("common:actions", "ACTIONS")}</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {displayedItems.map((it) => (
-                      <tr key={it.id} className="border-t">
-                        <td className="p-3 font-medium">{it.name}</td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <Input
-                              key={`${it.id}-max-${it.max_order_quantity ?? "none"}`}
-                              type="number"
-                              min={1}
-                              className="w-28"
-                              placeholder={t("common:noLimit", "No limit")}
-                              defaultValue={it.max_order_quantity ?? ""}
-                              disabled={savingItemId === it.id || (isSuperAdmin && restaurantFilterId === 'all')}
-                              onBlur={(e) => void saveMaxOrderQuantity(it, e.target.value)}
-                            />
-                            {savingItemId === it.id ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
-                          </div>
-                        </td>
-                        <td className="p-3 text-muted-foreground">
-                          {it.max_order_quantity ? `${t("common:upTo", "Up to")} ${it.max_order_quantity}` : t("common:unlimited", "Unlimited")}
-                        </td>
-                      </tr>
-                    ))}
-                    {displayedItems.length === 0 && (
+                  <tbody className="divide-y divide-border/60">
+                    {flattenedMaxOrderRows.map(({ item: it, flavor, maxOrderQuantity, key }, idx) => {
+                      const thumbSrc = resolveMediaUrl(it.image_url);
+                      const categoryName = categories.find((c) => c.id === it.category_id)?.name || t("common:uncategorized", "Uncategorized");
+                      const subCategoryName = subCategories.find((sc) => sc.id === it.sub_category_id)?.name;
+                      const saveKey = flavor ? `${it.id}-flv-${flavor}` : it.id;
+
+                      return (
+                        <tr key={key} className="hover:bg-muted/30 transition-colors">
+                          {/* # */}
+                          <td className="py-3 px-4 align-middle text-center text-xs font-medium text-muted-foreground">
+                            <span className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-muted/50 border border-border/40 font-semibold text-xs">
+                              {idx + 1}
+                            </span>
+                          </td>
+
+                          {/* Item Info */}
+                          <td className="py-3 px-4 align-middle">
+                            <div className="flex items-center gap-3">
+                              {thumbSrc ? (
+                                <img
+                                  src={thumbSrc}
+                                  alt={it.name}
+                                  className="h-11 w-11 rounded-lg object-cover border bg-muted/20 shadow-2xs shrink-0"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                                  }}
+                                />
+                              ) : (
+                                <div className="h-11 w-11 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground shrink-0">
+                                  <UtensilsCrossed className="h-5 w-5 opacity-50" />
+                                </div>
+                              )}
+                              <div className="min-w-0 space-y-0.5">
+                                <Link
+                                  to={`/menu/items/${it.id}`}
+                                  className="font-bold text-foreground hover:text-primary hover:underline underline-offset-2 text-sm leading-tight line-clamp-1"
+                                >
+                                  {it.name}
+                                </Link>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="inline-block text-[11px] font-medium text-muted-foreground bg-muted/70 px-2 py-0.5 rounded">
+                                    {categoryName}
+                                  </span>
+                                  {subCategoryName && (
+                                    <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                                      • {subCategoryName}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Flavor */}
+                          <td className="py-3 px-4 align-middle">
+                            {flavor ? (
+                              <Badge
+                                variant="secondary"
+                                className="bg-amber-500/10 text-amber-900 dark:text-amber-300 border border-amber-500/25 font-semibold text-xs px-2.5 py-1 inline-flex items-center gap-1.5 shadow-2xs"
+                              >
+                                <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                                {flavor}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">— Standard</span>
+                            )}
+                          </td>
+
+                          {/* Max per order input */}
+                          <td className="py-3 px-4 align-middle">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                key={`${it.id}-${flavor ?? "standard"}-max-${maxOrderQuantity ?? "none"}`}
+                                type="number"
+                                min={1}
+                                className="w-32 h-9 text-sm font-semibold tabular-nums"
+                                placeholder={t("common:noLimit", "No limit")}
+                                defaultValue={maxOrderQuantity ?? ""}
+                                disabled={savingItemId === saveKey || (isSuperAdmin && restaurantFilterId === 'all')}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                onBlur={(e) => void saveMaxOrderQuantity(it, flavor, e.target.value)}
+                              />
+                              {savingItemId === saveKey && (
+                                <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Limit Status */}
+                          <td className="py-3 px-4 align-middle">
+                            {maxOrderQuantity ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-primary/10 text-primary border-primary/20 font-bold text-xs whitespace-nowrap"
+                              >
+                                {t("common:upTo", "Up to")} {maxOrderQuantity} / order
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="text-muted-foreground font-normal text-xs whitespace-nowrap"
+                              >
+                                {t("common:unlimited", "Unlimited")}
+                              </Badge>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3 px-4 align-middle text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 w-8 p-0 rounded-lg border-border/60 text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                                asChild
+                                title={t("common:view", "View details")}
+                              >
+                                <Link to={`/menu/items/${it.id}`}>
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Link>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 w-8 p-0 rounded-lg border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted"
+                                onClick={() => beginEditItem(it)}
+                                title={t("common:edit", "Edit")}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {flattenedMaxOrderRows.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="p-8 text-center text-muted-foreground">
-                          {t("menu:noItemsFound", "No menu items yet. Add items from the Items tab first.")}
+                        <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Gauge className="h-8 w-8 text-muted-foreground/50" />
+                            <p className="font-medium text-foreground">
+                              {hasActiveMaxOrderFilters
+                                ? "No menu items match your search or filter criteria."
+                                : t("menu:noItemsFound", "No menu items yet. Add items from the Items tab first.")}
+                            </p>
+                            {hasActiveMaxOrderFilters && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={clearMaxOrderFilters}
+                                className="mt-1 text-xs"
+                              >
+                                <FilterX className="h-3.5 w-3.5 mr-1" />
+                                {t("menu:clearFilters", "Clear filters")}
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )}

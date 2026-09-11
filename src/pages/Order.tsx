@@ -80,6 +80,14 @@ type Restaurant = { id: string; elevenlabs_agent_id?: string | null };
 type BranchOption = { id: string; name: string; address: string | null; phone: string | null; is_accepting_orders?: boolean };
 type WorkingHour = { day_of_week: number; open_time: string; close_time: string };
 
+type CartLine = {
+  kind: "item" | "deal";
+  refId: string;
+  name: string;
+  price: number;
+  quantity: number;
+};
+
 export default function Order() {
   const { t } = useTranslation(["ordering", "common", "deals", "menu", "orders"]);
   const navigate = useNavigate();
@@ -273,8 +281,8 @@ export default function Order() {
     if (!form.customer_name || !form.customer_phone || (fulfillmentType === "delivery" && !form.delivery_address)) {
       return toast.error("Name, phone and delivery details are required");
     }
-    if (settings && subtotal < Number(settings.min_order_amount || 0)) {
-      return toast.error(`Minimum order is ${formatCurrency(settings.min_order_amount, settings.currency)}`);
+    if (settings && Number(settings.min_order_amount || 0) > 0 && subtotal < Number(settings.min_order_amount)) {
+      return toast.error(`Minimum order amount is ${formatCurrency(settings.min_order_amount, settings.currency)}. Orders below this amount cannot be placed.`);
     }
     setSubmitting(true);
     try {

@@ -53,3 +53,13 @@ export function formatCurrency(amount: number | string | null | undefined, curre
     return `${currency} ${(n || 0).toFixed(2)}`;
   }
 }
+
+export function getCurrencySymbol(currency = "USD"): string {
+  try {
+    const parts = new Intl.NumberFormat(getActiveLocale(), { style: "currency", currency }).formatToParts(0);
+    const symbolPart = parts.find((p) => p.type === "currency");
+    return symbolPart ? symbolPart.value : currency;
+  } catch {
+    return "$";
+  }
+}

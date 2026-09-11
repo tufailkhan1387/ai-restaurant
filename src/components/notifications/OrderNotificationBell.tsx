@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Bell, BellRing, CheckCheck, ShoppingBag, Clock, ArrowRightLeft, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import {
+  Bell,
+  BellRing,
+  CheckCheck,
+  ShoppingBag,
+  Clock,
+  ArrowRightLeft,
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -10,9 +20,12 @@ import {
 } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getRingtoneUrl,
   loadNotificationPrefs,
+  saveNotificationPrefs,
   NotificationPrefs,
+  playNotificationSound,
+  startNotificationLoop,
+  stopNotificationLoop,
 } from "@/lib/notificationSound";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -20,7 +33,6 @@ import { formatCurrency } from "@/i18n/formatters";
 import { toast } from "@/hooks/use-toast";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
-
 import { useAuth } from "@/hooks/useAuth";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 
@@ -93,16 +105,22 @@ export function OrderNotificationBell() {
   const [notifications, setNotifications] = useState<OrderNotification[]>(() => loadStoredNotifications(restaurantId));
   const [ringing, setRinging] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [prefs, setPrefs] = useState<NotificationPrefs>(loadNotificationPrefs());
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [prefs, setPrefs] = useState<NotificationPrefs>(() => ({
+    ...loadNotificationPrefs(restaurantId),
+    ringtone: "classic-bell",
+  }));
   const knownIdsRef = useRef<Set<string>>(loadKnownIds(restaurantId));
   const prefsRef = useRef<NotificationPrefs>(prefs);
   prefsRef.current = prefs;
 
-  // Reload notifications & known IDs when restaurantId changes
+  // Reload notifications & known IDs & prefs when restaurantId changes
   useEffect(() => {
     setNotifications(loadStoredNotifications(restaurantId));
     knownIdsRef.current = loadKnownIds(restaurantId);
+    const updatedPrefs = { ...loadNotificationPrefs(restaurantId), ringtone: "classic-bell" as const };
+    setPrefs(updatedPrefs);
+    prefsRef.current = updatedPrefs;
+    stopNotificationLoop();
     setRinging(false);
   }, [restaurantId]);
 
@@ -113,57 +131,42 @@ export function OrderNotificationBell() {
     saveNotifications(notifications, restaurantId);
   }, [notifications, restaurantId]);
 
-  // Sync preferences across tabs / settings page
+  // Sync preferences across tabs
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<NotificationPrefs>;
-      setPrefs(ce.detail);
+      if (ce.detail) {
+        const updated = { ...ce.detail, ringtone: "classic-bell" as const };
+        setPrefs(updated);
+        prefsRef.current = updated;
+      }
     };
     window.addEventListener("notification-prefs-changed", handler);
     return () => window.removeEventListener("notification-prefs-changed", handler);
   }, []);
 
-  // Build audio element when ringtone changes
-  useEffect(() => {
+  const startRinging = useCallback(() => {
     if (isSuperAdmin) return;
-    const a = new Audio(getRingtoneUrl(prefs.ringtone));
-    a.loop = true;
-    a.volume = prefs.volume;
-    audioRef.current = a;
-    return () => {
-      a.pause();
-      audioRef.current = null;
-    };
-  }, [prefs.ringtone, prefs.volume, isSuperAdmin]);
+    const currentPrefs = prefsRef.current;
+    if (!currentPrefs.enabled) return;
 
-  const startRinging = useCallback(async () => {
-    if (isSuperAdmin) return; // Super admin never rings
     setRinging(true);
-    const a = audioRef.current;
-    if (!a) return;
-    try {
-      a.currentTime = 0;
-      await a.play();
-    } catch {
-      // Autoplay policy may block before user interaction
+    if (currentPrefs.repeatUntilAcknowledged ?? true) {
+      startNotificationLoop("classic-bell", currentPrefs.volume, 2800);
+    } else {
+      playNotificationSound("classic-bell", currentPrefs.volume);
     }
   }, [isSuperAdmin]);
 
   const stopRinging = useCallback(() => {
     setRinging(false);
-    const a = audioRef.current;
-    if (a) {
-      a.pause();
-      a.currentTime = 0;
-    }
+    stopNotificationLoop();
   }, []);
 
   const addNotification = useCallback(
     (order: Omit<OrderNotification, "seen">, triggerAlert = true) => {
-      // Super admin should not receive order alerts or bell rings
       if (isSuperAdmin) return;
 
-      // Ensure order belongs to current active restaurant
       if (order.restaurant_id && restaurantId && order.restaurant_id !== restaurantId) {
         return;
       }
@@ -229,7 +232,7 @@ export function OrderNotificationBell() {
     };
   }, [isSuperAdmin, restaurantId]);
 
-  // 2. Periodic background poll - checks both persistent notifications table and orders
+  // 2. Periodic background poll
   useEffect(() => {
     if (isSuperAdmin || !restaurantId) return;
 
@@ -243,7 +246,7 @@ export function OrderNotificationBell() {
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
-        // 2a. Fetch in-app notifications from backend (transfer alerts, etc.)
+        // Fetch in-app notifications
         try {
           const notifResp = await fetch(
             `${getApiBase()}/api/notifications?restaurant_id=${encodeURIComponent(restaurantId)}&limit=20`,
@@ -285,10 +288,10 @@ export function OrderNotificationBell() {
             }
           }
         } catch {
-          // ignore notification api error
+          // ignore
         }
 
-        // 2b. Fetch latest orders
+        // Fetch latest orders
         const { data, error } = await supabase
           .from("orders")
           .select("id, restaurant_id, order_number, customer_name, total_amount, created_at, transfer_status, pending_transfer_to_restaurant_id")
@@ -307,7 +310,6 @@ export function OrderNotificationBell() {
           return;
         }
 
-        // Check for new orders that were not in knownIds
         for (const o of orderList) {
           if (!knownIdsRef.current.has(o.id)) {
             const isTransfer = o.pending_transfer_to_restaurant_id === restaurantId && o.transfer_status === "pending";
@@ -375,7 +377,7 @@ export function OrderNotificationBell() {
 
   const clearAll = () => {
     setNotifications([]);
-    saveNotifications([]);
+    saveNotifications([], restaurantId);
   };
 
   const goToOrder = (notif: OrderNotification) => {
@@ -408,15 +410,22 @@ export function OrderNotificationBell() {
           variant="ghost"
           size="icon"
           className={cn(
-            "relative rounded-xl transition-all duration-300",
-            unreadCount > 0
-              ? "bg-primary/10 text-primary hover:bg-primary/20"
-              : "hover:bg-accent text-muted-foreground hover:text-foreground"
+            "relative rounded-xl transition-all duration-300 h-10 w-10",
+            ringing
+              ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30 ring-4 ring-primary/20 animate-pulse"
+              : unreadCount > 0
+                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                : "hover:bg-accent text-muted-foreground hover:text-foreground"
           )}
           aria-label={t("orders:notifications", "Notifications")}
         >
+          {/* Animated waves when ringing */}
+          {ringing && (
+            <span className="absolute inset-0 rounded-xl bg-primary/30 animate-ping pointer-events-none" />
+          )}
+
           {ringing ? (
-            <BellRing className="h-5 w-5 text-primary animate-bounce" />
+            <BellRing className="h-5 w-5 animate-bounce" />
           ) : (
             <Bell className={cn("h-5 w-5 transition-transform", unreadCount > 0 && "scale-105 text-primary")} />
           )}
@@ -425,7 +434,7 @@ export function OrderNotificationBell() {
           {unreadCount > 0 && (
             <Badge
               className={cn(
-                "absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center p-0 text-[10px] font-bold shadow-md",
+                "absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center p-0 text-[10px] font-extrabold shadow-md",
                 "bg-destructive text-destructive-foreground animate-in zoom-in-50",
                 ringing && "animate-pulse"
               )}
@@ -437,16 +446,26 @@ export function OrderNotificationBell() {
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-88 sm:w-96 p-0 shadow-2xl rounded-2xl border border-border overflow-hidden" sideOffset={8}>
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/40 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <ShoppingBag className="h-4 w-4" />
+        {/* Clean Header */}
+        <div className="px-4 py-3.5 border-b border-border flex items-center justify-between bg-muted/40 backdrop-blur-sm">
+          <div className="flex items-center gap-2.5">
+            <div className={cn(
+              "h-8 w-8 rounded-xl flex items-center justify-center font-bold transition-all",
+              ringing ? "bg-primary text-primary-foreground animate-pulse" : "bg-primary/10 text-primary"
+            )}>
+              {ringing ? <BellRing className="h-4 w-4" /> : <ShoppingBag className="h-4 w-4" />}
             </div>
             <div>
-              <p className="font-bold text-sm text-foreground">
-                {t("orders:notifications", "Order Notifications")}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="font-bold text-sm text-foreground">
+                  {t("orders:notifications", "Order Notifications")}
+                </p>
+                {ringing && (
+                  <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4 animate-pulse">
+                    Alert
+                  </Badge>
+                )}
+              </div>
               <p className="text-[11px] text-muted-foreground">
                 {unreadCount > 0
                   ? `${unreadCount} ${t("orders:unread", "unread")} order${unreadCount > 1 ? "s" : ""}`
@@ -603,19 +622,20 @@ export function OrderNotificationBell() {
           )}
         </div>
 
-        {/* Footer */}
+        {/* Clean Footer */}
         {notifications.length > 0 && (
           <div className="p-2 border-t border-border bg-muted/20">
             <Button
               variant="ghost"
               size="sm"
-              className="w-full text-xs h-8 text-primary hover:text-primary hover:bg-primary/10 font-semibold"
+              className="w-full text-xs h-8 text-primary hover:text-primary hover:bg-primary/10 font-bold justify-between"
               onClick={() => {
                 setPopoverOpen(false);
                 navigate("/orders");
               }}
             >
-              {t("orders:viewAllOrders", "View all orders")} →
+              <span>{t("orders:viewAllOrders", "View all orders")}</span>
+              <ChevronRight className="h-3.5 w-3.5" />
             </Button>
           </div>
         )}

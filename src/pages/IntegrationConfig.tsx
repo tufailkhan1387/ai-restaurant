@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Phone, Mic, Mail, Save, Eye, EyeOff, ExternalLink } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { getApiBase } from "@/lib/apiBase";
 
 export default function IntegrationConfig() {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
@@ -140,7 +141,7 @@ export default function IntegrationConfig() {
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Post-call Webhook URL</Label>
                   <code className="block p-2 bg-background rounded text-xs break-all border">
-                    {window.location.origin.replace(':8080', ':3001').replace(':5173', ':3001')}/api/functions/elevenlabs-conversation-webhook
+                    {getApiBase()}/api/functions/elevenlabs-conversation-webhook
                   </code>
                   <p className="text-xs text-muted-foreground">
                     Set this in ElevenLabs "Webhooks" or "Post-call Webhook" to sync transcripts and orders to this dashboard.
@@ -153,13 +154,13 @@ export default function IntegrationConfig() {
                     <div>
                       <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Place Order Tool</p>
                       <code className="block p-2 bg-background rounded text-xs break-all border">
-                        {window.location.origin.replace(':8080', ':3001').replace(':5173', ':3001')}/api/functions/ai-place-order
+                        {getApiBase()}/api/functions/ai-place-order
                       </code>
                     </div>
                     <div>
                       <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Order Status Tool</p>
                       <code className="block p-2 bg-background rounded text-xs break-all border">
-                        {window.location.origin.replace(':8080', ':3001').replace(':5173', ':3001')}/api/functions/ai-order-status
+                        {getApiBase()}/api/functions/ai-order-status
                       </code>
                     </div>
                   </div>
@@ -281,7 +282,7 @@ export default function IntegrationConfig() {
                     in ElevenLabs to the URL below:
                   </p>
                   <code className="block p-2 bg-background rounded text-xs break-all border">
-                    {window.location.origin.replace(':8080', ':3001').replace(':5173', ':3001')}/api/functions/elevenlabs-conversation-webhook
+                    {getApiBase()}/api/functions/elevenlabs-conversation-webhook
                   </code>
                 </div>
               </div>

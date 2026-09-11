@@ -36,6 +36,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { getApiBase, resolveMediaUrl } from "@/lib/apiBase";
+import { getCurrencySymbol } from "@/lib/restaurant";
 
 /** Row from `restaurants` (includes fields set when the tenant was created in super admin). */
 interface Restaurant {
@@ -778,39 +779,75 @@ export default function RestaurantSettings() {
         <CardContent className="space-y-6 pt-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>{t("restaurantSettings:currencyIso", "Currency (ISO)")}</Label>
+              <Label htmlFor="rs-currency">{t("restaurantSettings:currencyIso", "Currency (ISO)")}</Label>
               <Input
+                id="rs-currency"
                 value={String(s.currency || "USD")}
                 onChange={(e) => setS({ ...s, currency: e.target.value.toUpperCase() })}
                 maxLength={8}
+                placeholder="USD"
               />
             </div>
             <div className="space-y-2">
-              <Label>{t("restaurantSettings:taxRate", "Tax rate (%)")}</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={Number(s.tax_rate) || 0}
-                onChange={(e) => setS({ ...s, tax_rate: parseFloat(e.target.value) || 0 })}
-              />
+              <Label htmlFor="rs-tax">{t("restaurantSettings:taxRate", "Tax rate (%)")}</Label>
+              <div className="relative">
+                <Input
+                  id="rs-tax"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={Number(s.tax_rate) || 0}
+                  onChange={(e) => setS({ ...s, tax_rate: parseFloat(e.target.value) || 0 })}
+                  className="pr-8"
+                  placeholder="0.00"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground select-none">
+                  %
+                </span>
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>{t("restaurantSettings:deliveryFee", "Delivery fee")}</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={Number(s.delivery_fee) || 0}
-                onChange={(e) => setS({ ...s, delivery_fee: parseFloat(e.target.value) || 0 })}
-              />
+              <Label htmlFor="rs-delivery-fee">
+                {t("restaurantSettings:deliveryFee", "Delivery fee")} ({getCurrencySymbol(String(s.currency || "USD"))})
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground select-none">
+                  {getCurrencySymbol(String(s.currency || "USD"))}
+                </span>
+                <Input
+                  id="rs-delivery-fee"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={Number(s.delivery_fee) || 0}
+                  onChange={(e) => setS({ ...s, delivery_fee: parseFloat(e.target.value) || 0 })}
+                  className="pl-8"
+                  placeholder="0.00"
+                />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>{t("restaurantSettings:minimumOrder", "Minimum order")}</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={Number(s.min_order_amount) || 0}
-                onChange={(e) => setS({ ...s, min_order_amount: parseFloat(e.target.value) || 0 })}
-              />
+              <Label htmlFor="rs-min-order">
+                {t("restaurantSettings:minimumOrder", "Minimum order amount")} ({getCurrencySymbol(String(s.currency || "USD"))})
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground select-none">
+                  {getCurrencySymbol(String(s.currency || "USD"))}
+                </span>
+                <Input
+                  id="rs-min-order"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={Number(s.min_order_amount) || 0}
+                  onChange={(e) => setS({ ...s, min_order_amount: parseFloat(e.target.value) || 0 })}
+                  className="pl-8"
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("restaurantSettings:minimumOrderDesc", "Orders below this amount cannot be placed by customers.")}
+              </p>
             </div>
           </div>
           <Button variant="secondary" onClick={saveSettings}>
@@ -1127,7 +1164,7 @@ export default function RestaurantSettings() {
         <CardHeader className="border-b bg-muted/30 pb-4">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot className="h-5 w-5" />
-            {t("restaurantSettings:aiAgentTitle", "AI Agent (Language, Voice & Prompt)")}
+            {t("restaurantSettings:aiAgentTitle", "AI agent (Synthflow)")}
           </CardTitle>
           <CardDescription>
             {t("restaurantSettings:aiAgentDesc", "Configure language, voice greeting, and custom system prompt for your AI phone agent.")}
@@ -1198,12 +1235,6 @@ export default function RestaurantSettings() {
               <RefreshCw className={`h-4 w-4 mr-2 ${synthflowSyncBusy ? "animate-spin" : ""}`} />
               {synthflowSyncBusy ? t("restaurantSettings:syncing", "Syncing…") : t("restaurantSettings:syncMenuCoupons", "Sync Menu & Coupons")}
             </Button>
-            {r.elevenlabs_agent_id ? (
-              <Button onClick={createOrUpdateAgent} disabled={agentBusy} variant="secondary">
-                <Sparkles className="h-4 w-4 mr-2" />
-                {agentBusy ? "Updating ElevenLabs…" : "Update ElevenLabs Agent"}
-              </Button>
-            ) : null}
           </div>
 
           {r.synthflow_agent_id ? (

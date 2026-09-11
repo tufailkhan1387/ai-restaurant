@@ -119,11 +119,11 @@ jobs:
             exit 1
           fi
 
-          if "$PM2" describe airestaurant-api >/dev/null 2>&1; then
-            "$PM2" restart airestaurant-api --update-env
-          else
-            "$PM2" start src/index.js --name airestaurant-api
-          fi
+          # Release port 3033 if held by an orphan process and restart clean
+          fuser -k 3033/tcp 2>/dev/null || true
+          pkill -f 'src/index.js' 2>/dev/null || true
+          "$PM2" delete airestaurant-api 2>/dev/null || true
+          "$PM2" start src/index.js --name airestaurant-api --update-env
           "$PM2" save
           "$PM2" status airestaurant-api
           echo "Backend deploy finished at $(date -u)"

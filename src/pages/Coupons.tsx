@@ -15,6 +15,7 @@ import { formatCurrency } from "@/lib/restaurant";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { DealsImportButton } from "@/components/deals/DealsImportButton";
+import { syncRestaurantMenuToVoiceAgent } from "@/lib/syncRestaurantMenuToVoiceAgent";
 import { cn } from "@/lib/utils";
 
 interface Discount { 
@@ -91,6 +92,7 @@ export default function Coupons() {
       setDiscDialog(false);
       setEditDisc(null);
       load();
+      if (restaurantId) void syncRestaurantMenuToVoiceAgent(restaurantId);
     }
   };
 
@@ -102,6 +104,7 @@ export default function Coupons() {
     } else {
       toast({ title: t("coupons:couponDeleted", "Coupon deleted") });
       load();
+      if (restaurantId) void syncRestaurantMenuToVoiceAgent(restaurantId);
     }
   };
 

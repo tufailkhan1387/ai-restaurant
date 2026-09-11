@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { formatDate, formatTime } from "@/i18n/formatters";
+import { syncRestaurantMenuToVoiceAgent } from "@/lib/syncRestaurantMenuToVoiceAgent";
 
 interface Deal {
   id: string;
@@ -255,6 +256,7 @@ export default function Deals() {
         setDealDialog(false);
         setEditDeal(null);
         void load();
+        if (restaurantId) void syncRestaurantMenuToVoiceAgent(restaurantId);
       }
       return;
     }
@@ -293,6 +295,9 @@ export default function Deals() {
       setDealDialog(false);
       setEditDeal(null);
       void load();
+      for (const rid of targetIds) {
+        void syncRestaurantMenuToVoiceAgent(rid);
+      }
     }
   };
 
@@ -428,7 +433,10 @@ export default function Deals() {
                           if (!isSuperAdmin) q = q.eq("restaurant_id", restaurantId);
                           const { error } = await q;
                           if (error) toast({ variant: "destructive", title: t("common:error", "Failed"), description: (error as any)?.message || "Failed to delete deal" });
-                          else void load();
+                          else {
+                            void load();
+                            if (restaurantId) void syncRestaurantMenuToVoiceAgent(restaurantId);
+                          }
                         }}
                       >
                         <Trash2 className="h-3.5 w-3.5" />

@@ -589,7 +589,7 @@ export default function TableReservations() {
 
       {/* ─── TABLE DIALOG ─────────────────────────── */}
       <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingTable ? "Edit Table" : "Add New Table"}</DialogTitle>
           </DialogHeader>
@@ -628,7 +628,7 @@ export default function TableReservations() {
 
       {/* ─── RESERVATION DIALOG ───────────────────── */}
       <Dialog open={reservationDialogOpen} onOpenChange={setReservationDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingReservation ? "Edit Reservation" : "New Reservation"}</DialogTitle>
           </DialogHeader>

@@ -15,7 +15,8 @@ import { toast } from "sonner";
 import {
   CalendarDays, Clock, Users, TableProperties, Plus, Pencil, Trash2,
   CheckCircle2, XCircle, UtensilsCrossed, RefreshCw, Search, ChevronLeft, ChevronRight,
-  Phone, PhoneCall, AlertCircle, MessageSquare
+  Phone, PhoneCall, AlertCircle, MessageSquare,
+  Eye, Mail, Volume2
 } from "lucide-react";
 import { format, addDays, subDays, isToday } from "date-fns";
 
@@ -78,6 +79,8 @@ interface Reservation {
   status: string;
   notes: string | null;
   source: string;
+  call_id?: string | null;
+  ai_extracted_data?: any;
   created_at: string;
 }
 
@@ -89,6 +92,15 @@ export default function TableReservations() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Reservation Details Modal
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [detailReservation, setDetailReservation] = useState<Reservation | null>(null);
+
+  const openDetailReservation = (r: Reservation) => {
+    setDetailReservation(r);
+    setDetailDialogOpen(true);
+  };
 
   // Table form
   const [tableDialogOpen, setTableDialogOpen] = useState(false);
@@ -498,6 +510,15 @@ export default function TableReservations() {
 
                     <div className="ml-auto flex items-center gap-1">
                       <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2.5 text-xs gap-1 text-muted-foreground hover:text-foreground font-medium"
+                        onClick={() => openDetailReservation(res)}
+                        title="View full booking details"
+                      >
+                        <Eye className="h-3.5 w-3.5" /> Details
+                      </Button>
+                      <Button
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
@@ -511,7 +532,7 @@ export default function TableReservations() {
                         variant="ghost"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         onClick={() => setDeleteReservationId(res.id)}
-                        title="Cancel reservation"
+                        title="Delete reservation"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -716,6 +737,284 @@ export default function TableReservations() {
               {editingReservation ? "Update Reservation" : "Create Reservation"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── RESERVATION DETAILS DIALOG ───────────── */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          {detailReservation && (
+            <div className="space-y-5">
+              <DialogHeader>
+                <div className="flex items-start justify-between gap-3 pt-1">
+                  <div>
+                    <DialogTitle className="text-xl flex items-center gap-2">
+                      <span>Booking Details</span>
+                    </DialogTitle>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ID: <span className="font-mono text-[11px]">{detailReservation.id}</span>
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge className={`text-xs px-2.5 py-0.5 font-medium border ${STATUS_COLORS[detailReservation.status] || ""}`}>
+                      {STATUS_LABELS[detailReservation.status] || detailReservation.status}
+                    </Badge>
+                    {detailReservation.source === "phone" ? (
+                      <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0 font-normal text-violet-600 dark:text-violet-400 border-violet-500/20 bg-violet-500/5">
+                        <PhoneCall className="h-2.5 w-2.5" /> Voice AI Booking
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0 font-normal text-sky-600 dark:text-sky-400 border-sky-500/20 bg-sky-500/5">
+                        Online Booking
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </DialogHeader>
+
+              {/* Customer Info Card */}
+              <div className="bg-muted/40 rounded-xl p-4 border border-border/60 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 border border-primary/20 flex items-center justify-center font-bold text-base text-primary shadow-sm shrink-0">
+                    {getInitials(detailReservation.customer_name)}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-base text-foreground truncate">{detailReservation.customer_name}</h4>
+                    <p className="text-xs text-muted-foreground">Guest Contact Information</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/40 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-primary shrink-0" />
+                    {detailReservation.customer_phone ? (
+                      <a href={`tel:${detailReservation.customer_phone}`} className="text-foreground hover:text-primary transition-colors font-medium">
+                        {detailReservation.customer_phone}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground italic">No phone provided</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-primary shrink-0" />
+                    {detailReservation.customer_email ? (
+                      <a href={`mailto:${detailReservation.customer_email}`} className="text-foreground hover:text-primary transition-colors truncate">
+                        {detailReservation.customer_email}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground italic">No email</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Booking Schedule & Party Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-card border border-border/70 rounded-xl p-3 shadow-xs">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <CalendarDays className="h-3.5 w-3.5 text-primary" /> Date
+                  </div>
+                  <p className="font-semibold text-sm text-foreground">
+                    {format(new Date(detailReservation.reservation_date + "T00:00:00"), "EEE, MMM d, yyyy")}
+                  </p>
+                </div>
+
+                <div className="bg-card border border-border/70 rounded-xl p-3 shadow-xs">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <Clock className="h-3.5 w-3.5 text-primary" /> Time & Duration
+                  </div>
+                  <p className="font-semibold text-sm text-foreground">
+                    {detailReservation.start_time.slice(0, 5)} ({detailReservation.slot_duration_hours}h slot)
+                  </p>
+                </div>
+
+                <div className="bg-card border border-border/70 rounded-xl p-3 shadow-xs">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <Users className="h-3.5 w-3.5 text-primary" /> Party Size
+                  </div>
+                  <p className="font-semibold text-sm text-foreground">
+                    {detailReservation.party_size} {detailReservation.party_size > 1 ? "Guests" : "Guest"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Table Assignment */}
+              <div className="bg-card border border-border/70 rounded-xl p-4 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <TableProperties className="h-4 w-4 text-primary" /> Table Assignment
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => {
+                      setDetailDialogOpen(false);
+                      openEditReservation(detailReservation);
+                    }}
+                  >
+                    <Pencil className="h-3 w-3" /> Change Table
+                  </Button>
+                </div>
+
+                {detailReservation.table_number ? (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm">
+                    <div>
+                      <p className="font-bold text-emerald-950 dark:text-emerald-100">
+                        Table {detailReservation.table_number}
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        {detailReservation.table_location || "Standard Area"} · Capacity {detailReservation.table_capacity || 4} guests
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs border-emerald-500/30 text-emerald-700 dark:text-emerald-300 bg-emerald-500/10">
+                      Assigned
+                    </Badge>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-sm text-amber-800 dark:text-amber-200">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>No table currently assigned to this reservation</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Notes / Special Requests */}
+              {(() => {
+                const note = getDisplayNotes(detailReservation.notes);
+                if (!note) return null;
+                return (
+                  <div className="bg-card border border-border/70 rounded-xl p-4 shadow-xs space-y-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <MessageSquare className="h-3.5 w-3.5 text-primary" /> Special Requests & Notes
+                    </p>
+                    <p className="text-sm text-foreground italic bg-muted/40 p-3 rounded-lg border border-border/40">
+                      "{note}"
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {/* AI Call Insights (if available) */}
+              {detailReservation.ai_extracted_data && (
+                <div className="bg-card border border-border/70 rounded-xl p-4 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <Volume2 className="h-3.5 w-3.5 text-primary" /> Voice Call Insights
+                    </p>
+                    {detailReservation.ai_extracted_data.synthflow_call_id && (
+                      <span className="text-[11px] font-mono text-muted-foreground">
+                        Call ID: {String(detailReservation.ai_extracted_data.synthflow_call_id).slice(0, 10)}...
+                      </span>
+                    )}
+                  </div>
+
+                  {detailReservation.ai_extracted_data.call_summary && (
+                    <div className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-3 text-xs text-foreground/90 space-y-1">
+                      <p className="font-semibold text-violet-700 dark:text-violet-400">AI Call Summary</p>
+                      <p className="text-muted-foreground leading-relaxed">
+                        {typeof detailReservation.ai_extracted_data.call_summary === "string"
+                          ? detailReservation.ai_extracted_data.call_summary
+                          : JSON.stringify(detailReservation.ai_extracted_data.call_summary)}
+                      </p>
+                    </div>
+                  )}
+
+                  {detailReservation.ai_extracted_data.recording_url && (
+                    <div className="space-y-1 pt-1">
+                      <p className="text-xs font-medium text-muted-foreground">Call Audio Recording</p>
+                      <audio controls src={detailReservation.ai_extracted_data.recording_url} className="w-full h-8" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons in Modal */}
+              <div className="pt-3 border-t border-border/60 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  {detailReservation.status === "pending" && (
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1.5 shadow-sm"
+                      onClick={() => {
+                        quickStatus(detailReservation.id, "confirmed");
+                        setDetailReservation((r) => r ? { ...r, status: "confirmed" } : null);
+                      }}
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Confirm Booking
+                    </Button>
+                  )}
+                  {detailReservation.status === "confirmed" && (
+                    <Button
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium gap-1.5 shadow-sm"
+                      onClick={() => {
+                        quickStatus(detailReservation.id, "seated");
+                        setDetailReservation((r) => r ? { ...r, status: "seated" } : null);
+                      }}
+                    >
+                      <UtensilsCrossed className="h-4 w-4" /> Seat Guests
+                    </Button>
+                  )}
+                  {detailReservation.status === "seated" && (
+                    <Button
+                      size="sm"
+                      className="bg-slate-800 hover:bg-slate-900 text-white font-medium gap-1.5 shadow-sm"
+                      onClick={() => {
+                        quickStatus(detailReservation.id, "completed");
+                        setDetailReservation((r) => r ? { ...r, status: "completed" } : null);
+                      }}
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Mark Completed
+                    </Button>
+                  )}
+                  {["pending", "confirmed"].includes(detailReservation.status) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-muted-foreground hover:text-destructive gap-1"
+                      onClick={() => {
+                        quickStatus(detailReservation.id, "no_show");
+                        setDetailReservation((r) => r ? { ...r, status: "no_show" } : null);
+                      }}
+                    >
+                      <XCircle className="h-3.5 w-3.5" /> No-Show
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => {
+                      setDetailDialogOpen(false);
+                      openEditReservation(detailReservation);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:bg-destructive/10 hover:border-destructive/30 gap-1.5"
+                    onClick={() => {
+                      setDetailDialogOpen(false);
+                      setDeleteReservationId(detailReservation.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDetailDialogOpen(false)}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

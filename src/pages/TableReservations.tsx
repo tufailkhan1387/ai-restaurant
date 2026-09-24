@@ -513,7 +513,7 @@ export default function TableReservations() {
                         {getInitials(res.customer_name)}
                       </div>
                       <div className="min-w-0">
-                        <p className="font-bold text-foreground text-[15px] truncate leading-tight group-hover:text-primary transition-colors">
+                        <p className="font-bold text-foreground text-[15px] truncate leading-tight">
                           {res.customer_name}
                         </p>
                         {res.customer_phone ? (
@@ -636,76 +636,77 @@ export default function TableReservations() {
                   </div>
 
                   {/* Actions Footer */}
-                  <div className="pt-3 border-t border-border/40 flex flex-col gap-2">
-                    {/* Primary Operational Action (if applicable) */}
-                    {["pending", "confirmed", "seated"].includes(res.status) && (
-                      <div className="flex items-center gap-2">
-                        {res.status === "pending" && (
-                          <Button
-                            size="sm"
-                            className="h-8.5 text-xs gap-1.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-semibold shadow-sm flex-1"
-                            onClick={() => quickStatus(res.id, "confirmed")}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
-                          </Button>
-                        )}
-                        {res.status === "confirmed" && (
-                          <Button
-                            size="sm"
-                            className="h-8.5 text-xs gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold shadow-sm flex-1"
-                            onClick={() => quickStatus(res.id, "seated")}
-                          >
-                            <UtensilsCrossed className="h-3.5 w-3.5" /> Seat Guests
-                          </Button>
-                        )}
-                        {res.status === "seated" && (
-                          <Button
-                            size="sm"
-                            className="h-8.5 text-xs gap-1.5 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-black hover:to-slate-900 text-white font-semibold shadow-sm flex-1"
-                            onClick={() => quickStatus(res.id, "completed")}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Complete
-                          </Button>
-                        )}
-                        {["pending", "confirmed"].includes(res.status) && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/30 shrink-0 px-2.5 font-medium transition-colors"
-                            onClick={() => quickStatus(res.id, "no_show")}
-                            title="Mark as No-Show"
-                          >
-                            <XCircle className="h-3.5 w-3.5 mr-1" /> No-show
-                          </Button>
-                        )}
-                      </div>
+                  <div className="pt-3 border-t border-border/50 flex flex-col gap-2">
+                    {/* Primary Operational Action */}
+                    {res.status === "confirmed" && (
+                      <Button
+                        size="sm"
+                        className="w-full h-9 text-xs font-semibold gap-2 gradient-primary text-primary-foreground rounded-xl shadow-xs hover:shadow-md hover:brightness-105 active:scale-[0.99] transition-all"
+                        onClick={() => quickStatus(res.id, "seated")}
+                      >
+                        <UtensilsCrossed className="h-4 w-4" /> Seat Guests
+                      </Button>
+                    )}
+                    {res.status === "pending" && (
+                      <Button
+                        size="sm"
+                        className="w-full h-9 text-xs font-semibold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs hover:shadow-md active:scale-[0.99] transition-all"
+                        onClick={() => quickStatus(res.id, "confirmed")}
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Confirm Booking
+                      </Button>
+                    )}
+                    {res.status === "seated" && (
+                      <Button
+                        size="sm"
+                        className="w-full h-9 text-xs font-semibold gap-2 bg-slate-900 hover:bg-black text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl shadow-xs hover:shadow-md active:scale-[0.99] transition-all"
+                        onClick={() => quickStatus(res.id, "completed")}
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Complete Dining
+                      </Button>
                     )}
 
-                    {/* Secondary Management Row: View Details, Edit, Delete */}
-                    <div className="flex items-center justify-between gap-1.5 pt-1">
+                    {/* Secondary Controls Toolbar */}
+                    <div className="flex items-center gap-1.5">
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-8 px-3 text-xs gap-1.5 flex-1 bg-background hover:bg-primary/5 hover:text-primary hover:border-primary/40 text-foreground font-semibold shadow-2xs transition-colors"
+                        className="h-8 flex-1 text-xs gap-1.5 rounded-xl bg-background hover:bg-muted font-medium text-foreground border-border/70 shadow-2xs transition-colors"
                         onClick={() => openDetailReservation(res)}
                         title="View full booking details"
                       >
-                        <Eye className="h-3.5 w-3.5 text-primary" /> Details
+                        <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>Details</span>
                       </Button>
+
                       <Button
                         size="sm"
-                        variant="ghost"
-                        className="h-8 px-2.5 text-xs gap-1 text-muted-foreground hover:text-foreground hover:bg-muted font-medium"
+                        variant="outline"
+                        className="h-8 px-3 text-xs gap-1.5 rounded-xl bg-background hover:bg-muted font-medium text-foreground border-border/70 shadow-2xs transition-colors"
                         onClick={() => openEditReservation(res)}
                         title="Edit reservation"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                         <span>Edit</span>
                       </Button>
+
+                      {["pending", "confirmed"].includes(res.status) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2.5 text-xs gap-1 rounded-xl text-muted-foreground hover:text-amber-700 hover:bg-amber-500/10 font-medium transition-colors"
+                          onClick={() => quickStatus(res.id, "no_show")}
+                          title="Mark as No-Show"
+                        >
+                          <XCircle className="h-3.5 w-3.5" />
+                          <span>No-show</span>
+                        </Button>
+                      )}
+
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                        className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 transition-colors"
                         onClick={() => setDeleteReservationId(res.id)}
                         title="Delete reservation"
                       >
@@ -1103,7 +1104,7 @@ export default function TableReservations() {
                   {detailReservation.status === "confirmed" && (
                     <Button
                       size="sm"
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium gap-1.5 shadow-sm"
+                      className="gradient-primary text-primary-foreground font-semibold gap-1.5 shadow-sm hover:brightness-105"
                       onClick={() => {
                         quickStatus(detailReservation.id, "seated");
                         setDetailReservation((r) => r ? { ...r, status: "seated" } : null);

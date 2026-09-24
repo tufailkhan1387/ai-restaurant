@@ -52,6 +52,7 @@ import CustomerAnalyticsPage from "@/pages/reports/CustomerAnalyticsPage";
 import RestaurantOwnersPage from "@/pages/users/RestaurantOwnersPage";
 import TeamMembersPage from "@/pages/users/TeamMembersPage";
 import BranchPortal from "@/pages/BranchPortal";
+import TableReservations from "@/pages/TableReservations";
 
 const queryClient = new QueryClient();
 
@@ -129,6 +130,7 @@ const App = () => (
                 <Route path="reports/customers" element={<CustomerAnalyticsPage />} />
                 <Route path="coupons" element={<Coupons />} />
                 <Route path="cuisines" element={<Cuisines />} />
+                <Route path="reservations" element={<TableReservations />} />
                 <Route path="profile" element={<Profile />} />
               </Route>
               <Route path="*" element={<NotFound />} />

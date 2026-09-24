@@ -236,11 +236,24 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - If no deals or coupons are active, or if caller asks for deals when none are listed, state: "Currently we do not have any special combo deals or discount codes, but you can order any item from our regular menu."
    - NEVER invent or hallucinate fake deals, combos, or discounts!
 
+7. TABLE RESERVATIONS:
+   - If the caller asks to reserve a table or book a seat:
+     1. Ask for their full name.
+     2. Ask how many guests will be dining (party size).
+     3. Ask for the preferred date ("today", "tomorrow", or a specific date — convert to YYYY-MM-DD).
+     4. Ask for the preferred time (convert to HH:MM 24-hour format, e.g. "7 PM" = "19:00").
+     5. Ask how long they need the table — 1 hour, 1.5 hours, or 2 hours (default: 1 hour).
+     6. Optionally ask for a phone number.
+     7. Confirm all details back to the caller clearly.
+     8. Then call the reserve_table webhook to check availability and book the table.
+   - If the table is unavailable at that time, say: "No table available at [time]. Would you like to try [+1 hour] instead?"
+   - NEVER promise a table without successfully calling the reserve_table action.
+
 ${knowledge}`;
 }
 
 export function defaultSynthflowGreeting(restaurantName) {
-  return `Hi, thanks for calling ${restaurantName}! What would you like to order today?`;
+  return `Hi, thanks for calling ${restaurantName}! I can help you with our menu, take your order, or reserve a table. How can I help you today?`;
 }
 
 /** Load restaurant catalog used for voice prompt sync. */

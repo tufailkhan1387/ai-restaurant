@@ -2,6 +2,7 @@ import { Router } from "express";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { aiPlaceOrder } from "../fns/aiPlaceOrder.js";
 import { aiOrderStatus } from "../fns/aiOrderStatus.js";
+import { aiReserveTable } from "../fns/aiReserveTable.js";
 import { createRestaurantAgent } from "../fns/createRestaurantAgent.js";
 import { attachTwilioToAgent } from "../fns/attachTwilioToAgent.js";
 import { createRestaurantUser } from "../fns/createRestaurantUser.js";
@@ -30,6 +31,7 @@ const router = Router();
 const PUBLIC_HANDLERS = {
   "ai-place-order": aiPlaceOrder,
   "ai-order-status": aiOrderStatus,
+  "ai-reserve-table": aiReserveTable,
   "elevenlabs-conversation-webhook": elevenlabsConversationWebhook,
   "synthflow-post-call-webhook": synthflowPostCallWebhook,
   "synthflow-sync-calls": synthflowSyncCalls,

@@ -80,13 +80,15 @@ export async function seedAdminUser(connectionString) {
       console.log(`[seedAdmin] Updated Super Admin password: ${superAdminEmail}`);
     }
 
-    // Assign role 'super_admin'
-    await client.query("DELETE FROM user_roles WHERE user_id = $1", [superAdminId]);
+    // Assign role 'super_admin' (upsert)
     await client.query(
       `INSERT INTO user_roles (user_id, role)
-       VALUES ($1, 'super_admin')`,
+       VALUES ($1, 'super_admin')
+       ON CONFLICT (user_id, role) DO NOTHING`,
       [superAdminId]
     );
+    // Remove any non-super_admin roles the super admin might have
+    await client.query("DELETE FROM user_roles WHERE user_id = $1 AND role != 'super_admin'", [superAdminId]);
     // Ensure Super Admin is not listed as a restaurant member for any restaurant
     await client.query("DELETE FROM restaurant_members WHERE user_id = $1", [superAdminId]);
     console.log(`[seedAdmin] Assigned role super_admin to ${superAdminEmail}`);
@@ -115,13 +117,15 @@ export async function seedAdminUser(connectionString) {
       console.log(`[seedAdmin] Updated Royal Restaurant Admin password: ${royalAdminEmail}`);
     }
 
-    // Assign role 'admin' only (isolated to Royal Restaurant, exactly like Yasir Broast / Bundu Khan)
-    await client.query("DELETE FROM user_roles WHERE user_id = $1", [royalAdminId]);
+    // Assign role 'admin' only (upsert)
     await client.query(
       `INSERT INTO user_roles (user_id, role)
-       VALUES ($1, 'admin')`,
+       VALUES ($1, 'admin')
+       ON CONFLICT (user_id, role) DO NOTHING`,
       [royalAdminId]
     );
+    // Remove any non-admin roles
+    await client.query("DELETE FROM user_roles WHERE user_id = $1 AND role != 'admin'", [royalAdminId]);
 
     // Link royal@gmail.com as owner of Royal Restaurant
     await client.query(

@@ -12,6 +12,7 @@ import statsRoutes from "./routes/stats.js";
 import inventoryRoutes from "./routes/inventory.js";
 import branchesRoutes from "./routes/branches.js";
 import notificationsRoutes from "./routes/notifications.js";
+import reservationsRoutes from "./routes/reservations.js";
 import { twilioInboundWebhook } from "./fns/twilioInboundWebhook.js";
 
 const app = express();
@@ -71,6 +72,7 @@ app.use("/api/stats", jsonParser, statsRoutes);
 app.use("/api/inventory", jsonParser, inventoryRoutes);
 app.use("/api/notifications", jsonParser, notificationsRoutes);
 app.use("/api", jsonParser, branchesRoutes);
+app.use("/api", jsonParser, reservationsRoutes);
 
 app.post(
   "/api/functions/twilio-inbound-webhook",

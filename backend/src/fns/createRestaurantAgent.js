@@ -3,21 +3,32 @@ import { getKnex } from "../db.js";
 const EL_API = "https://api.elevenlabs.io";
 
 function defaultPrompt(name) {
-  return `You are the friendly, direct AI phone ordering assistant for ${name}.
+  return `You are the friendly, direct AI phone assistant for ${name}.
 
-You help callers in two ways:
+You help callers in three ways:
 1) Place a NEW delivery or pickup order:
-   - Step 1: Collect food items (with quantities, sizes, flavors, and add-ons). Use the menu in your knowledge base to confirm items, sizes, flavors, and prices.
-   - Step 2: Collect customer full name.
-   - Step 3: Collect delivery address (accept whatever address, colony, sector, or landmark the customer provides without arguing or rejecting). If pickup, note Pickup.
-   - Step 4: Collect customer email address for order receipt and confirmation (optional, proceed if customer skips or declines).
-   - Step 5: Collect contact phone number.
+   - Step 1: Ask if delivery or pickup.
+   - Step 2: Collect food items (with quantities, sizes, flavors, and add-ons). Use the menu in your knowledge base to confirm items, sizes, flavors, and prices.
+   - Step 3: Collect customer full name.
+   - Step 4: For delivery: collect delivery address (accept whatever address, colony, sector, or landmark the customer provides without arguing or rejecting). For pickup, note Pickup.
+   - Step 5: Collect customer email address for order receipt and confirmation (optional, proceed if customer skips or declines).
+   - Step 6: Collect contact phone number.
    - Payment rule: Payment is standard Cash on Delivery (COD) by default. Do NOT ask or interrogate the caller to choose a payment method.
    - Final Order Summary (MANDATORY): Before submitting the order, give ONE single complete summary containing: all ordered items (quantities, sizes, flavors), customer name, delivery address, phone number, and total bill amount.
    - When ready, call the place_order tool.
 
 2) Check the status of an EXISTING order:
    - Ask for the short tracking code (e.g. "ABC1234567"), then call the get_order_status tool. Read the status and ETA back to the caller.
+
+3) Reserve a TABLE at the restaurant:
+   - Step 1: Ask for the customer's full name.
+   - Step 2: Ask how many guests will be dining.
+   - Step 3: Ask for the preferred date (e.g. "today", "tomorrow", or a specific date).
+   - Step 4: Ask for the preferred time (e.g. "7 PM", "19:00").
+   - Step 5: Ask how long they need the table — 1 hour, 1.5 hours, or 2 hours? (default: 1 hour)
+   - Step 6: Optionally collect phone number.
+   - Confirm all details back, then call the reserve_table tool.
+   - If no table is available at that time, suggest an alternative time or date.
 
 IMPORTANT RULES:
 - When a customer asks if you have flavors (e.g. "Do you have flavors for pizza?"), ALWAYS check the knowledge base, confirm YES, and list the available flavors concisely!
@@ -26,13 +37,14 @@ IMPORTANT RULES:
 }
 
 function defaultFirstMessage(name) {
-  return `Hi, thanks for calling ${name}! Would you like to place a new order or check on an existing one?`;
+  return `Hi, thanks for calling ${name}! Would you like to place an order, check on an existing order, or reserve a table?`;
 }
 
 const TOOLS_CONFIG = [
   {
     name: "place_order",
-    description: "Use this to place a food delivery order. Call ONLY when you have: customer name, phone, delivery address, and items.",
+    description: "Use this to place a food delivery or pickup order. Call ONLY when you have: customer name, phone, delivery address (or 'pickup'), and items.",
+    endpoint: "ai-place-order",
     parameters: {
       type: "object",
       properties: {
@@ -40,6 +52,7 @@ const TOOLS_CONFIG = [
         customer_phone: { type: "string" },
         customer_email: { type: "string", description: "Optional customer email for receipt" },
         delivery_address: { type: "string" },
+        fulfillment_type: { type: "string", enum: ["delivery", "pickup"], description: "delivery or pickup" },
         items: {
           type: "array",
           items: {
@@ -58,12 +71,32 @@ const TOOLS_CONFIG = [
   {
     name: "get_order_status",
     description: "Check the status of a food order using the customer's tracking code.",
+    endpoint: "ai-order-status",
     parameters: {
       type: "object",
       properties: {
         tracking_code: { type: "string", description: "The 10-char tracking code from the receipt" }
       },
       required: ["tracking_code"]
+    }
+  },
+  {
+    name: "reserve_table",
+    description: "Reserve a table at the restaurant. Call this when a customer wants to book a table for dine-in. Requires name, party size, date, and time.",
+    endpoint: "ai-reserve-table",
+    parameters: {
+      type: "object",
+      properties: {
+        customer_name: { type: "string", description: "Full name of the customer" },
+        customer_phone: { type: "string", description: "Customer phone number (optional)" },
+        customer_email: { type: "string", description: "Customer email (optional)" },
+        party_size: { type: "integer", description: "Number of guests (e.g. 2, 4, 6)" },
+        reservation_date: { type: "string", description: "Date in YYYY-MM-DD format" },
+        reservation_time: { type: "string", description: "Time in HH:MM 24-hour format (e.g. 19:00)" },
+        slot_duration_hours: { type: "number", description: "Duration in hours: 1, 1.5, or 2. Default is 1.", enum: [1, 1.5, 2, 2.5, 3] },
+        notes: { type: "string", description: "Any special requests or notes from the customer" }
+      },
+      required: ["customer_name", "party_size", "reservation_date", "reservation_time"]
     }
   }
 ];
@@ -97,8 +130,7 @@ export async function createRestaurantAgent(req, res) {
 
         if (ngrokUrl && ngrokUrl !== "YOUR_NGROK_URL") {
           for (const toolSpec of TOOLS_CONFIG) {
-            const endpoint = toolSpec.name === "place_order" ? "ai-place-order" : "ai-order-status";
-            const webhookUrl = `${ngrokUrl}/api/functions/${endpoint}`;
+            const webhookUrl = `${ngrokUrl}/api/functions/${toolSpec.endpoint}`;
             
             try {
               const resp = await fetch(`${EL_API}/v1/convai/tools`, {

@@ -3,6 +3,7 @@ import { getKnex } from "../db.js";
 import { createPhoneOrder, parseOrderItemsText } from "../lib/phoneOrderService.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
 import { parseTranscriptIntoTurns } from "./synthflowSyncCalls.js";
+import { findAvailableTable, createReservation } from "../lib/tableReservationService.js";
 
 function truthyYes(v) {
   if (v == null) return false;
@@ -15,6 +16,23 @@ function emptyish(v) {
   if (v == null) return true;
   const s = String(v).trim().toLowerCase();
   return !s || s === "none" || s === "null" || s === "n/a" || s === "na" || s === "unknown" || s === "aucun" || s === "aucune";
+}
+
+function cleanEmail(v) {
+  if (emptyish(v)) return null;
+  const s = String(v).trim().toLowerCase();
+  if (
+    s === "none" ||
+    s === "null" ||
+    s === "n/a" ||
+    s === "no" ||
+    s === "skip" ||
+    s.endsWith("@example.com") ||
+    s.endsWith("@test.com")
+  ) {
+    return null;
+  }
+  return s.includes("@") && s.includes(".") ? s : null;
 }
 
 function mapCallStatus(raw) {
@@ -81,6 +99,11 @@ export function extractSynthflowFields(payload) {
     fulfillment_type: ["fulfillment_type", "order_type", "delivery_or_pickup"],
     payment_method: ["payment_method", "payment"],
     order_placed: ["order_placed", "placed_order", "order_confirmed"],
+    party_size: ["party_size", "party", "guests", "number_of_guests", "people", "guest_count", "persons"],
+    reservation_date: ["reservation_date", "booking_date", "date", "res_date"],
+    reservation_time: ["reservation_time", "booking_time", "time", "start_time", "res_time"],
+    slot_duration_hours: ["slot_duration_hours", "duration", "duration_hours", "slot_duration", "slot_hours"],
+    table_reserved: ["table_reserved", "reserve_table", "table_reservation", "reservation_made", "is_reservation"],
   };
 
   /** @type {Record<string, string | null>} */
@@ -101,67 +124,102 @@ export function extractSynthflowFields(payload) {
   return out;
 }
 
-export function supplementFieldsFromTranscript(fields, transcript) {
-  if (!transcript || typeof transcript !== "string") return fields;
-  const turns = parseTranscriptIntoTurns(transcript);
+export function supplementFieldsFromTranscript(fields, transcript, callNotes = null) {
   const out = { ...fields };
+  const combined = `${transcript || ""} ${callNotes || ""}`;
 
-  for (let i = 0; i < turns.length; i++) {
-    const turn = turns[i];
-    const prevTurn = i > 0 ? turns[i - 1] : null;
+  if (transcript && typeof transcript === "string") {
+    const turns = parseTranscriptIntoTurns(transcript);
 
-    if (turn.speaker === "customer" && turn.message) {
-      const msg = turn.message.trim();
-      const prevBotMsg = prevTurn?.speaker === "ai" ? prevTurn.message.toLowerCase() : "";
+    for (let i = 0; i < turns.length; i++) {
+      const turn = turns[i];
+      const prevTurn = i > 0 ? turns[i - 1] : null;
 
-      // 1. Customer Name fallback
-      if (emptyish(out.customer_name)) {
-        if (
-          prevBotMsg.includes("name") ||
-          prevBotMsg.includes("who am i speaking") ||
-          prevBotMsg.includes("naam")
-        ) {
-          const clean = msg
-            .replace(/^(my name is|i am|this is|mera naam|mera nam|it's|it is)\s+/i, "")
-            .replace(/[.!?,]$/, "")
-            .trim();
-          if (clean && clean.length <= 60 && !/^(delivery|pickup|yes|no|order|food)/i.test(clean)) {
-            out.customer_name = clean;
+      if (turn.speaker === "customer" && turn.message) {
+        const msg = turn.message.trim();
+        const prevBotMsg = prevTurn?.speaker === "ai" ? prevTurn.message.toLowerCase() : "";
+
+        // 1. Customer Name fallback
+        if (emptyish(out.customer_name)) {
+          if (
+            prevBotMsg.includes("name") ||
+            prevBotMsg.includes("who am i speaking") ||
+            prevBotMsg.includes("naam")
+          ) {
+            const clean = msg
+              .replace(/^(my name is|i am|this is|mera naam|mera nam|it's|it is)\s+/i, "")
+              .replace(/[.!?,]$/, "")
+              .trim();
+            if (clean && clean.length <= 60 && !/^(delivery|pickup|yes|no|order|food)/i.test(clean)) {
+              out.customer_name = clean;
+            }
           }
         }
-      }
 
-      // 2. Delivery Address fallback
-      if (emptyish(out.delivery_address)) {
-        if (
-          prevBotMsg.includes("address") ||
-          prevBotMsg.includes("location") ||
-          prevBotMsg.includes("where should we deliver") ||
-          prevBotMsg.includes("delivery address") ||
-          prevBotMsg.includes("pata")
-        ) {
-          const clean = msg
-            .replace(/^(my address is|delivery address is|it's|it is|address is|address)\s+/i, "")
-            .replace(/[.!?,]$/, "")
-            .trim();
-          if (clean && clean.length >= 3 && !/^(pickup|takeaway|no|yes|none|null)$/i.test(clean)) {
-            out.delivery_address = clean;
+        // 2. Delivery Address fallback
+        if (emptyish(out.delivery_address)) {
+          if (
+            prevBotMsg.includes("address") ||
+            prevBotMsg.includes("location") ||
+            prevBotMsg.includes("where should we deliver") ||
+            prevBotMsg.includes("delivery address") ||
+            prevBotMsg.includes("pata")
+          ) {
+            const clean = msg
+              .replace(/^(my address is|delivery address is|it's|it is|address is|address)\s+/i, "")
+              .replace(/[.!?,]$/, "")
+              .trim();
+            if (clean && clean.length >= 3 && !/^(pickup|takeaway|no|yes|none|null)$/i.test(clean)) {
+              out.delivery_address = clean;
+            }
           }
         }
-      }
 
-      // 3. Customer Phone fallback
-      if (emptyish(out.customer_phone)) {
-        if (
-          prevBotMsg.includes("phone") ||
-          prevBotMsg.includes("contact number") ||
-          prevBotMsg.includes("mobile") ||
-          prevBotMsg.includes("number")
-        ) {
-          const phoneMatch = msg.match(/(\+?\d[\d\s\-]{8,}\d)/);
-          if (phoneMatch) {
-            out.customer_phone = phoneMatch[1].replace(/\s+/g, "");
+        // 3. Customer Phone fallback
+        if (emptyish(out.customer_phone)) {
+          if (
+            prevBotMsg.includes("phone") ||
+            prevBotMsg.includes("contact number") ||
+            prevBotMsg.includes("mobile") ||
+            prevBotMsg.includes("number")
+          ) {
+            const phoneMatch = msg.match(/(\+?\d[\d\s\-]{8,}\d)/);
+            if (phoneMatch) {
+              out.customer_phone = phoneMatch[1].replace(/\s+/g, "");
+            }
           }
+        }
+
+        // 4. Reservation details from conversational turns
+        if (emptyish(out.party_size) && (prevBotMsg.includes("how many guests") || prevBotMsg.includes("party size") || prevBotMsg.includes("how many people"))) {
+          const numMatch = msg.match(/\b(\d{1,2})\b/);
+          if (numMatch) out.party_size = numMatch[1];
+        }
+
+        if (emptyish(out.reservation_date) && (prevBotMsg.includes("date") || prevBotMsg.includes("what day"))) {
+          const isoMatch = msg.match(/\b(202\d-\d{2}-\d{2})\b/);
+          if (isoMatch) out.reservation_date = isoMatch[1];
+        }
+
+        if (emptyish(out.reservation_time) && (prevBotMsg.includes("time") || prevBotMsg.includes("what time"))) {
+          const tm = msg.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || msg.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+          if (tm) {
+            if (tm[3]) {
+              let h = parseInt(tm[1], 10);
+              const m = tm[2] || "00";
+              const ampm = tm[3].toLowerCase();
+              if (ampm === "pm" && h < 12) h += 12;
+              if (ampm === "am" && h === 12) h = 0;
+              out.reservation_time = `${String(h).padStart(2, "0")}:${m}`;
+            } else {
+              out.reservation_time = `${tm[1].padStart(2, "0")}:${tm[2]}`;
+            }
+          }
+        }
+
+        if (emptyish(out.slot_duration_hours) && (prevBotMsg.includes("how long") || prevBotMsg.includes("slot") || prevBotMsg.includes("duration"))) {
+          const durMatch = msg.match(/(\d(?:\.5)?)\s*hours?/i) || msg.match(/\b(1|1\.5|2)\b/);
+          if (durMatch) out.slot_duration_hours = durMatch[1];
         }
       }
     }
@@ -169,7 +227,7 @@ export function supplementFieldsFromTranscript(fields, transcript) {
 
   // Also check if summary turn has "For [Customer Name], delivery to [Address]"
   if (emptyish(out.customer_name) || emptyish(out.delivery_address)) {
-    const summaryMatch = transcript.match(/for\s+([A-Za-z\s]{2,40}),\s+delivery\s+to\s+([^,.]+)/i);
+    const summaryMatch = combined.match(/for\s+([A-Za-z\s]{2,40}),\s+delivery\s+to\s+([^,.]+)/i);
     if (summaryMatch) {
       if (emptyish(out.customer_name) && summaryMatch[1]) {
         out.customer_name = summaryMatch[1].trim();
@@ -177,6 +235,51 @@ export function supplementFieldsFromTranscript(fields, transcript) {
       if (emptyish(out.delivery_address) && summaryMatch[2]) {
         out.delivery_address = summaryMatch[2].trim();
       }
+    }
+  }
+
+  // Reservation regex extraction across full text & summary
+  const hasReservationCue = /reserv(e|ation)|table\s+for|book(ing)?\s+(a\s+)?table/i.test(combined);
+  if (hasReservationCue) {
+    if (emptyish(out.party_size)) {
+      const pm = combined.match(/(?:party of|table for|for)\s+(\d{1,2})\s*(?:guests?|people|persons?)/i) ||
+                 combined.match(/(\d{1,2})\s*(?:guests?|people|persons?)/i);
+      if (pm) out.party_size = pm[1];
+    }
+    if (emptyish(out.reservation_date)) {
+      const dm = combined.match(/\b(202\d-\d{2}-\d{2})\b/);
+      if (dm) {
+        out.reservation_date = dm[1];
+      } else {
+        const today = new Date();
+        if (/\btonight\b|\btoday\b/i.test(combined)) {
+          out.reservation_date = today.toISOString().split("T")[0];
+        } else if (/\btomorrow\b/i.test(combined)) {
+          const d = new Date(today);
+          d.setDate(d.getDate() + 1);
+          out.reservation_date = d.toISOString().split("T")[0];
+        }
+      }
+    }
+    if (emptyish(out.reservation_time)) {
+      const tm = combined.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) ||
+                 combined.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+      if (tm) {
+        if (tm[3]) {
+          let h = parseInt(tm[1], 10);
+          const m = tm[2] || "00";
+          const ampm = tm[3].toLowerCase();
+          if (ampm === "pm" && h < 12) h += 12;
+          if (ampm === "am" && h === 12) h = 0;
+          out.reservation_time = `${String(h).padStart(2, "0")}:${m}`;
+        } else {
+          out.reservation_time = `${tm[1].padStart(2, "0")}:${tm[2]}`;
+        }
+      }
+    }
+    if (emptyish(out.slot_duration_hours)) {
+      const durMatch = combined.match(/(\d(?:\.5)?)\s*hours?/i);
+      if (durMatch) out.slot_duration_hours = durMatch[1];
     }
   }
 
@@ -421,7 +524,7 @@ export async function synthflowPostCallWebhook(req, res) {
     }
 
     const rawFields = extractSynthflowFields(payload);
-    const fields = supplementFieldsFromTranscript(rawFields, transcript);
+    const fields = supplementFieldsFromTranscript(rawFields, transcript, callNotes);
     const orderPlaced = truthyYes(fields.order_placed);
     const items = parseOrderItemsText(fields.order_items);
     const hasCustomer = !emptyish(fields.customer_name);
@@ -435,6 +538,80 @@ export async function synthflowPostCallWebhook(req, res) {
         order_created: false,
         reason: "restaurant_not_resolved",
       });
+    }
+
+    // ── TABLE RESERVATION EXTRACTION & CREATION ────────────────
+    let reservationResult = null;
+    const hasReservationIntent =
+      truthyYes(fields.table_reserved) ||
+      !emptyish(fields.reservation_date) ||
+      !emptyish(fields.reservation_time) ||
+      /reserv(e|ation)|table\s+for\s+\d|book(ing)?\s+(a\s+)?table/i.test(`${transcript || ""} ${callNotes || ""}`);
+
+    if (hasReservationIntent && restaurant?.id) {
+      let existingReservation = null;
+      if (callRow?.id) {
+        existingReservation = await knex("table_reservations").where({ call_id: callRow.id }).first();
+      }
+
+      if (existingReservation) {
+        reservationResult = {
+          created: false,
+          id: existingReservation.id,
+          reason: "already_created",
+        };
+      } else {
+        const partySize = Math.max(1, parseInt(fields.party_size, 10) || 2);
+        const resDate = fields.reservation_date || new Date().toISOString().split("T")[0];
+        const resTime = fields.reservation_time || "19:00";
+        const duration = Number(fields.slot_duration_hours) || 1;
+        const custName = (!emptyish(fields.customer_name) && fields.customer_name) || "Phone Customer";
+        const custPhone = (!emptyish(fields.customer_phone) && fields.customer_phone) || callerPhone;
+
+        const availableTable = await findAvailableTable(knex, {
+          restaurantId: restaurant.id,
+          partySize,
+          reservationDate: resDate,
+          startTime: resTime,
+          slotDurationHours: duration,
+        });
+
+        const createdRes = await createReservation(knex, {
+          restaurantId: restaurant.id,
+          tableId: availableTable ? availableTable.id : null,
+          customerName: custName,
+          customerPhone: custPhone,
+          customerEmail: cleanEmail(fields.customer_email),
+          partySize,
+          reservationDate: resDate,
+          startTime: resTime,
+          slotDurationHours: duration,
+          status: availableTable ? "confirmed" : "pending",
+          notes: `Reserved via Synthflow AI phone call (${duration}h slot)`,
+          source: "phone",
+          callId: callRow?.id,
+          aiExtractedData: {
+            provider: "synthflow",
+            synthflow_call_id: synthflowCallId,
+            recording_url: recordingUrl,
+            transcript: transcript,
+            call_summary: callNotes,
+            fields,
+          },
+        });
+
+        reservationResult = {
+          created: true,
+          id: createdRes.id,
+          table_number: availableTable?.table_number || null,
+          status: createdRes.status,
+          party_size: partySize,
+          reservation_date: resDate,
+          reservation_time: resTime,
+        };
+
+        console.log(`✅ Synthflow table reservation created: id=${createdRes.id} table=${availableTable?.table_number || "unassigned"}`);
+      }
     }
 
     // Idempotency: one order per Synthflow call - update recording & transcript if exists
@@ -461,6 +638,8 @@ export async function synthflowPostCallWebhook(req, res) {
           success: true,
           call_id: callRow?.id,
           order_created: false,
+          reservation_created: Boolean(reservationResult?.created),
+          reservation: reservationResult || undefined,
           order_id: existing.id,
           order_number: existing.order_number,
           reason: "already_created",
@@ -473,31 +652,17 @@ export async function synthflowPostCallWebhook(req, res) {
         orderPlaced,
         itemCount: items.length,
         hasCustomer,
+        reservationCreated: Boolean(reservationResult?.created),
       });
       return res.json({
         success: true,
         call_id: callRow?.id,
         order_created: false,
-        reason: "no_order_in_call",
+        reservation_created: Boolean(reservationResult?.created),
+        reservation: reservationResult || undefined,
+        reason: reservationResult ? "reservation_processed" : "no_order_in_call",
         fields,
       });
-    }
-
-    function cleanEmail(v) {
-      if (emptyish(v)) return null;
-      const s = String(v).trim().toLowerCase();
-      if (
-        s === "none" ||
-        s === "null" ||
-        s === "n/a" ||
-        s === "no" ||
-        s === "skip" ||
-        s.endsWith("@example.com") ||
-        s.endsWith("@test.com")
-      ) {
-        return null;
-      }
-      return s.includes("@") && s.includes(".") ? s : null;
     }
 
     const couponRaw = emptyish(fields.coupon_code) ? null : fields.coupon_code;
@@ -538,6 +703,8 @@ export async function synthflowPostCallWebhook(req, res) {
       success: true,
       call_id: callRow?.id,
       order_created: true,
+      reservation_created: Boolean(reservationResult?.created),
+      reservation: reservationResult || undefined,
       order_id: order.id,
       order_number: order.order_number,
       tracking_code: order.tracking_code,

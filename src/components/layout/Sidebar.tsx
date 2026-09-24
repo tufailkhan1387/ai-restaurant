@@ -31,6 +31,7 @@ import {
   UserCircle,
   Crown,
   Building2,
+  CalendarCheck,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -470,6 +471,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               .map((item) => (
                 <NavItem key={item.href} {...item} />
               ))}
+
+            <NavItem
+              icon={CalendarCheck}
+              label="Reservations"
+              href="/reservations"
+            />
 
             {collapsed ? (
               <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">

@@ -587,7 +587,7 @@ export async function synthflowPostCallWebhook(req, res) {
           startTime: resTime,
           slotDurationHours: duration,
           status: availableTable ? "confirmed" : "pending",
-          notes: `Reserved via Synthflow AI phone call (${duration}h slot)`,
+          notes: (!emptyish(fields.special_notes) && fields.special_notes) || null,
           source: "phone",
           callId: callRow?.id,
           aiExtractedData: {

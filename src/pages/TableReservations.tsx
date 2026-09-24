@@ -14,18 +14,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   CalendarDays, Clock, Users, TableProperties, Plus, Pencil, Trash2,
-  CheckCircle2, XCircle, UtensilsCrossed, RefreshCw, Search, ChevronLeft, ChevronRight
+  CheckCircle2, XCircle, UtensilsCrossed, RefreshCw, Search, ChevronLeft, ChevronRight,
+  Phone, PhoneCall, AlertCircle, MessageSquare
 } from "lucide-react";
 import { format, addDays, subDays, isToday } from "date-fns";
 
+const getInitials = (name: string) => {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return (name.slice(0, 2) || "R").toUpperCase();
+};
+
+const getDisplayNotes = (notes: string | null) => {
+  if (!notes) return null;
+  if (/reserved via synthflow/i.test(notes) || /phone ai/i.test(notes) || /authflow/i.test(notes) || /synthflow/i.test(notes)) {
+    return null;
+  }
+  return notes.trim();
+};
 
 const STATUS_COLORS: Record<string, string> = {
-  pending:   "bg-yellow-500/15 text-yellow-600 border-yellow-500/30",
-  confirmed: "bg-blue-500/15 text-blue-600 border-blue-500/30",
-  seated:    "bg-green-500/15 text-green-600 border-green-500/30",
-  completed: "bg-emerald-500/15 text-emerald-700 border-emerald-500/30",
-  cancelled: "bg-red-500/15 text-red-600 border-red-500/30",
-  no_show:   "bg-gray-500/15 text-gray-500 border-gray-500/30",
+  pending:   "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  confirmed: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
+  seated:    "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+  completed: "bg-slate-500/15 text-slate-700 dark:text-slate-400 border-slate-500/30",
+  cancelled: "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30",
+  no_show:   "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 border-zinc-500/30",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -339,67 +353,166 @@ export default function TableReservations() {
               {filtered.map((res) => (
                 <div
                   key={res.id}
-                  className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow group"
+                  className="bg-card border border-border/80 hover:border-primary/40 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between gap-4 group"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="font-semibold text-foreground leading-tight">{res.customer_name}</p>
-                      {res.customer_phone && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{res.customer_phone}</p>
+                  {/* Top: Customer Avatar, Name, Phone & Status Badge */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary shadow-sm shrink-0">
+                        {getInitials(res.customer_name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground text-[15px] truncate leading-tight">
+                          {res.customer_name}
+                        </p>
+                        {res.customer_phone ? (
+                          <a
+                            href={`tel:${res.customer_phone}`}
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5"
+                          >
+                            <Phone className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{res.customer_phone}</span>
+                          </a>
+                        ) : (
+                          <p className="text-xs text-muted-foreground/60 italic mt-0.5">No phone</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <Badge className={`text-[11px] px-2.5 py-0.5 font-medium border ${STATUS_COLORS[res.status] || ""}`}>
+                        {STATUS_LABELS[res.status] || res.status}
+                      </Badge>
+                      {res.source === "phone" && (
+                        <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0 h-4 font-normal text-violet-600 dark:text-violet-400 border-violet-500/20 bg-violet-500/5">
+                          <PhoneCall className="h-2.5 w-2.5" /> Voice AI
+                        </Badge>
                       )}
                     </div>
-                    <Badge className={`text-xs border ${STATUS_COLORS[res.status] || ""}`}>
-                      {STATUS_LABELS[res.status] || res.status}
-                    </Badge>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5 text-primary/70" />
-                      {res.start_time.slice(0, 5)} ({res.slot_duration_hours}h)
+                  {/* Middle: Details & Table info */}
+                  <div className="space-y-2.5">
+                    {/* Time & Guests pills */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/60 text-secondary-foreground text-xs font-medium border border-border/40">
+                        <Clock className="h-3.5 w-3.5 text-primary" />
+                        <span>{res.start_time.slice(0, 5)}</span>
+                        <span className="text-muted-foreground font-normal">({res.slot_duration_hours}h slot)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/60 text-secondary-foreground text-xs font-medium border border-border/40">
+                        <Users className="h-3.5 w-3.5 text-primary" />
+                        <span>{res.party_size} {res.party_size > 1 ? "Guests" : "Guest"}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <Users className="h-3.5 w-3.5 text-primary/70" />
-                      {res.party_size} guest{res.party_size > 1 ? "s" : ""}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground col-span-2">
-                      <TableProperties className="h-3.5 w-3.5 text-primary/70" />
-                      {res.table_number ? `Table ${res.table_number}` : "No table assigned"}
-                      {res.table_location && ` — ${res.table_location}`}
-                    </div>
+
+                    {/* Table Assignment Status */}
+                    {res.table_number ? (
+                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                        <div className="flex items-center gap-2">
+                          <TableProperties className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <div>
+                            <span className="font-semibold text-emerald-950 dark:text-emerald-100">
+                              Table {res.table_number}
+                            </span>
+                            {res.table_location && (
+                              <span className="text-emerald-700 dark:text-emerald-300 ml-1">({res.table_location})</span>
+                            )}
+                          </div>
+                        </div>
+                        {res.table_capacity && (
+                          <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                            Max {res.table_capacity} guests
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-xs">
+                        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span className="font-medium">No table assigned</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[11px] px-2.5 text-amber-800 dark:text-amber-200 border-amber-500/40 hover:bg-amber-500/20 font-semibold"
+                          onClick={() => openEditReservation(res)}
+                        >
+                          Assign Table →
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Customer special requests if any */}
+                    {(() => {
+                      const note = getDisplayNotes(res.notes);
+                      if (!note) return null;
+                      return (
+                        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border/50 text-xs text-muted-foreground">
+                          <MessageSquare className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                          <span className="italic leading-relaxed">{note}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  {res.notes && (
-                    <p className="text-xs text-muted-foreground bg-muted/60 rounded-lg px-3 py-1.5 mb-3 italic">
-                      "{res.notes}"
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-2 flex-wrap">
+                  {/* Actions Footer */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-border/40">
+                    {res.status === "pending" && (
+                      <Button
+                        size="sm"
+                        className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+                        onClick={() => quickStatus(res.id, "confirmed")}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
+                      </Button>
+                    )}
                     {res.status === "confirmed" && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-green-600 border-green-500/30"
-                        onClick={() => quickStatus(res.id, "seated")}>
-                        <CheckCircle2 className="h-3 w-3" /> Seat
+                      <Button
+                        size="sm"
+                        className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
+                        onClick={() => quickStatus(res.id, "seated")}
+                      >
+                        <UtensilsCrossed className="h-3.5 w-3.5" /> Seat Guests
                       </Button>
                     )}
                     {res.status === "seated" && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-emerald-600 border-emerald-500/30"
-                        onClick={() => quickStatus(res.id, "completed")}>
-                        <UtensilsCrossed className="h-3 w-3" /> Complete
+                      <Button
+                        size="sm"
+                        className="h-8 text-xs gap-1.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white dark:text-slate-900 text-white font-medium shadow-sm"
+                        onClick={() => quickStatus(res.id, "completed")}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                       </Button>
                     )}
                     {["pending", "confirmed"].includes(res.status) && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-red-500 border-red-500/30"
-                        onClick={() => quickStatus(res.id, "no_show")}>
-                        <XCircle className="h-3 w-3" /> No-show
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/30"
+                        onClick={() => quickStatus(res.id, "no_show")}
+                      >
+                        <XCircle className="h-3.5 w-3.5 mr-1" /> No-show
                       </Button>
                     )}
-                    <div className="ml-auto flex gap-1.5">
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEditReservation(res)}>
+
+                    <div className="ml-auto flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => openEditReservation(res)}
+                        title="Edit reservation"
+                      >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => setDeleteReservationId(res.id)}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => setDeleteReservationId(res.id)}
+                        title="Cancel reservation"
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>

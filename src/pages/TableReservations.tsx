@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
@@ -19,12 +19,48 @@ import {
   Eye, Mail, Volume2
 } from "lucide-react";
 import { format, addDays, subDays, isToday } from "date-fns";
+import { OrderCallRecording, CallData, ConversationTurn } from "@/components/orders/OrderCallRecording";
+import { supabase } from "@/integrations/supabase/client";
 
 const getInitials = (name: string) => {
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   return (name.slice(0, 2) || "R").toUpperCase();
 };
+
+const displayTableNumber = (tableNum?: string | null) => {
+  if (!tableNum) return "";
+  const trimmed = tableNum.trim();
+  if (/^table\b/i.test(trimmed)) return trimmed;
+  return `Table ${trimmed}`;
+};
+
+function formatSafeDate(dateStr?: string | null): string {
+  if (!dateStr) return "N/A";
+  try {
+    const raw = String(dateStr).trim();
+    const datePart = raw.split("T")[0].split(" ")[0];
+    const parts = datePart.split("-");
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      if (y && m && d) {
+        const dateObj = new Date(y, m - 1, d);
+        if (!isNaN(dateObj.getTime())) {
+          return format(dateObj, "EEE, MMM d, yyyy");
+        }
+      }
+    }
+    const fallback = new Date(raw);
+    if (!isNaN(fallback.getTime())) {
+      return format(fallback, "EEE, MMM d, yyyy");
+    }
+    return dateStr;
+  } catch {
+    return String(dateStr);
+  }
+}
 
 const getDisplayNotes = (notes: string | null) => {
   if (!notes) return null;
@@ -35,12 +71,30 @@ const getDisplayNotes = (notes: string | null) => {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  pending:   "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
-  confirmed: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
-  seated:    "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
-  completed: "bg-slate-500/15 text-slate-700 dark:text-slate-400 border-slate-500/30",
-  cancelled: "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30",
-  no_show:   "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 border-zinc-500/30",
+  pending:   "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/25",
+  confirmed: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25",
+  seated:    "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/25",
+  completed: "bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/25",
+  cancelled: "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/25",
+  no_show:   "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/25",
+};
+
+const STATUS_DOT_COLORS: Record<string, string> = {
+  pending:   "bg-amber-500",
+  confirmed: "bg-emerald-500",
+  seated:    "bg-blue-500",
+  completed: "bg-slate-400",
+  cancelled: "bg-rose-500",
+  no_show:   "bg-zinc-400",
+};
+
+const STATUS_CARD_ACCENTS: Record<string, string> = {
+  pending:   "border-l-4 border-l-amber-500",
+  confirmed: "border-l-4 border-l-emerald-500",
+  seated:    "border-l-4 border-l-blue-500",
+  completed: "border-l-4 border-l-slate-400",
+  cancelled: "border-l-4 border-l-rose-500",
+  no_show:   "border-l-4 border-l-zinc-400",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -81,6 +135,10 @@ interface Reservation {
   source: string;
   call_id?: string | null;
   ai_extracted_data?: any;
+  call_transcript?: string | null;
+  call_recording_url?: string | null;
+  call_notes?: string | null;
+  call_duration_seconds?: number | null;
   created_at: string;
 }
 
@@ -96,10 +154,91 @@ export default function TableReservations() {
   // Reservation Details Modal
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailReservation, setDetailReservation] = useState<Reservation | null>(null);
+  const [call, setCall] = useState<CallData | null>(null);
+  const [conversations, setConversations] = useState<ConversationTurn[]>([]);
+  const [callLoading, setCallLoading] = useState(false);
+
+  const loadReservationCall = useCallback(async (res: Reservation) => {
+    setCallLoading(true);
+    let loadedCall: CallData | null = null;
+    let convTurns: ConversationTurn[] = [];
+
+    try {
+      // 1. Match by call_id if present
+      if (res.call_id) {
+        const { data: cData } = await supabase.from("calls").select("*").eq("id", res.call_id).maybeSingle();
+        if (cData) loadedCall = cData as CallData;
+      }
+
+      // 2. Match by synthflow_call_id
+      if (!loadedCall && res.ai_extracted_data?.synthflow_call_id) {
+        const { data: cData } = await supabase
+          .from("calls")
+          .select("*")
+          .eq("synthflow_call_id", res.ai_extracted_data.synthflow_call_id)
+          .maybeSingle();
+        if (cData) loadedCall = cData as CallData;
+      }
+
+      // 3. Fallback: Match by customer phone number if exists in calls table
+      if (!loadedCall && res.customer_phone) {
+        const cleanPhone = res.customer_phone.replace(/\D/g, "");
+        if (cleanPhone.length >= 6) {
+          const { data: cList } = await supabase
+            .from("calls")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(25);
+          if (Array.isArray(cList)) {
+            const match = cList.find((c: any) => {
+              const cClean = String(c.phone_number || "").replace(/\D/g, "");
+              return cClean && (cClean.includes(cleanPhone) || cleanPhone.includes(cClean));
+            });
+            if (match) loadedCall = match as CallData;
+          }
+        }
+      }
+
+      // 4. If loadedCall has an id, fetch conversation turns
+      if (loadedCall?.id) {
+        const { data: convData } = await supabase
+          .from("conversations")
+          .select("*")
+          .eq("call_id", loadedCall.id)
+          .order("created_at", { ascending: true });
+        if (convData && Array.isArray(convData)) {
+          convTurns = convData as ConversationTurn[];
+        }
+      }
+
+      // 5. Fallback from reservation fields if call row not found
+      if (!loadedCall && (res.call_transcript || res.call_recording_url || res.ai_extracted_data)) {
+        loadedCall = {
+          id: res.call_id || res.id,
+          phone_number: res.customer_phone,
+          duration_seconds: res.call_duration_seconds || res.ai_extracted_data?.duration_seconds,
+          status: "completed",
+          recording_url: res.call_recording_url || res.ai_extracted_data?.recording_url,
+          transcript: res.call_transcript || res.ai_extracted_data?.transcript,
+          notes: res.call_notes || res.ai_extracted_data?.call_summary,
+          provider: res.ai_extracted_data?.provider || "synthflow",
+          metadata: res.ai_extracted_data,
+          synthflow_call_id: res.ai_extracted_data?.synthflow_call_id,
+        };
+      }
+    } catch (err) {
+      console.warn("Could not load call for reservation:", err);
+    } finally {
+      setCall(loadedCall);
+      setConversations(convTurns);
+      setCallLoading(false);
+    }
+  }, []);
 
   const openDetailReservation = (r: Reservation) => {
     setDetailReservation(r);
     setDetailDialogOpen(true);
+    void loadReservationCall(r);
   };
 
   // Table form
@@ -365,89 +504,117 @@ export default function TableReservations() {
               {filtered.map((res) => (
                 <div
                   key={res.id}
-                  className="bg-card border border-border/80 hover:border-primary/40 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between gap-4 group"
+                  className={`bg-card border border-border/70 hover:border-primary/50 rounded-2xl p-5 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.05)] hover:shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between gap-3.5 group overflow-hidden relative ${STATUS_CARD_ACCENTS[res.status] || ""}`}
                 >
                   {/* Top: Customer Avatar, Name, Phone & Status Badge */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary shadow-sm shrink-0">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 border border-primary/25 flex items-center justify-center font-bold text-sm text-primary shadow-xs shrink-0 tracking-wider">
                         {getInitials(res.customer_name)}
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-foreground text-[15px] truncate leading-tight">
+                        <p className="font-bold text-foreground text-[15px] truncate leading-tight group-hover:text-primary transition-colors">
                           {res.customer_name}
                         </p>
                         {res.customer_phone ? (
                           <a
                             href={`tel:${res.customer_phone}`}
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-0.5"
+                            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors font-medium mt-1"
                           >
-                            <Phone className="h-3 w-3 shrink-0" />
+                            <Phone className="h-3 w-3 shrink-0 text-primary/70" />
                             <span className="truncate">{res.customer_phone}</span>
                           </a>
                         ) : (
-                          <p className="text-xs text-muted-foreground/60 italic mt-0.5">No phone</p>
+                          <p className="text-xs text-muted-foreground/60 italic mt-1">No phone</p>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <Badge className={`text-[11px] px-2.5 py-0.5 font-medium border ${STATUS_COLORS[res.status] || ""}`}>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <Badge
+                        variant="outline"
+                        className={`text-xs px-2.5 py-0.5 font-semibold border gap-1.5 shadow-2xs ${STATUS_COLORS[res.status] || ""}`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT_COLORS[res.status] || "bg-muted-foreground"} ${res.status === "confirmed" ? "animate-pulse" : ""}`} />
                         {STATUS_LABELS[res.status] || res.status}
                       </Badge>
-                      {res.source === "phone" && (
-                        <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0 h-4 font-normal text-violet-600 dark:text-violet-400 border-violet-500/20 bg-violet-500/5">
+                      {res.source === "phone" ? (
+                        <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0 font-medium text-violet-600 dark:text-violet-400 border-violet-500/25 bg-violet-500/10">
                           <PhoneCall className="h-2.5 w-2.5" /> Voice AI
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-medium text-sky-600 dark:text-sky-400 border-sky-500/25 bg-sky-500/10">
+                          Online
                         </Badge>
                       )}
                     </div>
                   </div>
 
-                  {/* Middle: Details & Table info */}
+                  {/* Middle: Schedule & Table details */}
                   <div className="space-y-2.5">
-                    {/* Time & Guests pills */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/60 text-secondary-foreground text-xs font-medium border border-border/40">
-                        <Clock className="h-3.5 w-3.5 text-primary" />
-                        <span>{res.start_time.slice(0, 5)}</span>
-                        <span className="text-muted-foreground font-normal">({res.slot_duration_hours}h slot)</span>
+                    {/* Schedule & Guest Ribbon */}
+                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-muted/40 border border-border/50 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center text-primary shrink-0 shadow-2xs">
+                          <Clock className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground truncate text-xs">
+                            {res.start_time.slice(0, 5)}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {res.slot_duration_hours}h duration
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/60 text-secondary-foreground text-xs font-medium border border-border/40">
-                        <Users className="h-3.5 w-3.5 text-primary" />
-                        <span>{res.party_size} {res.party_size > 1 ? "Guests" : "Guest"}</span>
+
+                      <div className="flex items-center gap-2 min-w-0 border-l border-border/40 pl-2">
+                        <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center text-primary shrink-0 shadow-2xs">
+                          <Users className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground truncate text-xs">
+                            {res.party_size} {res.party_size > 1 ? "Guests" : "Guest"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            Party size
+                          </p>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Table Assignment Status */}
+                    {/* Table Assignment Box */}
                     {res.table_number ? (
-                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
-                        <div className="flex items-center gap-2">
-                          <TableProperties className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                          <div>
-                            <span className="font-semibold text-emerald-950 dark:text-emerald-100">
-                              Table {res.table_number}
-                            </span>
-                            {res.table_location && (
-                              <span className="text-emerald-700 dark:text-emerald-300 ml-1">({res.table_location})</span>
-                            )}
+                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border border-emerald-500/20 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-700 dark:text-emerald-300 shrink-0">
+                            <TableProperties className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-emerald-950 dark:text-emerald-100 truncate text-xs">
+                              {displayTableNumber(res.table_number)}
+                            </p>
+                            <p className="text-[10px] text-emerald-700 dark:text-emerald-300 truncate">
+                              {res.table_location || "Standard Area"} · Max {res.table_capacity || 4} seats
+                            </p>
                           </div>
                         </div>
-                        {res.table_capacity && (
-                          <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                            Max {res.table_capacity} guests
-                          </span>
-                        )}
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 shrink-0">
+                          Assigned
+                        </span>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-xs">
-                        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                          <span className="font-medium">No table assigned</span>
+                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs">
+                        <div className="flex items-center gap-2 min-w-0 text-amber-800 dark:text-amber-200">
+                          <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-700 dark:text-amber-300 shrink-0">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                          </div>
+                          <span className="font-medium truncate text-xs">No table assigned</span>
                         </div>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-6 text-[11px] px-2.5 text-amber-800 dark:text-amber-200 border-amber-500/40 hover:bg-amber-500/20 font-semibold"
+                          className="h-6.5 text-[11px] px-2.5 bg-background hover:bg-amber-500/20 text-amber-800 dark:text-amber-200 border-amber-500/40 font-semibold shrink-0 shadow-2xs"
                           onClick={() => openEditReservation(res)}
                         >
                           Assign Table →
@@ -460,77 +627,85 @@ export default function TableReservations() {
                       const note = getDisplayNotes(res.notes);
                       if (!note) return null;
                       return (
-                        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border/50 text-xs text-muted-foreground">
+                        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-muted/40 border border-border/40 text-xs text-muted-foreground">
                           <MessageSquare className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                          <span className="italic leading-relaxed">{note}</span>
+                          <span className="italic leading-relaxed truncate">"{note}"</span>
                         </div>
                       );
                     })()}
                   </div>
 
                   {/* Actions Footer */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-border/40">
-                    {res.status === "pending" && (
-                      <Button
-                        size="sm"
-                        className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
-                        onClick={() => quickStatus(res.id, "confirmed")}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
-                      </Button>
+                  <div className="pt-3 border-t border-border/40 flex flex-col gap-2">
+                    {/* Primary Operational Action (if applicable) */}
+                    {["pending", "confirmed", "seated"].includes(res.status) && (
+                      <div className="flex items-center gap-2">
+                        {res.status === "pending" && (
+                          <Button
+                            size="sm"
+                            className="h-8.5 text-xs gap-1.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-semibold shadow-sm flex-1"
+                            onClick={() => quickStatus(res.id, "confirmed")}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
+                          </Button>
+                        )}
+                        {res.status === "confirmed" && (
+                          <Button
+                            size="sm"
+                            className="h-8.5 text-xs gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold shadow-sm flex-1"
+                            onClick={() => quickStatus(res.id, "seated")}
+                          >
+                            <UtensilsCrossed className="h-3.5 w-3.5" /> Seat Guests
+                          </Button>
+                        )}
+                        {res.status === "seated" && (
+                          <Button
+                            size="sm"
+                            className="h-8.5 text-xs gap-1.5 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-black hover:to-slate-900 text-white font-semibold shadow-sm flex-1"
+                            onClick={() => quickStatus(res.id, "completed")}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                          </Button>
+                        )}
+                        {["pending", "confirmed"].includes(res.status) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/30 shrink-0 px-2.5 font-medium transition-colors"
+                            onClick={() => quickStatus(res.id, "no_show")}
+                            title="Mark as No-Show"
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1" /> No-show
+                          </Button>
+                        )}
+                      </div>
                     )}
-                    {res.status === "confirmed" && (
-                      <Button
-                        size="sm"
-                        className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm"
-                        onClick={() => quickStatus(res.id, "seated")}
-                      >
-                        <UtensilsCrossed className="h-3.5 w-3.5" /> Seat Guests
-                      </Button>
-                    )}
-                    {res.status === "seated" && (
-                      <Button
-                        size="sm"
-                        className="h-8 text-xs gap-1.5 bg-slate-800 hover:bg-slate-900 dark:bg-slate-200 dark:hover:bg-white dark:text-slate-900 text-white font-medium shadow-sm"
-                        onClick={() => quickStatus(res.id, "completed")}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
-                      </Button>
-                    )}
-                    {["pending", "confirmed"].includes(res.status) && (
+
+                    {/* Secondary Management Row: View Details, Edit, Delete */}
+                    <div className="flex items-center justify-between gap-1.5 pt-1">
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-8 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/30"
-                        onClick={() => quickStatus(res.id, "no_show")}
-                      >
-                        <XCircle className="h-3.5 w-3.5 mr-1" /> No-show
-                      </Button>
-                    )}
-
-                    <div className="ml-auto flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 px-2.5 text-xs gap-1 text-muted-foreground hover:text-foreground font-medium"
+                        className="h-8 px-3 text-xs gap-1.5 flex-1 bg-background hover:bg-primary/5 hover:text-primary hover:border-primary/40 text-foreground font-semibold shadow-2xs transition-colors"
                         onClick={() => openDetailReservation(res)}
                         title="View full booking details"
                       >
-                        <Eye className="h-3.5 w-3.5" /> Details
+                        <Eye className="h-3.5 w-3.5 text-primary" /> Details
                       </Button>
                       <Button
-                        size="icon"
+                        size="sm"
                         variant="ghost"
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        className="h-8 px-2.5 text-xs gap-1 text-muted-foreground hover:text-foreground hover:bg-muted font-medium"
                         onClick={() => openEditReservation(res)}
                         title="Edit reservation"
                       >
                         <Pencil className="h-3.5 w-3.5" />
+                        <span>Edit</span>
                       </Button>
                       <Button
-                        size="icon"
+                        size="sm"
                         variant="ghost"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                         onClick={() => setDeleteReservationId(res.id)}
                         title="Delete reservation"
                       >
@@ -741,8 +916,9 @@ export default function TableReservations() {
       </Dialog>
 
       {/* ─── RESERVATION DETAILS DIALOG ───────────── */}
+      {/* ─── RESERVATION DETAILS DIALOG ───────────── */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           {detailReservation && (
             <div className="space-y-5">
               <DialogHeader>
@@ -751,9 +927,9 @@ export default function TableReservations() {
                     <DialogTitle className="text-xl flex items-center gap-2">
                       <span>Booking Details</span>
                     </DialogTitle>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <DialogDescription className="text-xs text-muted-foreground mt-1">
                       ID: <span className="font-mono text-[11px]">{detailReservation.id}</span>
-                    </p>
+                    </DialogDescription>
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <Badge className={`text-xs px-2.5 py-0.5 font-medium border ${STATUS_COLORS[detailReservation.status] || ""}`}>
@@ -815,7 +991,7 @@ export default function TableReservations() {
                     <CalendarDays className="h-3.5 w-3.5 text-primary" /> Date
                   </div>
                   <p className="font-semibold text-sm text-foreground">
-                    {format(new Date(detailReservation.reservation_date + "T00:00:00"), "EEE, MMM d, yyyy")}
+                    {formatSafeDate(detailReservation.reservation_date)}
                   </p>
                 </div>
 
@@ -824,7 +1000,7 @@ export default function TableReservations() {
                     <Clock className="h-3.5 w-3.5 text-primary" /> Time & Duration
                   </div>
                   <p className="font-semibold text-sm text-foreground">
-                    {detailReservation.start_time.slice(0, 5)} ({detailReservation.slot_duration_hours}h slot)
+                    {(detailReservation.start_time || "19:00").slice(0, 5)} ({detailReservation.slot_duration_hours || 1}h slot)
                   </p>
                 </div>
 
@@ -861,7 +1037,7 @@ export default function TableReservations() {
                   <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm">
                     <div>
                       <p className="font-bold text-emerald-950 dark:text-emerald-100">
-                        Table {detailReservation.table_number}
+                        {displayTableNumber(detailReservation.table_number)}
                       </p>
                       <p className="text-xs text-emerald-700 dark:text-emerald-300">
                         {detailReservation.table_location || "Standard Area"} · Capacity {detailReservation.table_capacity || 4} guests
@@ -897,39 +1073,17 @@ export default function TableReservations() {
                 );
               })()}
 
-              {/* AI Call Insights (if available) */}
-              {detailReservation.ai_extracted_data && (
-                <div className="bg-card border border-border/70 rounded-xl p-4 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Volume2 className="h-3.5 w-3.5 text-primary" /> Voice Call Insights
-                    </p>
-                    {detailReservation.ai_extracted_data.synthflow_call_id && (
-                      <span className="text-[11px] font-mono text-muted-foreground">
-                        Call ID: {String(detailReservation.ai_extracted_data.synthflow_call_id).slice(0, 10)}...
-                      </span>
-                    )}
-                  </div>
-
-                  {detailReservation.ai_extracted_data.call_summary && (
-                    <div className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-3 text-xs text-foreground/90 space-y-1">
-                      <p className="font-semibold text-violet-700 dark:text-violet-400">AI Call Summary</p>
-                      <p className="text-muted-foreground leading-relaxed">
-                        {typeof detailReservation.ai_extracted_data.call_summary === "string"
-                          ? detailReservation.ai_extracted_data.call_summary
-                          : JSON.stringify(detailReservation.ai_extracted_data.call_summary)}
-                      </p>
-                    </div>
-                  )}
-
-                  {detailReservation.ai_extracted_data.recording_url && (
-                    <div className="space-y-1 pt-1">
-                      <p className="text-xs font-medium text-muted-foreground">Call Audio Recording</p>
-                      <audio controls src={detailReservation.ai_extracted_data.recording_url} className="w-full h-8" />
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* ─── AI Voice Call Recording & Full Transcript (Same as Order Details) ─── */}
+              <div className="pt-2">
+                <OrderCallRecording
+                  call={call}
+                  conversations={conversations}
+                  orderSource={detailReservation.source}
+                  aiExtractedData={detailReservation.ai_extracted_data}
+                  loading={callLoading}
+                  onRefresh={() => detailReservation && loadReservationCall(detailReservation)}
+                />
+              </div>
 
               {/* Action Buttons in Modal */}
               <div className="pt-3 border-t border-border/60 flex items-center justify-between flex-wrap gap-2">

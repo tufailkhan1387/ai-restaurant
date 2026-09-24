@@ -94,12 +94,17 @@ router.get("/restaurants/:id/reservations", optionalAuth, requireAuth, async (re
     const { date, status } = req.query;
     let q = knex("table_reservations")
       .leftJoin("restaurant_tables", "table_reservations.table_id", "restaurant_tables.id")
+      .leftJoin("calls", "table_reservations.call_id", "calls.id")
       .where("table_reservations.restaurant_id", req.params.id)
       .select(
         "table_reservations.*",
         "restaurant_tables.table_number",
         "restaurant_tables.capacity as table_capacity",
-        "restaurant_tables.location as table_location"
+        "restaurant_tables.location as table_location",
+        "calls.transcript as call_transcript",
+        "calls.recording_url as call_recording_url",
+        "calls.notes as call_notes",
+        "calls.duration_seconds as call_duration_seconds"
       )
       .orderBy(["reservation_date", "start_time"]);
     if (date) q = q.where("table_reservations.reservation_date", date);

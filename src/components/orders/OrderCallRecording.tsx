@@ -767,3 +767,5 @@ export function OrderCallRecording({
     </Card>
   );
 }
+
+export default OrderCallRecording;

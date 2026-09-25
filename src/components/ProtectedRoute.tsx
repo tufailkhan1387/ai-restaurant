@@ -8,7 +8,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps) {
-  const { user, role, loading, isDriver } = useAuth();
+  const { user, role, loading, isDriver, isReceptionist, isStaff } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -33,7 +33,30 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
     return <Navigate to="/driver" replace />;
   }
 
-  if (requiredRoles && role && !requiredRoles.includes(role)) {
+  // Receptionist is confined strictly to /, /reservations, /settings, /profile
+  if (isReceptionist && !["/", "/reservations", "/settings", "/profile"].includes(location.pathname)) {
+    return <Navigate to="/" replace />;
+  }
+
+  // Staff: dashboard, orders, menu, deals, reports, settings
+  if (isStaff) {
+    const path = location.pathname;
+    const staffAllowed =
+      path === "/" ||
+      path === "/settings" ||
+      path === "/profile" ||
+      path === "/deals" ||
+      path === "/tables" ||
+      path === "/menu" ||
+      path.startsWith("/menu/") ||
+      path.startsWith("/orders") ||
+      path.startsWith("/reports");
+    if (!staffAllowed) {
+      return <Navigate to="/" replace />;
+    }
+  }
+
+  if (requiredRoles && role && !requiredRoles.includes(role as any)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">

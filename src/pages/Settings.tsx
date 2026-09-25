@@ -8,7 +8,9 @@ import { UserManagement } from "@/components/settings/UserManagement";
 
 export default function Settings() {
   const { t } = useTranslation(["settings", "sidebar", "common"]);
-  const { isManagement } = useAuth();
+  const { isManagement, isKitchen, isReceptionist, isStaff } = useAuth();
+  const showUserManagement = isManagement && !isKitchen && !isReceptionist && !isStaff;
+  const showSecurity = isManagement || isKitchen || isReceptionist || isStaff;
 
   return (
     <div className="space-y-6 animate-fade-in max-w-5xl">
@@ -21,8 +23,8 @@ export default function Settings() {
         <TabsList className="h-auto flex-wrap justify-start gap-1 w-full sm:w-auto">
           <TabsTrigger value="general">{t("settings:tabGeneral", "General")}</TabsTrigger>
           <TabsTrigger value="notifications">{t("settings:tabNotifications", "Notifications")}</TabsTrigger>
-          {isManagement && <TabsTrigger value="users">{t("settings:tabUserManagement", "Users")}</TabsTrigger>}
-          {isManagement && <TabsTrigger value="security">{t("settings:tabSecurity", "Security")}</TabsTrigger>}
+          {showUserManagement && <TabsTrigger value="users">{t("settings:tabUserManagement", "Users")}</TabsTrigger>}
+          {showSecurity && <TabsTrigger value="security">{t("settings:tabSecurity", "Security")}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="general" className="space-y-6">
@@ -33,13 +35,13 @@ export default function Settings() {
           <NotificationSettings />
         </TabsContent>
 
-        {isManagement && (
+        {showUserManagement && (
           <TabsContent value="users" className="space-y-6">
             <UserManagement />
           </TabsContent>
         )}
 
-        {isManagement && (
+        {showSecurity && (
           <TabsContent value="security" className="space-y-6">
             <SecuritySettings />
           </TabsContent>

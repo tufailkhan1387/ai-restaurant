@@ -45,7 +45,10 @@ import {
   XCircle,
   AlertCircle,
   Check,
+  UtensilsCrossed,
+  ChefHat,
 } from "lucide-react";
+import { CreateManualOrderDialog } from "@/components/orders/CreateManualOrderDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
@@ -92,6 +95,10 @@ interface Order {
   auto_assigned?: boolean | null;
   branch_assigned_at?: string | null;
   assigned_by?: string | null;
+  fulfillment_type?: string;
+  table_id?: string | null;
+  table_number?: string | null;
+  reservation_id?: string | null;
 }
 
 interface OrderItem {
@@ -491,7 +498,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
         if (sourceFilter !== "all") {
           const src = (o.source || "").toLowerCase();
           if (sourceFilter === "call" && !(o.call_id || src.includes("call"))) return false;
-          if (sourceFilter === "online" && !(src.includes("online") || src.includes("web"))) return false;
+          if (sourceFilter === "online" && !(src.includes("online") || src.includes("web") || src.includes("qr") || src.includes("dine"))) return false;
           if (
             sourceFilter === "dashboard" &&
             !(src.includes("dashboard") || src.includes("pos") || src.includes("house") || src.includes("manual"))
@@ -640,10 +647,21 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
         {/* Header Title and Search Bar */}
         <div className="flex justify-between items-start sm:items-center flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              {icon}
-              {title}
-            </h1>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                {icon}
+                {title}
+              </h1>
+              {role === "kitchen" || role === "chef" ? (
+                <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200 border-blue-300 gap-1 text-xs font-semibold py-0.5">
+                  <ChefHat className="h-3 w-3" /> Kitchen Display
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-muted-foreground gap-1 text-xs font-medium py-0.5 bg-muted/30">
+                  <ChefHat className="h-3 w-3 text-primary" /> Fulfillments routed to Kitchen Staff
+                </Badge>
+              )}
+            </div>
             {description && <p className="text-muted-foreground text-sm mt-0.5">{description}</p>}
           </div>
 
@@ -694,6 +712,10 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                 <RotateCcw className="h-3.5 w-3.5" />
                 {t("common:reset", "Reset")}
               </Button>
+            )}
+
+            {role !== "kitchen" && role !== "chef" && role !== "receptionist" && (
+              <CreateManualOrderDialog onOrderCreated={() => void load()} />
             )}
           </div>
         </div>
@@ -1100,11 +1122,20 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           </Badge>
                         )}
 
+                        {o.fulfillment_type === "dine_in" && (
+                          <Badge variant="outline" className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30 text-xs font-bold flex items-center gap-1">
+                            <UtensilsCrossed className="h-3 w-3" />
+                            <span>Dine-In{o.table_number ? ` · Table ${o.table_number}` : ""}</span>
+                          </Badge>
+                        )}
+
                         <Badge
                           className={cn("text-xs font-semibold px-2.5 py-0.5", ORDER_STATUS_COLORS[o.status])}
                           variant="outline"
                         >
-                          {getOrderStatusLabel(o.status)}
+                          {o.fulfillment_type === "dine_in" && o.status === "out_for_delivery"
+                            ? "🍽️ Served"
+                            : getOrderStatusLabel(o.status)}
                         </Badge>
                       </div>
 
@@ -1241,17 +1272,21 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           </Button>
                         )}
                         {o.status === "preparing" && (
-                          <Button size="sm" variant="outline" onClick={() => updateStatus(o.id, "ready")}>
-                            {t("orders:ready", "Ready")}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => updateStatus(o.id, o.fulfillment_type === "dine_in" ? "out_for_delivery" : "ready")}
+                          >
+                            {o.fulfillment_type === "dine_in" ? "🍽️ Serve Table" : t("orders:ready", "Ready")}
                           </Button>
                         )}
-                        {o.status === "assigned" && (
+                        {o.status === "ready" && (
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => updateStatus(o.id, "out_for_delivery")}
                           >
-                            {t("orders:outForDelivery", "Out for delivery")}
+                            {o.fulfillment_type === "dine_in" ? "🍽️ Serve Table" : t("orders:outForDelivery", "Out for delivery")}
                           </Button>
                         )}
                         {o.status === "out_for_delivery" && (
@@ -1264,7 +1299,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                               })
                             }
                           >
-                            {t("orders:delivered", "Delivered")}
+                            {o.fulfillment_type === "dine_in" ? "Complete / Paid" : t("orders:delivered", "Delivered")}
                           </Button>
                         )}
                         {o.status !== "cancelled" && o.status !== "delivered" && (

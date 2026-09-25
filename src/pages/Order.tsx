@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getApiBase } from "@/lib/apiBase";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
   DialogBody,
 } from "@/components/ui/dialog";
@@ -26,6 +27,7 @@ import {
   Check,
   Sparkles,
   Boxes,
+  UtensilsCrossed,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/restaurant";
 import { cn } from "@/lib/utils";
@@ -83,6 +85,7 @@ type WorkingHour = { day_of_week: number; open_time: string; close_time: string 
 type CartLine = {
   kind: "item" | "deal";
   refId: string;
+  itemId?: string;
   name: string;
   price: number;
   quantity: number;
@@ -91,6 +94,13 @@ type CartLine = {
 export default function Order() {
   const { t } = useTranslation(["ordering", "common", "deals", "menu", "orders"]);
   const navigate = useNavigate();
+  const { restaurantSlug, branchId } = useParams<{ restaurantSlug?: string; branchId?: string }>();
+  const [searchParams] = useSearchParams();
+  const rawTableParam = searchParams.get("table");
+  const tableParam = rawTableParam ? decodeURIComponent(rawTableParam).trim() : null;
+  const tableIdParam = searchParams.get("table_id") ? searchParams.get("table_id")!.trim() : null;
+  const reservationIdParam = searchParams.get("reservation_id") ? searchParams.get("reservation_id")!.trim() : null;
+
   const [settings, setSettings] = useState<Settings | null>(null);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [branches, setBranches] = useState<BranchOption[]>([]);
@@ -105,8 +115,15 @@ export default function Order() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [activeCat, setActiveCat] = useState<string>("deals");
   const [submitting, setSubmitting] = useState(false);
-  const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup">("delivery");
+  const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup" | "dine_in">("delivery");
+  const [tableInfo, setTableInfo] = useState<{ id?: string; table_number?: string } | null>(null);
+  const [checkInNotice, setCheckInNotice] = useState<string | null>(null);
   const [form, setForm] = useState({ customer_name: "", customer_phone: "", customer_email: "", delivery_address: "", notes: "" });
+  const [tableBill, setTableBill] = useState<{
+    session?: { id: string; table_number?: string; customer_name?: string };
+    orders?: Array<{ id: string; order_number: string; total_amount: number; items?: Array<{ item_name: string; quantity: number }> }>;
+    totals?: { order_count: number; total_amount: number };
+  } | null>(null);
 
   // Customization Dialog State (Sizes, Flavors, Sauces & Extras)
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -116,16 +133,50 @@ export default function Order() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetch(`${getApiBase()}/api/public/storefront`);
+      const q = new URLSearchParams();
+      if (restaurantSlug) q.set("slug", restaurantSlug);
+      if (branchId) q.set("branch", branchId);
+      if (tableParam) q.set("table", tableParam);
+      if (tableIdParam) q.set("table_id", tableIdParam);
+
+      const res = await fetch(`${getApiBase()}/api/public/storefront${q.toString() ? `?${q.toString()}` : ""}`);
       if (!res.ok) return;
       const bundle = await res.json();
       const s = bundle.settings || {};
       const r = bundle.restaurant || {};
       setRestaurant({ id: r.id, elevenlabs_agent_id: r.elevenlabs_agent_id ?? null });
-      setSettings({ ...s, allows_delivery: r.allows_delivery, allows_pickup: r.allows_pickup } as any);
+      setSettings({ ...s, allows_delivery: r.allows_delivery, allows_pickup: r.allows_pickup, restaurant_id: r.id } as any);
       setBranches(bundle.branches || []);
-      
-      if (r.allows_delivery === false && r.allows_pickup !== false) {
+
+      if (bundle.table || tableParam || tableIdParam) {
+        const tbl = bundle.table || { id: tableIdParam || undefined, table_number: tableParam || undefined };
+        setTableInfo(tbl);
+        setFulfillmentType("dine_in");
+
+        // Automatically trigger check-in for this table
+        try {
+          const checkInRes = await fetch(`${getApiBase()}/api/public/tables/check-in`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              restaurant_id: r.id,
+              branch_id: r.is_branch ? r.id : undefined,
+              slug: restaurantSlug,
+              table_id: tableIdParam || tbl?.id,
+              table_number: tableParam || tbl?.table_number,
+            }),
+          });
+          const checkInData = await checkInRes.json();
+          if (checkInData.seated) {
+            setCheckInNotice(checkInData.message || "Reservation checked in as Seated.");
+            toast.success(checkInData.message || "Welcome! You are checked in to your table.");
+          } else if (checkInData.table) {
+            setCheckInNotice(`Welcome! You are seated at Table ${checkInData.table.table_number}.`);
+          }
+        } catch (err) {
+          console.warn("Table check-in request error:", err);
+        }
+      } else if (r.allows_delivery === false && r.allows_pickup !== false) {
         setFulfillmentType("pickup");
       }
       
@@ -141,7 +192,7 @@ export default function Order() {
         setActiveCat(bundle.categories[0].id);
       }
     })();
-  }, []);
+  }, [restaurantSlug, branchId, tableParam, tableIdParam]);
 
   const addItem = (line: Omit<CartLine, "quantity">) => {
     setCart((prev) => {
@@ -177,7 +228,7 @@ export default function Order() {
       setChosenFlavor(initialFlavor);
       setChosenAddonIds([]);
     } else {
-      addItem({ kind: "item", refId: it.id, name: it.name, price: Number(it.price) });
+      addItem({ kind: "item", refId: it.id, itemId: it.id, name: it.name, price: Number(it.price) });
       toast.success(`Added ${it.name} to cart`);
     }
   };
@@ -239,7 +290,8 @@ export default function Order() {
 
     addItem({
       kind: "item",
-      refId: `${customizingItem.id}-${chosenSize?.id || "nosize"}-${chosenFlavor?.id || "noflavor"}-${chosenAddonIds.sort().join("-")}`,
+      refId: `${customizingItem.id}:::${chosenSize?.id || "nosize"}:::${chosenFlavor?.id || "noflavor"}:::${chosenAddonIds.sort().join(",")}`,
+      itemId: customizingItem.id,
       name: fullName,
       price: finalPrice,
     });
@@ -276,53 +328,110 @@ export default function Order() {
     });
   }, [hours]);
 
+  useEffect(() => {
+    const isDineIn = fulfillmentType === "dine_in" || Boolean(tableInfo || tableParam);
+    const phone = form.customer_phone.trim();
+    const restaurantId = (settings as any)?.restaurant_id || restaurant?.id;
+    const tableNumber = tableInfo?.table_number || tableParam;
+    if (!isDineIn || !restaurantId || !tableNumber || phone.replace(/\D/g, "").length < 7) {
+      setTableBill(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({
+          restaurant_id: restaurantId,
+          table_number: tableNumber,
+          phone,
+        });
+        if (tableInfo?.id || tableIdParam) q.set("table_id", tableInfo?.id || tableIdParam || "");
+        const res = await fetch(`${getApiBase()}/api/public/table-session?${q.toString()}`, { signal: ctrl.signal });
+        if (!res.ok) return;
+        const data = await res.json();
+        setTableBill(data.session ? data : null);
+      } catch {
+        // ignore aborted / network
+      }
+    }, 400);
+    return () => {
+      ctrl.abort();
+      clearTimeout(timer);
+    };
+  }, [form.customer_phone, fulfillmentType, tableInfo, tableParam, tableIdParam, settings, restaurant]);
+
   const submitOrder = async () => {
     if (cart.length === 0) return toast.error("Your cart is empty");
-    if (!form.customer_name || !form.customer_phone || (fulfillmentType === "delivery" && !form.delivery_address)) {
-      return toast.error("Name, phone and delivery details are required");
+    const isDineIn = fulfillmentType === "dine_in";
+    if (!form.customer_name.trim()) {
+      return toast.error("Please enter your name");
     }
-    if (settings && Number(settings.min_order_amount || 0) > 0 && subtotal < Number(settings.min_order_amount)) {
+    if (!form.customer_phone.trim()) {
+      return toast.error(isDineIn
+        ? "Please enter your mobile number so this table bill can be linked to you"
+        : "Please enter required name and contact details");
+    }
+    if (fulfillmentType === "delivery" && !form.delivery_address) {
+      return toast.error("Please enter required name and contact details");
+    }
+    if (settings && Number(settings.min_order_amount || 0) > 0 && subtotal < Number(settings.min_order_amount) && !isDineIn) {
       return toast.error(`Minimum order amount is ${formatCurrency(settings.min_order_amount, settings.currency)}. Orders below this amount cannot be placed.`);
     }
     setSubmitting(true);
     try {
-      const restaurantId = (settings as any)?.restaurant_id as string | undefined;
+      const restaurantId = (settings as any)?.restaurant_id || restaurant?.id;
       if (!restaurantId) {
         toast.error("Restaurant configuration missing");
         setSubmitting(false);
         return;
       }
-      const lines = cart.map((l) => ({
-        menu_item_id: l.kind === "item" ? l.refId.split("-")[0] : null,
-        deal_id: l.kind === "deal" ? l.refId : null,
-        item_name: l.name,
-        quantity: l.quantity,
-        unit_price: l.price,
-        line_total: l.price * l.quantity,
-      }));
+      const lines = cart.map((l) => {
+        let menuItemId: string | null = null;
+        if (l.kind === "item") {
+          menuItemId = l.itemId || (l.refId.includes(":::") ? l.refId.split(":::")[0] : l.refId);
+        }
+        return {
+          menu_item_id: menuItemId,
+          deal_id: l.kind === "deal" ? l.refId : null,
+          item_name: l.name,
+          quantity: l.quantity,
+          unit_price: l.price,
+          line_total: l.price * l.quantity,
+        };
+      });
+      const tableNumber = tableInfo?.table_number || tableParam || null;
+      const tableId = tableInfo?.id || tableIdParam || null;
+
       const res = await fetch(`${getApiBase()}/api/public/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           restaurant_id: restaurantId,
-          branch_id: selectedBranchId || null,
+          branch_id: selectedBranchId || (restaurant?.id !== restaurantId ? restaurant?.id : null),
           customer_name: form.customer_name,
-          customer_phone: form.customer_phone,
+          customer_phone: form.customer_phone.trim(),
           customer_email: form.customer_email || null,
-          delivery_address: fulfillmentType === "delivery" ? form.delivery_address : "Self Pickup",
+          delivery_address: isDineIn
+            ? `Dine-in (Table ${tableNumber || "Assigned"})`
+            : fulfillmentType === "delivery"
+            ? form.delivery_address
+            : "Self Pickup",
           fulfillment_type: fulfillmentType,
+          table_id: tableId,
+          table_number: tableNumber,
+          reservation_id: reservationIdParam || null,
           notes: form.notes || null,
           subtotal,
           tax_amount: tax,
-          delivery_fee: deliveryFee,
-          total_amount: total,
+          delivery_fee: isDineIn ? 0 : deliveryFee,
+          total_amount: isDineIn ? subtotal + tax : total,
           lines,
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Order failed");
       const order = body.order;
-      toast.success("Order placed!");
+      toast.success(isDineIn ? "Dine-in order placed to kitchen!" : "Order placed!");
       navigate(`/track/${order.tracking_code}`);
     } catch (e: any) {
       toast.error(e.message || "Failed to place order");
@@ -402,6 +511,30 @@ export default function Order() {
           </div>
         </div>
       </header>
+
+      {/* Dine-In Table Banner */}
+      {(fulfillmentType === "dine_in" || tableInfo || tableParam) && (
+        <section className="bg-primary/10 border-b border-primary/20 py-3 px-4">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                <UtensilsCrossed className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-primary uppercase tracking-wider">
+                  Dine-In Menu · Table {tableInfo?.table_number || tableParam}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {checkInNotice || "Your table is checked in. Order directly to your table."}
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30 text-xs font-bold gap-1">
+              <Check className="h-3 w-3" /> Seated & Active
+            </Badge>
+          </div>
+        </section>
+      )}
 
       {/* Hero / Banner */}
       <section className="bg-muted/40 border-b py-6 px-4">
@@ -621,27 +754,43 @@ export default function Order() {
 
               {/* Fulfillment Switch & Customer Details */}
               <div className="space-y-3 pt-3 border-t">
-                {settings?.allows_delivery !== false && settings?.allows_pickup !== false && (
-                  <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={fulfillmentType === "delivery" ? "default" : "ghost"}
-                      className="text-xs h-8"
-                      onClick={() => setFulfillmentType("delivery")}
-                    >
-                      🛵 {t("ordering:delivery", "Delivery")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={fulfillmentType === "pickup" ? "default" : "ghost"}
-                      className="text-xs h-8"
-                      onClick={() => setFulfillmentType("pickup")}
-                    >
-                      🛍️ {t("orders:pickup", "Pickup")}
-                    </Button>
+                {fulfillmentType === "dine_in" ? (
+                  <div className="p-3 bg-primary/10 border border-primary/25 rounded-xl text-primary space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                        <UtensilsCrossed className="h-3.5 w-3.5" /> Dine-In Order
+                      </span>
+                      <Badge variant="outline" className="bg-primary/20 border-primary/30 text-[10px] font-bold">
+                        Table {tableInfo?.table_number || tableParam}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      This order will be prepared and served directly to your table.
+                    </p>
                   </div>
+                ) : (
+                  settings?.allows_delivery !== false && settings?.allows_pickup !== false && (
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-lg">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={fulfillmentType === "delivery" ? "default" : "ghost"}
+                        className="text-xs h-8"
+                        onClick={() => setFulfillmentType("delivery")}
+                      >
+                        🛵 {t("ordering:delivery", "Delivery")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={fulfillmentType === "pickup" ? "default" : "ghost"}
+                        className="text-xs h-8"
+                        onClick={() => setFulfillmentType("pickup")}
+                      >
+                        🛍️ {t("orders:pickup", "Pickup")}
+                      </Button>
+                    </div>
+                  )
                 )}
 
                 <div>
@@ -649,15 +798,52 @@ export default function Order() {
                   <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="John Doe" />
                 </div>
                 <div>
-                  <Label>{t("ordering:customerPhone", "Phone Number")} *</Label>
-                  <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="+1234567890" />
+                  <Label>
+                    {t("ordering:customerPhone", "Phone Number")} *
+                  </Label>
+                  <Input
+                    value={form.customer_phone}
+                    onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
+                    placeholder="03XXXXXXXXX"
+                    required
+                  />
+                  {fulfillmentType === "dine_in" && (
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Required. Use the same number if you order again from this table so all items go on one bill.
+                    </p>
+                  )}
                 </div>
+                {fulfillmentType === "dine_in" && tableBill?.orders && tableBill.orders.length > 0 && (
+                  <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 space-y-2">
+                    <p className="text-xs font-bold text-emerald-800 dark:text-emerald-200">
+                      Open table bill · {tableBill.totals?.order_count || tableBill.orders.length} previous order(s)
+                    </p>
+                    <ul className="space-y-1 text-xs text-foreground">
+                      {tableBill.orders.map((o) => (
+                        <li key={o.id} className="flex justify-between gap-2">
+                          <span className="truncate">
+                            {o.order_number}: {(o.items || []).map((i) => `${i.quantity}× ${i.item_name}`).join(", ") || "Items"}
+                          </span>
+                          <span className="font-semibold shrink-0">{formatCurrency(o.total_amount, settings?.currency)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[11px] text-muted-foreground">
+                      This new order will be added to the same table invoice.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <Label>{t("ordering:customerEmail", "Email")}</Label>
                   <Input type="email" value={form.customer_email} onChange={(e) => setForm({ ...form, customer_email: e.target.value })} />
                 </div>
 
-                {fulfillmentType === "delivery" ? (
+                {fulfillmentType === "dine_in" ? (
+                  <div className="p-2.5 rounded-lg bg-muted text-xs flex items-center justify-between">
+                    <span className="text-muted-foreground">Serving Table:</span>
+                    <span className="font-bold text-foreground">Table {tableInfo?.table_number || tableParam || "Assigned"}</span>
+                  </div>
+                ) : fulfillmentType === "delivery" ? (
                   <div>
                     <Label>{t("ordering:deliveryAddress", "Delivery Address")} *</Label>
                     <Textarea
@@ -722,8 +908,12 @@ export default function Order() {
               <Sparkles className="h-5 w-5 text-primary" />
               {t("ordering:itemOptions", "Customize")} {customizingItem?.name}
             </DialogTitle>
-            {customizingItem?.description && (
-              <p className="text-sm text-muted-foreground pt-1">{customizingItem.description}</p>
+            {customizingItem?.description ? (
+              <DialogDescription className="text-sm text-muted-foreground pt-1">
+                {customizingItem.description}
+              </DialogDescription>
+            ) : (
+              <DialogDescription className="sr-only">Customize item options</DialogDescription>
             )}
           </DialogHeader>
 
@@ -812,9 +1002,11 @@ export default function Order() {
                             </Badge>
                           )}
                         </div>
-                        <span className="text-sm tabular-nums font-bold shrink-0 ml-2">
-                          {Number(f.price) > 0 ? `+${formatCurrency(f.price, settings?.currency)}` : formatCurrency(0, settings?.currency)}
-                        </span>
+                        {Number(f.price) > 0 && (
+                          <span className="text-sm tabular-nums font-bold shrink-0 ml-2">
+                            +{formatCurrency(f.price, settings?.currency)}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

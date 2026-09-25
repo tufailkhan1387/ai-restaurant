@@ -49,6 +49,7 @@ import {
   Globe,
   PackageCheck,
   RefreshCw,
+  UtensilsCrossed,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -69,6 +70,12 @@ function asOrderStatus(s: string): OrderStatus {
   return (ORDER_STATUSES as readonly string[]).includes(s) ? (s as OrderStatus) : "pending";
 }
 
+function formatTableDisplayName(tbl?: string | null): string {
+  if (!tbl) return "Assigned Table";
+  const clean = tbl.trim();
+  return /^table\b/i.test(clean) ? clean : `Table ${clean}`;
+}
+
 type OrderRow = {
   id: string;
   restaurant_id: string;
@@ -83,6 +90,10 @@ type OrderRow = {
   status: OrderStatus;
   source: string;
   fulfillment_type?: string | null;
+  table_id?: string | null;
+  table_number?: string | null;
+  table_session_id?: string | null;
+  reservation_id?: string | null;
   payment_method: string;
   payment_status: string;
   subtotal: number;
@@ -313,6 +324,8 @@ export default function OrderDetail() {
   const [driversForOrder, setDriversForOrder] = useState<DriverRow[]>([]);
   const [restaurantName, setRestaurantName] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [tableBill, setTableBill] = useState<any | null>(null);
+  const [closingTable, setClosingTable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [call, setCall] = useState<CallData | null>(null);
@@ -357,6 +370,20 @@ export default function OrderDetail() {
         total_amount: Number(o.total_amount ?? 0),
       };
       setOrder(normalized);
+
+      if (o.table_session_id) {
+        try {
+          const sessRes = await fetch(`${getApiBase()}/api/table-sessions/${o.table_session_id}`, {
+            headers: { Authorization: `Bearer ${getToken()}` },
+          });
+          if (sessRes.ok) setTableBill(await sessRes.json());
+          else setTableBill(null);
+        } catch {
+          setTableBill(null);
+        }
+      } else {
+        setTableBill(null);
+      }
 
       // Fetch menu items and variants for this restaurant (or fallback to all)
       let menuItemsQuery = supabase.from("menu_items").select("id, restaurant_id, name, price, image_url");
@@ -671,6 +698,28 @@ export default function OrderDetail() {
     setReceiptOpen(true);
   };
 
+  const closeTableBill = async () => {
+    const sessionId = order?.table_session_id || tableBill?.session?.id;
+    if (!sessionId) return;
+    setClosingTable(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/table-sessions/${sessionId}/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Failed to close table");
+      setTableBill(body);
+      toast({ title: "Table closed", description: "All orders on this table are marked paid and included on one invoice." });
+      setReceiptOpen(true);
+      await load();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Could not close table", description: e.message });
+    } finally {
+      setClosingTable(false);
+    }
+  };
+
   const totalItemsCount = useMemo(() => {
     return items.reduce((acc, it) => acc + (it.quantity || 1), 0);
   }, [items]);
@@ -699,7 +748,8 @@ export default function OrderDetail() {
   }
 
   const st = order.status;
-  const isPickup = order.fulfillment_type === "pickup" || order.delivery_address?.toLowerCase().includes("pickup");
+  const isDineIn = order.fulfillment_type === "dine_in" || Boolean(order.table_number);
+  const isPickup = !isDineIn && (order.fulfillment_type === "pickup" || order.delivery_address?.toLowerCase().includes("pickup"));
   const isCash = !order.payment_method || order.payment_method.toLowerCase().includes("cash");
   const isPaid = order.payment_status?.toLowerCase() === "paid";
 
@@ -730,7 +780,10 @@ export default function OrderDetail() {
             className="h-9 gap-2 text-xs font-semibold bg-card border-border/80 shadow-xs hover:bg-muted"
             onClick={handlePrint}
           >
-            <Printer className="h-4 w-4 text-muted-foreground" /> {t("orders:printReceipt", "Print Receipt")}
+            <Printer className="h-4 w-4 text-muted-foreground" />{" "}
+            {order && (order.fulfillment_type === "dine_in" || order.table_number)
+              ? "Print Table Invoice"
+              : t("orders:printReceipt", "Print Receipt")}
           </Button>
           <Button
             variant="outline"
@@ -778,7 +831,7 @@ export default function OrderDetail() {
                         : "bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400"
                   )}
                 >
-                  {getOrderStatusLabel(st, t)}
+                  {isDineIn && st === "out_for_delivery" ? "🍽️ Served" : getOrderStatusLabel(st, t)}
                 </Badge>
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md border border-border/40">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Placed {placedAgo}
@@ -793,15 +846,39 @@ export default function OrderDetail() {
                 </span>
                 <span
                   className={cn(
-                    "inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-md border",
-                    isPickup
+                    "inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-md border",
+                    isDineIn
+                      ? "bg-purple-50 text-purple-700 border-purple-200/60 dark:bg-purple-950/40 dark:text-purple-300"
+                      : isPickup
                       ? "bg-purple-50 text-purple-700 border-purple-200/60 dark:bg-purple-950/40 dark:text-purple-300"
                       : "bg-blue-50 text-blue-700 border-blue-200/60 dark:bg-blue-950/40 dark:text-blue-300"
                   )}
                 >
-                  {isPickup ? "🛍️ Pickup" : "🚚 Home Delivery"}
+                  {isDineIn ? `🍽️ Dine-In · ${formatTableDisplayName(order.table_number)}` : isPickup ? "🛍️ Pickup" : "🚚 Home Delivery"}
                 </span>
               </div>
+
+              {/* Prominent Dine-In Alert Banner */}
+              {isDineIn && (
+                <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/25 text-purple-950 dark:text-purple-200">
+                  <div className="h-8 w-8 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
+                    <UtensilsCrossed className="h-4 w-4 text-purple-600 dark:text-purple-300" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold leading-tight">
+                      Dine-In Table Order — {formatTableDisplayName(order.table_number)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {order.source === "staff"
+                        ? "Staff took this dine-in order at the table"
+                        : "Customer scanned table QR code & placed dine-in order"}
+                      {tableBill?.totals?.order_count > 1
+                        ? ` · ${tableBill.totals.order_count} orders on this table bill`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Big Order Title & Tracking code */}
               <div className="flex items-center gap-4 flex-wrap">
@@ -831,7 +908,7 @@ export default function OrderDetail() {
                   className="font-bold gradient-primary text-primary-foreground shadow-sm px-6 h-10 rounded-xl"
                   onClick={() => updateStatus("confirmed", { verified_at: new Date().toISOString() })}
                 >
-                  ✓ Confirm Order
+                  {isDineIn ? "✓ Confirm Table Order" : "✓ Confirm Order"}
                 </Button>
               )}
               {st === "confirmed" && (
@@ -848,12 +925,12 @@ export default function OrderDetail() {
                   size="default"
                   variant="secondary"
                   className="font-bold border border-border px-6 h-10 rounded-xl"
-                  onClick={() => updateStatus("ready")}
+                  onClick={() => updateStatus(isDineIn ? "out_for_delivery" : "ready")}
                 >
-                  📦 Mark as Ready
+                  {isDineIn ? "🍽️ Serve Table" : "📦 Mark as Ready"}
                 </Button>
               )}
-              {st === "ready" && !order.driver_id && (
+              {st === "ready" && !order.driver_id && !isDineIn && (
                 <Select onValueChange={(v) => assignDriver(v)}>
                   <SelectTrigger className="h-10 w-[200px] font-semibold bg-background rounded-xl">
                     <SelectValue placeholder="Assign Rider" />
@@ -867,13 +944,22 @@ export default function OrderDetail() {
                   </SelectContent>
                 </Select>
               )}
+              {st === "ready" && isDineIn && (
+                <Button
+                  size="default"
+                  className="font-bold gradient-primary text-primary-foreground shadow-sm px-6 h-10 rounded-xl"
+                  onClick={() => updateStatus("out_for_delivery")}
+                >
+                  🍽️ Serve Table
+                </Button>
+              )}
               {st === "assigned" && (
                 <Button
                   size="default"
                   className="font-bold gradient-primary text-primary-foreground shadow-sm px-6 h-10 rounded-xl"
                   onClick={() => updateStatus("out_for_delivery")}
                 >
-                  🚚 Out for Delivery
+                  {isDineIn ? "🍽️ Serve Table" : "🚚 Out for Delivery"}
                 </Button>
               )}
               {st === "out_for_delivery" && (
@@ -882,13 +968,60 @@ export default function OrderDetail() {
                   className="font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm px-6 h-10 rounded-xl"
                   onClick={() => updateStatus("delivered", { delivered_at: new Date().toISOString() })}
                 >
-                  ✓ Mark Delivered
+                  {isDineIn ? "✓ Mark Complete / Paid" : "✓ Mark Delivered"}
                 </Button>
               )}
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {isDineIn && tableBill?.orders?.length > 0 && (
+        <Card className="border border-purple-500/25 shadow-xs bg-card rounded-2xl overflow-hidden">
+          <CardHeader className="py-4 px-6 border-b border-border/40 bg-purple-500/5 flex flex-row items-center justify-between gap-3">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
+              <UtensilsCrossed className="h-4 w-4 text-purple-600" />
+              {formatTableDisplayName(tableBill.session?.table_number || order.table_number)} bill
+              <Badge variant="outline" className="text-[10px]">
+                {tableBill.session?.status === "closed" ? "Closed" : "Open"}
+              </Badge>
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-black">{formatCurrency(tableBill.totals?.total_amount || 0)}</span>
+              {tableBill.session?.status !== "closed" && (
+                <Button size="sm" className="h-8 text-xs font-bold" onClick={closeTableBill} disabled={closingTable}>
+                  {closingTable ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Receipt className="h-3.5 w-3.5" />}
+                  <span className="ml-1.5">Close table & print invoice</span>
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-6 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {order.customer_name} · {order.customer_phone} · all dine-in orders from this guest at this table
+            </p>
+            <div className="space-y-2">
+              {tableBill.orders.map((sessOrder: any) => (
+                <div key={sessOrder.id} className="rounded-xl border border-border/60 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <Link to={`/orders/${sessOrder.id}`} className="text-xs font-bold text-primary hover:underline">
+                      {sessOrder.order_number}
+                    </Link>
+                    <span className="text-xs font-semibold">{formatCurrency(sessOrder.total_amount)}</span>
+                  </div>
+                  <ul className="text-xs text-muted-foreground space-y-0.5">
+                    {(sessOrder.items || []).map((it: any) => (
+                      <li key={it.id}>
+                        {it.quantity}× {it.item_name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 3. Order Fulfillment Timeline Card */}
       <Card className="border border-border/70 shadow-xs bg-card rounded-2xl overflow-hidden">
@@ -906,8 +1039,20 @@ export default function OrderDetail() {
             {[
               { label: "Placed", value: fmtWhen(order.created_at), icon: ShoppingBag, color: "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 border-blue-200/50" },
               { label: "Verified", value: fmtWhen(order.verified_at), icon: CheckCircle2, color: "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200/50" },
-              { label: "Driver Assigned", value: fmtWhen(order.assigned_at), icon: Truck, color: "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border-amber-200/50" },
-              { label: "Delivered", value: fmtWhen(order.delivered_at), icon: PackageCheck, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200/50" },
+              {
+                label: isDineIn ? "Service" : "Driver Assigned",
+                value: isDineIn ? "Table Service" : fmtWhen(order.assigned_at),
+                icon: isDineIn ? UtensilsCrossed : Truck,
+                color: isDineIn
+                  ? "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/50 border-purple-200/50"
+                  : "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border-amber-200/50",
+              },
+              {
+                label: isDineIn ? "Served" : "Delivered",
+                value: fmtWhen(order.delivered_at),
+                icon: PackageCheck,
+                color: "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200/50",
+              },
               { label: "Last Updated", value: fmtWhen(order.updated_at), icon: RefreshCw, color: "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/50 border-purple-200/50" },
             ].map((m) => {
               const Icon = m.icon;
@@ -1143,26 +1288,42 @@ export default function OrderDetail() {
             </CardContent>
           </Card>
 
-          {/* Card 3: Delivery Information */}
+          {/* Card 3: Delivery Information / Table Information */}
           <Card className="border border-border/70 shadow-xs bg-card rounded-2xl overflow-hidden">
             <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/10">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-orange-500" />
-                {t("orders:deliveryInfo", "Delivery Information")}
+                {isDineIn ? (
+                  <>
+                    <UtensilsCrossed className="h-4 w-4 text-purple-600" />
+                    <span>Table & Service Information</span>
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="h-4 w-4 text-orange-500" />
+                    <span>{t("orders:deliveryInfo", "Delivery Information")}</span>
+                  </>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
               <div className="grid sm:grid-cols-12 gap-5">
-                {/* Left: Address Box (7 cols) */}
+                {/* Left: Table / Address Box (6 cols) */}
                 <div className="sm:col-span-6 space-y-3">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Delivery Address</p>
-                    <p className="font-bold text-sm text-foreground mt-1 leading-relaxed">
-                      {order.delivery_address || "Rehmat Colony Street 1, Lahore, Pakistan"}
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {isDineIn ? "Table Location / Name" : "Delivery Address"}
                     </p>
+                    <p className="font-bold text-sm text-foreground mt-1 leading-relaxed">
+                      {isDineIn ? formatTableDisplayName(order.table_number) : (order.delivery_address || "None")}
+                    </p>
+                    {isDineIn && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Dine-in guest placed order directly from table QR stand
+                      </p>
+                    )}
                   </div>
 
-                  {order.delivery_address && (
+                  {!isDineIn && order.delivery_address && (
                     <Button
                       asChild
                       variant="outline"
@@ -1183,20 +1344,34 @@ export default function OrderDetail() {
                 {/* Right: Key Value Grid (6 cols) */}
                 <div className="sm:col-span-6 grid grid-cols-2 gap-y-3.5 gap-x-2 text-xs border-t sm:border-t-0 sm:border-l sm:pl-5 border-border/40 pt-3 sm:pt-0">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Delivery Type</p>
-                    <p className="font-bold text-foreground mt-0.5">{isPickup ? "Pickup" : "Home Delivery"}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {isDineIn ? "Service Type" : "Delivery Type"}
+                    </p>
+                    <p className="font-bold text-foreground mt-0.5">
+                      {isDineIn ? "Dine-In (Table Service)" : isPickup ? "Pickup" : "Home Delivery"}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Estimated Delivery</p>
-                    <p className="font-bold text-foreground mt-0.5">{fmtWhen(order.estimated_delivery_at)}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {isDineIn ? "Service Status" : "Estimated Delivery"}
+                    </p>
+                    <p className="font-bold text-foreground mt-0.5">
+                      {isDineIn ? "Direct Table Service" : fmtWhen(order.estimated_delivery_at) || "Standard"}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Special Instructions</p>
-                    <p className="font-bold text-foreground mt-0.5">{order.delivery_notes || "Ring the bell"}</p>
+                    <p className="font-bold text-foreground mt-0.5">
+                      {order.delivery_notes || order.notes || "None"}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Contact at Door</p>
-                    <p className="font-bold text-foreground mt-0.5">Yes</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {isDineIn ? "Order Channel" : "Contact at Door"}
+                    </p>
+                    <p className="font-bold text-foreground mt-0.5">
+                      {isDineIn ? "Table QR Code" : "Yes"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1295,69 +1470,97 @@ export default function OrderDetail() {
             </CardContent>
           </Card>
 
-          {/* Card 2: Delivery Rider */}
-          <Card className="border border-border/70 shadow-xs bg-card rounded-2xl overflow-hidden">
-            <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/10">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Truck className="h-4 w-4 text-orange-500" />
-                {t("orders:deliveryRider", "Delivery Rider")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              {driver ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3.5">
-                    <div className="h-12 w-12 rounded-full bg-orange-100 dark:bg-orange-950/50 text-orange-600 dark:text-orange-400 flex items-center justify-center font-bold text-base shrink-0">
-                      {driver.full_name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm text-foreground">{driver.full_name}</p>
-                      <a href={`tel:${driver.phone}`} className="text-xs text-muted-foreground hover:text-foreground font-medium">
-                        {driver.phone}
-                      </a>
-                      <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Available
-                      </p>
-                    </div>
+          {/* Card 2: Delivery Rider or Table Service */}
+          {isDineIn ? (
+            <Card className="border border-purple-500/20 shadow-xs bg-card rounded-2xl overflow-hidden">
+              <CardHeader className="py-4 px-6 border-b border-border/40 bg-purple-500/10">
+                <CardTitle className="text-sm font-bold flex items-center gap-2 text-purple-950 dark:text-purple-200">
+                  <UtensilsCrossed className="h-4 w-4 text-purple-600 dark:text-purple-300" />
+                  Table Service & Staff
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 space-y-3.5">
+                <div className="flex items-center gap-3.5">
+                  <div className="h-11 w-11 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center font-bold text-lg shrink-0 border border-purple-200/50">
+                    🍽️
                   </div>
+                  <div>
+                    <p className="font-bold text-sm text-foreground">{formatTableDisplayName(order.table_number)}</p>
+                    <p className="text-xs text-muted-foreground">Dine-in Customer · No rider required</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 p-3 bg-muted/40 rounded-xl text-xs border border-border/50">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                  <span className="font-medium text-foreground">Serve directly to table upon preparation</span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border border-border/70 shadow-xs bg-card rounded-2xl overflow-hidden">
+              <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/10">
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <Truck className="h-4 w-4 text-orange-500" />
+                  {t("orders:deliveryRider", "Delivery Rider")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 space-y-4">
+                {driver ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="h-12 w-12 rounded-full bg-orange-100 dark:bg-orange-950/50 text-orange-600 dark:text-orange-400 flex items-center justify-center font-bold text-base shrink-0">
+                        {driver.full_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-foreground">{driver.full_name}</p>
+                        <a href={`tel:${driver.phone}`} className="text-xs text-muted-foreground hover:text-foreground font-medium">
+                          {driver.phone}
+                        </a>
+                        <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Available
+                        </p>
+                      </div>
+                    </div>
 
-                  <Button asChild size="default" variant="outline" className="w-full h-9 text-xs font-semibold rounded-xl gap-2">
-                    <a href={`tel:${driver.phone}`}>
-                      <Phone className="h-3.5 w-3.5" /> Call Rider
-                    </a>
-                  </Button>
-                </div>
-              ) : (
-                <div className="text-center py-4 space-y-3">
-                  <p className="text-xs text-muted-foreground">No rider assigned yet.</p>
-                  <Select onValueChange={(v) => assignDriver(v)}>
-                    <SelectTrigger className="h-9 w-full text-xs font-semibold rounded-xl">
-                      <SelectValue placeholder="Assign Rider Now" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {driversForOrder.map((d) => (
-                        <SelectItem key={d.id} value={d.id}>
-                          {d.full_name} ({d.phone})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    <Button asChild size="default" variant="outline" className="w-full h-9 text-xs font-semibold rounded-xl gap-2">
+                      <a href={`tel:${driver.phone}`}>
+                        <Phone className="h-3.5 w-3.5" /> Call Rider
+                      </a>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 space-y-3">
+                    <p className="text-xs text-muted-foreground">No rider assigned yet.</p>
+                    <Select onValueChange={(v) => assignDriver(v)}>
+                      <SelectTrigger className="h-9 w-full text-xs font-semibold rounded-xl">
+                        <SelectValue placeholder="Assign Rider Now" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {driversForOrder.map((d) => (
+                          <SelectItem key={d.id} value={d.id}>
+                            {d.full_name} ({d.phone})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
       {/* 5. AI Voice Call Audio Recording & Full Transcript (Bottom / Last Section) */}
-      <OrderCallRecording
-        call={call}
-        conversations={conversations}
-        orderSource={order.source}
-        aiExtractedData={order.ai_extracted_data}
-        loading={callLoading}
-        onRefresh={handleSyncCall}
-      />
+      {(!isDineIn || call?.recording_url || order.call_id) && (
+        <OrderCallRecording
+          call={call}
+          conversations={conversations}
+          orderSource={order.source}
+          aiExtractedData={order.ai_extracted_data}
+          loading={callLoading}
+          onRefresh={handleSyncCall}
+        />
+      )}
 
       {/* Interactive Receipt Preview Modal */}
       <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
@@ -1372,7 +1575,7 @@ export default function OrderDetail() {
           </DialogHeader>
 
           <div className="py-2">
-            <OrderReceipt order={order} items={items} restaurantName={restaurantName} />
+            <OrderReceipt order={order} items={items} restaurantName={restaurantName} tableSession={tableBill} />
           </div>
 
           <DialogFooter className="flex-row justify-between sm:justify-between gap-2 pt-3 border-t">
@@ -1393,7 +1596,7 @@ export default function OrderDetail() {
       </Dialog>
 
       {/* Hidden Print Target (Thermal / POS 80mm clean print) */}
-      <OrderReceipt order={order} items={items} restaurantName={restaurantName} isPrintOnly={true} />
+      <OrderReceipt order={order} items={items} restaurantName={restaurantName} isPrintOnly={true} tableSession={tableBill} />
     </div>
   );
 }

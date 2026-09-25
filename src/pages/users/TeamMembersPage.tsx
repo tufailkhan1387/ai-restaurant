@@ -11,6 +11,8 @@ import {
   Shield,
   ChefHat,
   Receipt,
+  CalendarCheck,
+  UserCog,
   Loader2,
   Check,
   Lock,
@@ -75,6 +77,7 @@ export default function TeamMembersPage() {
   const { toast } = useToast();
   const { role: authRole } = useAuth();
   const isSuperAdmin = authRole === "super_admin";
+  const isRestaurantAdmin = authRole === "admin" || authRole === "super_admin";
   const { restaurantId: activeRestaurantId } = useActiveRestaurant();
 
   const [members, setMembers] = useState<TeamMemberRow[]>([]);
@@ -369,6 +372,20 @@ export default function TeamMembersPage() {
         </Badge>
       );
     }
+    if (r === "receptionist") {
+      return (
+        <Badge className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 gap-1 font-semibold">
+          <CalendarCheck className="h-3 w-3" /> {t("users:roleReceptionist", "Receptionist")}
+        </Badge>
+      );
+    }
+    if (r === "staff") {
+      return (
+        <Badge className="bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 gap-1 font-semibold">
+          <UserCog className="h-3 w-3" /> {t("users:roleStaff", "Staff")}
+        </Badge>
+      );
+    }
     if (r === "cashier") {
       return (
         <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 gap-1">
@@ -400,14 +417,15 @@ export default function TeamMembersPage() {
           </p>
         </div>
 
-        {/* Add Member Dialog */}
-        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-          <DialogTrigger asChild>
-            <Button className="gradient-primary text-primary-foreground gap-2 shadow-sm rounded-xl font-semibold">
-              <UserPlus className="h-4 w-4" />
-              {t("users:addTeamMember", "Add Team Member")}
-            </Button>
-          </DialogTrigger>
+        {/* Add Member Dialog - Only visible to Restaurant Admins */}
+        {isRestaurantAdmin && (
+          <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+            <DialogTrigger asChild>
+              <Button className="gradient-primary text-primary-foreground gap-2 shadow-sm rounded-xl font-semibold">
+                <UserPlus className="h-4 w-4" />
+                {t("users:addTeamMember", "Add Team Member")}
+              </Button>
+            </DialogTrigger>
 
           <DialogContent className="max-w-md rounded-2xl">
             <DialogHeader>
@@ -476,7 +494,8 @@ export default function TeamMembersPage() {
                   <SelectContent>
                     <SelectItem value="manager">{t("users:roleOptionManager", "Manager (Operations, Menu, Orders & Inventory)")}</SelectItem>
                     <SelectItem value="kitchen">{t("users:roleOptionKitchen", "Kitchen Staff (Order Fulfillment)")}</SelectItem>
-                    <SelectItem value="cashier">{t("users:roleOptionCashier", "Cashier (Orders & Receipts)")}</SelectItem>
+                    <SelectItem value="receptionist">{t("users:roleOptionReceptionist", "Receptionist (Table Reservations & Guest Check-in)")}</SelectItem>
+                    <SelectItem value="staff">{t("users:roleOptionStaff", "Staff (Table orders, menu, deals, reports)")}</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground pt-1">
@@ -500,6 +519,7 @@ export default function TeamMembersPage() {
             </form>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -558,9 +578,11 @@ export default function TeamMembersPage() {
                     <TableHead className="py-3.5 px-4 font-bold text-xs uppercase tracking-wider text-muted-foreground">
                       {t("users:colDateAdded", "Date Added")}
                     </TableHead>
-                    <TableHead className="py-3.5 px-6 text-right font-bold text-xs uppercase tracking-wider text-muted-foreground">
-                      {t("users:colActions", "Actions")}
-                    </TableHead>
+                    {isRestaurantAdmin && (
+                      <TableHead className="py-3.5 px-6 text-right font-bold text-xs uppercase tracking-wider text-muted-foreground">
+                        {t("users:colActions", "Actions")}
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-border/40">
@@ -594,11 +616,11 @@ export default function TeamMembersPage() {
                         </TableCell>
                       )}
 
-                      {/* Role & Quick Switch */}
+                      {/* Role & Quick Switch (Only Restaurant Admins can change roles) */}
                       <TableCell className="py-4 px-4">
                         <div className="flex items-center gap-2">
                           {getRoleBadge(row.member_role)}
-                          {!isSuperAdmin && row.member_role !== "owner" && row.member_role !== "admin" && (
+                          {isRestaurantAdmin && row.member_role !== "owner" && row.member_role !== "admin" && (
                             <Select
                               defaultValue={row.member_role}
                               onValueChange={(v) => handleUpdateRole(row.id, v)}
@@ -609,7 +631,8 @@ export default function TeamMembersPage() {
                               <SelectContent>
                                 <SelectItem value="manager">{t("users:roleManager", "Manager")}</SelectItem>
                                 <SelectItem value="kitchen">{t("users:roleKitchen", "Kitchen")}</SelectItem>
-                                <SelectItem value="cashier">{t("users:roleCashier", "Cashier")}</SelectItem>
+                                <SelectItem value="receptionist">{t("users:roleReceptionist", "Receptionist")}</SelectItem>
+                                <SelectItem value="staff">{t("users:roleStaff", "Staff")}</SelectItem>
                               </SelectContent>
                             </Select>
                           )}
@@ -621,18 +644,20 @@ export default function TeamMembersPage() {
                         {formatDate(row.created_at, { month: "short", day: "numeric", year: "numeric" })}
                       </TableCell>
 
-                      {/* Actions */}
-                      <TableCell className="py-4 px-6 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg"
-                          title="Remove Team Member"
-                          onClick={() => handleDeleteMember(row.id, row.full_name || row.email)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
+                      {/* Actions (Only Restaurant Admin can delete roles/members) */}
+                      {isRestaurantAdmin && (
+                        <TableCell className="py-4 px-6 text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg"
+                            title="Remove Team Member"
+                            onClick={() => handleDeleteMember(row.id, row.full_name || row.email)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>

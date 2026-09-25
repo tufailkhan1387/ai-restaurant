@@ -201,7 +201,7 @@ router.post("/create-team-member", optionalAuth, requireAuth, async (req, res) =
         .returning("*");
       profile = newProf;
 
-      await knex("user_roles").insert({ user_id: profile.id, role: "manager" });
+      await knex("user_roles").insert({ user_id: profile.id, role: memberRole });
     } else {
       if (password) {
         const hash = await bcrypt.hash(String(password), 10);
@@ -210,6 +210,8 @@ router.post("/create-team-member", optionalAuth, requireAuth, async (req, res) =
           full_name: full_name?.trim() || profile.full_name,
         });
       }
+      await knex("user_roles").where({ user_id: profile.id }).del();
+      await knex("user_roles").insert({ user_id: profile.id, role: memberRole });
     }
 
     // Add or update restaurant_members
@@ -252,11 +254,39 @@ router.delete("/delete-team-member/:id", optionalAuth, requireAuth, async (req, 
       req.user?.roles?.includes("super_admin") ||
       req.user?.role === "super_admin";
 
+    const isRestaurantAdmin =
+      isSuperAdmin ||
+      req.user?.roles?.includes("admin") ||
+      req.user?.role === "admin" ||
+      req.user?.memberships?.some((m) => m.member_role === "admin" || m.member_role === "owner");
+
+    // Strictly enforce: roles/members can ONLY be deleted by restaurant admin or super admin
+    if (!isRestaurantAdmin) {
+      return res.status(403).json({ error: "Only restaurant admins can delete team members and roles" });
+    }
+
     // 1. Try deleting from restaurant_members
-    const delCount = await knex("restaurant_members").where({ id }).del();
+    const targetMember = await knex("restaurant_members").where({ id }).first();
+    if (targetMember) {
+      if (!isSuperAdmin) {
+        const canManage =
+          req.user?.restaurantIds?.includes(targetMember.restaurant_id) ||
+          req.user?.ownedParentIds?.includes(targetMember.restaurant_id);
+        if (!canManage) {
+          return res.status(403).json({ error: "You are not authorized to delete members from this restaurant" });
+        }
+      }
+      await knex("restaurant_members").where({ id }).del();
+      // If no other memberships exist for this user, also remove their user_roles
+      const otherMemberships = await knex("restaurant_members").where({ user_id: targetMember.user_id }).first();
+      if (!otherMemberships) {
+        await knex("user_roles").where({ user_id: targetMember.user_id }).del();
+      }
+      return res.json({ success: true });
+    }
 
     // 2. If not a restaurant_members row and requester is super_admin, check if it's a user profile id
-    if (!delCount && isSuperAdmin) {
+    if (isSuperAdmin) {
       // Protect super admin themselves from accidental self-delete
       if (id === req.user.id) {
         return res.status(400).json({ error: "Cannot delete your own super admin account" });
@@ -264,9 +294,10 @@ router.delete("/delete-team-member/:id", optionalAuth, requireAuth, async (req, 
       await knex("restaurant_members").where({ user_id: id }).del();
       await knex("user_roles").where({ user_id: id }).del();
       await knex("profiles").where({ id }).del();
+      return res.json({ success: true });
     }
 
-    return res.json({ success: true });
+    return res.status(404).json({ error: "Member not found" });
   } catch (e) {
     console.error("delete-team-member error:", e);
     return res.status(500).json({ error: e.message || "Failed to delete team member" });
@@ -281,15 +312,48 @@ router.put("/update-team-member-role", optionalAuth, requireAuth, async (req, re
       return res.status(400).json({ error: "id and member_role are required" });
     }
 
+    const isSuperAdmin =
+      req.user?.roles?.includes("super_admin") ||
+      req.user?.role === "super_admin";
+
+    const isRestaurantAdmin =
+      isSuperAdmin ||
+      req.user?.roles?.includes("admin") ||
+      req.user?.role === "admin" ||
+      req.user?.memberships?.some((m) => m.member_role === "admin" || m.member_role === "owner");
+
+    // Only restaurant admin or super admin can update team member roles
+    if (!isRestaurantAdmin) {
+      return res.status(403).json({ error: "Only restaurant admins can update team member roles" });
+    }
+
     let roleToSet = member_role.toLowerCase();
     if (roleToSet === "admin" || roleToSet === "owner") {
       return res.status(400).json({
-        error: "This restaurant already has an Admin. You can assign Manager, Kitchen Staff, or Cashier.",
+        error: "This restaurant already has an Admin. You can assign Manager, Kitchen Staff, Receptionist, or Staff.",
       });
     }
 
     const knex = getKnex();
+    const targetMember = await knex("restaurant_members").where({ id }).first();
+    if (!targetMember) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    if (!isSuperAdmin) {
+      const canManage =
+        req.user?.restaurantIds?.includes(targetMember.restaurant_id) ||
+        req.user?.ownedParentIds?.includes(targetMember.restaurant_id);
+      if (!canManage) {
+        return res.status(403).json({ error: "You are not authorized to update roles for this restaurant" });
+      }
+    }
+
     await knex("restaurant_members").where({ id }).update({ member_role: roleToSet });
+    // Also sync user_roles table with the new role!
+    await knex("user_roles").where({ user_id: targetMember.user_id }).del();
+    await knex("user_roles").insert({ user_id: targetMember.user_id, role: roleToSet });
+
     return res.json({ success: true });
   } catch (e) {
     console.error("update-team-member-role error:", e);

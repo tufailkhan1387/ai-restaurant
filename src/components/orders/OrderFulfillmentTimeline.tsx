@@ -29,6 +29,8 @@ export type TimelineOrderSnap = {
   verified_at: string | null;
   assigned_at: string | null;
   delivered_at: string | null;
+  fulfillment_type?: string | null;
+  table_number?: string | null;
 };
 
 const STEP_ICONS: Record<string, any> = {
@@ -118,6 +120,15 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
   const flowIdx = cancelled ? -1 : ORDER_FULFILLMENT_FLOW.indexOf(st);
   const assignedHidden = rawStatus === "assigned";
   const isDelivered = st === "delivered";
+  const isDineIn = order.fulfillment_type === "dine_in" || Boolean(order.table_number);
+
+  const getStepLabel = (step: string) => {
+    if (isDineIn) {
+      if (step === "out_for_delivery") return "Served";
+      if (step === "delivered") return "Complete / Paid";
+    }
+    return getOrderStatusLabel(step, t);
+  };
 
   if (cancelled) {
     return (
@@ -165,7 +176,7 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
           const when = timestampForStep(step, order, history);
           const formatted = formatStepTime(when);
           const notes = notesForStep(step, history);
-          const StepIcon = STEP_ICONS[step] || ShoppingBag;
+          const StepIcon = isDineIn && step === "out_for_delivery" ? UtensilsCrossed : (STEP_ICONS[step] || ShoppingBag);
 
           return (
             <li key={step} className="relative flex flex-col items-center text-center px-1">
@@ -215,7 +226,7 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
                       : "text-muted-foreground/70",
                 )}
               >
-                {getOrderStatusLabel(step, t)}
+                {getStepLabel(step)}
               </p>
 
               {/* Step Time / Badge */}
@@ -264,7 +275,7 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
           const formatted = formatStepTime(when);
           const notes = notesForStep(step, history);
           const isLast = idx === ORDER_FULFILLMENT_FLOW.length - 1;
-          const StepIcon = STEP_ICONS[step] || ShoppingBag;
+          const StepIcon = isDineIn && step === "out_for_delivery" ? UtensilsCrossed : (STEP_ICONS[step] || ShoppingBag);
 
           return (
             <li key={step} className="flex gap-3.5">
@@ -309,7 +320,7 @@ export function OrderFulfillmentTimeline({ order, history, className, orientatio
                           : "text-muted-foreground/70",
                     )}
                   >
-                    {getOrderStatusLabel(step, t)}
+                    {getStepLabel(step)}
                   </p>
                   {formatted ? (
                     <span className="text-xs font-semibold text-foreground">

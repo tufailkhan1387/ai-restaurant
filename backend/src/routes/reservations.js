@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { getKnex } from "../db.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
+import { getOccupiedDiningTableIds } from "../lib/tableReservationService.js";
 
 const router = Router();
 
@@ -193,6 +194,12 @@ router.get("/restaurants/:id/reservations/availability", optionalAuth, requireAu
       .where("capacity", ">=", Number(party_size))
       .orderBy("capacity", "asc");
 
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const diningOccupied = String(date) === todayStr
+      ? await getOccupiedDiningTableIds(knex, req.params.id)
+      : new Set();
+
     const existing = await knex("table_reservations")
       .where({ restaurant_id: req.params.id, reservation_date: date })
       .whereIn("status", ["pending", "confirmed", "seated"])
@@ -219,6 +226,7 @@ router.get("/restaurants/:id/reservations/availability", optionalAuth, requireAu
     for (let start = 9 * 60; start + duration <= 22 * 60; start += 30) {
       const end = start + duration;
       const availTables = tables.filter((t) => {
+        if (diningOccupied.has(t.id)) return false;
         const busy = busyMap[t.id] || [];
         return !busy.some(({ s, e }) => start < e && end > s);
       });

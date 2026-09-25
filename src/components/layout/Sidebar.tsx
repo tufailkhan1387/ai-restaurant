@@ -32,6 +32,8 @@ import {
   Crown,
   Building2,
   CalendarCheck,
+  UserCog,
+  TableProperties,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -82,10 +84,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       { icon: LayoutDashboard, label: t("sidebar:dashboard", "Dashboard"), href: "/" },
       ...(!isBranch
         ? [
-            { icon: Tag, label: t("sidebar:dealsAndOffers", "Deals & Offers"), href: "/deals" },
-            { icon: Ticket, label: t("sidebar:couponCode", "Coupon Code"), href: "/coupons" },
-            { icon: Layers, label: t("sidebar:cuisines", "Cuisines"), href: "/cuisines" },
-          ]
+          { icon: Tag, label: t("sidebar:dealsAndOffers", "Deals & Offers"), href: "/deals" },
+          { icon: Ticket, label: t("sidebar:couponCode", "Coupon Code"), href: "/coupons" },
+          { icon: Layers, label: t("sidebar:cuisines", "Cuisines"), href: "/cuisines" },
+        ]
         : []),
     ],
     [t, isBranch]
@@ -124,9 +126,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         label: isBranch ? t("sidebar:myBranch", "My Branch") : t("sidebar:myRestaurant", "My Restaurant"),
         href: "/restaurant-settings",
       },
+      { icon: CalendarCheck, label: t("sidebar:reservations", "Reservations"), href: "/reservations" },
       ...(!isBranch
         ? [{ icon: Building2, label: t("sidebar:branches", "Branches"), href: "/branches" }]
         : []),
+
       { icon: Settings, label: t("sidebar:settings", "Settings"), href: "/settings" },
     ],
     [t, isBranch]
@@ -166,10 +170,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const finalManagement =
     role === "super_admin"
       ? [
-          { icon: Store, label: t("sidebar:restaurants", "Restaurants"), href: "/restaurants" },
-          { icon: Wallet, label: t("sidebar:earnings", "Earnings"), href: "/earnings" },
-          { icon: Settings, label: t("sidebar:settings", "Settings"), href: "/settings" },
-        ]
+        { icon: Store, label: t("sidebar:restaurants", "Restaurants"), href: "/restaurants" },
+        { icon: Wallet, label: t("sidebar:earnings", "Earnings"), href: "/earnings" },
+        { icon: Settings, label: t("sidebar:settings", "Settings"), href: "/settings" },
+      ]
       : managementItems;
 
   function hrefIsActive(href: string) {
@@ -214,9 +218,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             ? "h-10 w-10 mx-auto justify-center p-0"
             : cn("gap-3 px-3 py-2.5 w-full", indent && "pl-9 py-2"),
           isActive &&
-            (collapsed
-              ? "bg-sidebar-primary/20 text-sidebar-primary ring-1 ring-sidebar-primary/40 font-semibold"
-              : "bg-sidebar-primary/15 text-sidebar-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--sidebar-primary))]")
+          (collapsed
+            ? "bg-sidebar-primary/20 text-sidebar-primary ring-1 ring-sidebar-primary/40 font-semibold"
+            : "bg-sidebar-primary/15 text-sidebar-accent-foreground shadow-[inset_3px_0_0_0_hsl(var(--sidebar-primary))]")
         )}
       >
         <Icon
@@ -290,7 +294,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const displayName = profile?.full_name || user?.email || "User";
   const roleLabel =
-    role === "super_admin" ? "Super Admin" : role ? role.replace("_", " ") : "User";
+    role === "super_admin"
+      ? "Super Admin"
+      : role === "kitchen" || role === "chef"
+      ? "Kitchen Staff"
+      : role === "receptionist"
+      ? "Receptionist"
+      : role === "staff"
+      ? "Staff"
+      : role
+      ? role.replace("_", " ")
+      : "User";
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
@@ -332,7 +346,22 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               >
                 {role === "super_admin" ? "Super Admin" : restaurantName || "Restaurant"}
               </span>
-              {isBranch && !collapsed && (
+              {(role === "kitchen" || role === "chef") && !collapsed && (
+                <span className="text-[10px] font-semibold text-blue-500 uppercase tracking-wider leading-none flex items-center gap-1 mt-0.5">
+                  <ChefHat className="h-2.5 w-2.5" /> {t("users:roleKitchen", "Kitchen Staff")}
+                </span>
+              )}
+              {role === "receptionist" && !collapsed && (
+                <span className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider leading-none flex items-center gap-1 mt-0.5">
+                  <CalendarCheck className="h-2.5 w-2.5" /> {t("users:roleReceptionist", "Receptionist")}
+                </span>
+              )}
+              {role === "staff" && !collapsed && (
+                <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider leading-none flex items-center gap-1 mt-0.5">
+                  <UserCog className="h-2.5 w-2.5" /> {t("users:roleStaff", "Staff")}
+                </span>
+              )}
+              {isBranch && !collapsed && role !== "kitchen" && role !== "chef" && role !== "receptionist" && role !== "staff" && (
                 <span className="text-[10px] font-semibold text-primary uppercase tracking-wider leading-none">
                   Branch
                 </span>
@@ -363,8 +392,216 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             : "px-2.5 custom-scrollbar"
         )}
       >
-        {/* ── SUPER ADMIN: minimal nav ─────────────────────────── */}
-        {role === "super_admin" ? (
+        {/* ── RECEPTIONIST: Dashboard, Reservations & Settings ────── */}
+        {role === "staff" ? (
+          <div className="space-y-0.5">
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+            <NavItem icon={TableProperties} label={t("sidebar:tables", "Tables")} href="/tables" />
+
+            {collapsed ? (
+              <NavItem
+                icon={ClipboardList}
+                label={t("sidebar:orders", "Orders")}
+                href="/orders"
+                activeOverride={ordersGroupActive}
+              />
+            ) : (
+              <>
+                <GroupButton
+                  open={ordersOpen}
+                  onToggleOpen={() => setOrdersOpen((v) => !v)}
+                  active={ordersGroupActive}
+                  icon={ClipboardList}
+                  label={t("sidebar:orders", "Orders")}
+                />
+                {ordersOpen && (
+                  <div className="space-y-0.5">
+                    <NavItem icon={ClipboardList} label={t("sidebar:allOrders", "All orders")} href="/orders" indent />
+                    {ordersChildren.map((c) => (
+                      <NavItem key={c.href} {...c} indent />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {collapsed ? (
+              <NavItem
+                icon={UtensilsCrossed}
+                label={t("sidebar:menu", "Menu")}
+                href="/menu"
+                activeOverride={menuGroupActive}
+              />
+            ) : (
+              <>
+                <GroupButton
+                  open={menuOpen}
+                  onToggleOpen={() => setMenuOpen((v) => !v)}
+                  active={menuGroupActive}
+                  icon={UtensilsCrossed}
+                  label={t("sidebar:menu", "Menu")}
+                />
+                {menuOpen && (
+                  <div className="space-y-0.5">
+                    {menuChildren.map((item) => (
+                      <NavItem key={item.href} {...item} indent />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            <NavItem icon={Tag} label={t("sidebar:dealsAndOffers", "Deals & Offers")} href="/deals" />
+
+            {collapsed ? (
+              <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">
+                <NavItem
+                  icon={FileBarChart}
+                  label={t("sidebar:reports", "Reports")}
+                  href="/reports/items"
+                  activeOverride={reportsGroupActive}
+                />
+              </div>
+            ) : (
+              <div className="pt-2 mt-2 border-t border-sidebar-border">
+                <GroupButton
+                  open={reportsOpen}
+                  onToggleOpen={() => setReportsOpen((v) => !v)}
+                  active={reportsGroupActive}
+                  icon={FileBarChart}
+                  label={t("sidebar:reports", "Reports")}
+                />
+                {reportsOpen && (
+                  <div className="space-y-0.5 mt-0.5">
+                    {reportsChildren.map((item) => (
+                      <NavItem key={item.href} {...item} indent />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
+              <NavItem icon={Settings} label={t("sidebar:settings", "Settings")} href="/settings" />
+            </div>
+          </div>
+        ) : role === "receptionist" ? (
+          <div className="space-y-0.5">
+            <NavItem
+              icon={LayoutDashboard}
+              label={t("sidebar:dashboard", "Dashboard")}
+              href="/"
+            />
+            <NavItem
+              icon={CalendarCheck}
+              label={t("sidebar:reservations", "Reservations")}
+              href="/reservations"
+            />
+            <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
+              <NavItem icon={Settings} label={t("sidebar:settings", "Settings")} href="/settings" />
+            </div>
+          </div>
+        ) : role === "kitchen" || role === "chef" ? (
+          <div className="space-y-0.5">
+            {/* 1. Dashboard */}
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+
+            {/* 2. Orders */}
+            {collapsed ? (
+              <NavItem
+                icon={ClipboardList}
+                label={t("sidebar:orders", "Orders")}
+                href="/orders"
+                activeOverride={ordersGroupActive}
+              />
+            ) : (
+              <>
+                <GroupButton
+                  open={ordersOpen}
+                  onToggleOpen={() => setOrdersOpen((v) => !v)}
+                  active={ordersGroupActive}
+                  icon={ClipboardList}
+                  label={t("sidebar:orders", "Kitchen Orders")}
+                />
+                {ordersOpen && (
+                  <div className="space-y-0.5">
+                    <NavItem icon={ClipboardList} label={t("sidebar:allOrders", "All orders")} href="/orders" indent />
+                    {ordersChildren.map((c) => (
+                      <NavItem key={c.href} {...c} indent />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 3. Menu */}
+            {collapsed ? (
+              <NavItem
+                icon={UtensilsCrossed}
+                label={t("sidebar:menu", "Menu")}
+                href="/menu"
+                activeOverride={menuGroupActive}
+              />
+            ) : (
+              <>
+                <GroupButton
+                  open={menuOpen}
+                  onToggleOpen={() => setMenuOpen((v) => !v)}
+                  active={menuGroupActive}
+                  icon={UtensilsCrossed}
+                  label={t("sidebar:menu", "Menu")}
+                />
+                {menuOpen && (
+                  <div className="space-y-0.5">
+                    {menuChildren.map((item) => (
+                      <NavItem key={item.href} {...item} indent />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 4. Deals & Offers */}
+            <NavItem icon={Tag} label={t("sidebar:dealsAndOffers", "Deals & Offers")} href="/deals" />
+
+            {/* 5. Reservations */}
+            <NavItem icon={CalendarCheck} label={t("sidebar:reservations", "Reservations")} href="/reservations" />
+
+            {/* 6. Reports */}
+            {collapsed ? (
+              <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">
+                <NavItem
+                  icon={FileBarChart}
+                  label={t("sidebar:reports", "Reports")}
+                  href="/reports/items"
+                  activeOverride={reportsGroupActive}
+                />
+              </div>
+            ) : (
+              <div className="pt-2 mt-2 border-t border-sidebar-border">
+                <GroupButton
+                  open={reportsOpen}
+                  onToggleOpen={() => setReportsOpen((v) => !v)}
+                  active={reportsGroupActive}
+                  icon={FileBarChart}
+                  label={t("sidebar:reports", "Reports")}
+                />
+                {reportsOpen && (
+                  <div className="space-y-0.5 mt-0.5">
+                    {reportsChildren.map((item) => (
+                      <NavItem key={item.href} {...item} indent />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 7. Settings */}
+            <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
+              <NavItem icon={Settings} label={t("sidebar:settings", "Settings")} href="/settings" />
+            </div>
+          </div>
+        ) : role === "super_admin" ? (
           <div className="space-y-0.5">
             <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
             <NavItem icon={Store} label={t("sidebar:restaurants", "Restaurants")} href="/restaurants" />
@@ -471,12 +708,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               .map((item) => (
                 <NavItem key={item.href} {...item} />
               ))}
-
-            <NavItem
-              icon={CalendarCheck}
-              label="Reservations"
-              href="/reservations"
-            />
 
             {collapsed ? (
               <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">

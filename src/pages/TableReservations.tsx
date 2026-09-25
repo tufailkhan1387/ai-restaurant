@@ -11,16 +11,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
   CalendarDays, Clock, Users, TableProperties, Plus, Pencil, Trash2,
-  CheckCircle2, XCircle, UtensilsCrossed, RefreshCw, Search, ChevronLeft, ChevronRight,
+  CheckCircle2, XCircle, UtensilsCrossed, RefreshCw, Search,
   Phone, PhoneCall, AlertCircle, MessageSquare,
-  Eye, Mail, Volume2
+  Eye, Mail, Volume2, QrCode, Copy, ExternalLink, Printer, UserCheck, X,
+  LayoutGrid, MoreHorizontal
 } from "lucide-react";
-import { format, addDays, subDays, isToday } from "date-fns";
+import { QRCodeSVG } from "qrcode.react";
+import { format, isToday } from "date-fns";
 import { OrderCallRecording, CallData, ConversationTurn } from "@/components/orders/OrderCallRecording";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { formatCurrency } from "@/lib/restaurant";
 
 const getInitials = (name: string) => {
   const parts = name.trim().split(/\s+/);
@@ -143,11 +150,24 @@ interface Reservation {
 }
 
 export default function TableReservations() {
-  const { restaurantId } = useActiveRestaurant();
+  const { restaurantId, activeRestaurant } = useActiveRestaurant();
+  const { role, isReceptionist } = useAuth();
+  const isRestaurantAdmin = role === "admin" || role === "super_admin";
+
+  type FloorBill = {
+    session?: { id?: string; customer_name?: string | null; table_number?: string };
+    orders?: { id: string }[];
+    totals?: { order_count?: number; total_amount?: number };
+  };
+  type FloorTableState = RestaurantTable & { occupied?: boolean; sessions?: FloorBill[] };
 
   const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [floorTables, setFloorTables] = useState<FloorTableState[]>([]);
+  const [qrTable, setQrTable] = useState<RestaurantTable | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [dateFilterMode, setDateFilterMode] = useState<"all" | "today">("today");
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -259,6 +279,29 @@ export default function TableReservations() {
   const [deleteReservationId, setDeleteReservationId] = useState<string | null>(null);
   const [deleteTableId, setDeleteTableId] = useState<string | null>(null);
 
+  const restaurantSlug = useMemo(() => {
+    return (
+      activeRestaurant?.slug ||
+      (activeRestaurant?.name
+        ? activeRestaurant.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+        : "restaurant")
+    );
+  }, [activeRestaurant]);
+
+  const branchIdentifier = useMemo(() => {
+    return activeRestaurant?.is_branch ? (activeRestaurant.slug || activeRestaurant.id) : "main";
+  }, [activeRestaurant]);
+
+  const getTableMenuUrl = useCallback(
+    (tbl: RestaurantTable) => {
+      const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
+      const cleanOrigin = origin.replace(/\/$/, "");
+      const cleanTableNum = (tbl.table_number || "").trim();
+      return `${cleanOrigin}/${restaurantSlug}/${branchIdentifier}/menu?table=${encodeURIComponent(cleanTableNum)}&table_id=${tbl.id}`;
+    },
+    [restaurantSlug, branchIdentifier]
+  );
+
   const authHeader = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` });
   const API = getApiBase() + "/api";
 
@@ -269,16 +312,60 @@ export default function TableReservations() {
     if (r.ok) setTables((await r.json()).tables || []);
   }, [restaurantId]);
 
+  const loadFloorTables = useCallback(async () => {
+    if (!restaurantId) return;
+    const r = await fetch(`${API}/restaurants/${restaurantId}/floor-tables`, { headers: authHeader() });
+    if (!r.ok) return;
+    const json = await r.json();
+    const list: FloorTableState[] = json.tables || [];
+    const extras: FloorTableState[] = (json.unmatched_sessions || []).map((bill: FloorBill, idx: number) => ({
+      id: `session-${bill.session?.id || idx}`,
+      table_number: bill.session?.table_number || `Open ${idx + 1}`,
+      capacity: 0,
+      location: null,
+      notes: "Opened from QR / staff order",
+      is_active: true,
+      occupied: true,
+      sessions: [bill],
+    }));
+    const tableKey = (value?: string | null) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^table[\s._-]*/i, "")
+        .trim();
+    const merged = [...list];
+    for (const extra of extras) {
+      const match = merged.find((t) => tableKey(t.table_number) === tableKey(extra.table_number));
+      if (match) {
+        match.occupied = true;
+        match.sessions = [...(match.sessions || []), ...(extra.sessions || [])];
+      } else {
+        merged.push(extra);
+      }
+    }
+    setFloorTables(merged);
+  }, [restaurantId]);
+
   const loadReservations = useCallback(async () => {
     if (!restaurantId) return;
     setLoading(true);
-    const dateStr = format(selectedDate, "yyyy-MM-dd");
-    const r = await fetch(`${API}/restaurants/${restaurantId}/reservations?date=${dateStr}`, { headers: authHeader() });
+    let url = `${API}/restaurants/${restaurantId}/reservations`;
+    if (dateFilterMode === "today") {
+      url += `?date=${format(new Date(), "yyyy-MM-dd")}`;
+    }
+    const r = await fetch(url, { headers: authHeader() });
     if (r.ok) setReservations((await r.json()).reservations || []);
     setLoading(false);
-  }, [restaurantId, selectedDate]);
+  }, [restaurantId, dateFilterMode]);
 
   useEffect(() => { loadTables(); }, [loadTables]);
+  useEffect(() => { loadFloorTables(); }, [loadFloorTables]);
+  useEffect(() => {
+    if (!restaurantId) return;
+    const timer = setInterval(() => { void loadFloorTables(); }, 8000);
+    return () => clearInterval(timer);
+  }, [restaurantId, loadFloorTables]);
   useEffect(() => { loadReservations(); }, [loadReservations]);
 
   // ── Table CRUD ─────────────────────────────────────────
@@ -314,13 +401,14 @@ export default function TableReservations() {
       toast.success(editingTable ? "Table updated" : "Table added");
       setTableDialogOpen(false);
       loadTables();
+      loadFloorTables();
     } catch { toast.error("Network error"); }
   };
 
   const confirmDeleteTable = async () => {
     if (!deleteTableId) return;
     const r = await fetch(`${API}/tables/${deleteTableId}`, { method: "DELETE", headers: authHeader() });
-    if (r.ok) { toast.success("Table deactivated"); loadTables(); } else toast.error("Failed to deactivate table");
+    if (r.ok) { toast.success("Table deactivated"); loadTables(); loadFloorTables(); } else toast.error("Failed to deactivate table");
     setDeleteTableId(null);
   };
 
@@ -329,7 +417,7 @@ export default function TableReservations() {
     setEditingReservation(null);
     setReservationForm({
       table_id: "", customer_name: "", customer_phone: "", customer_email: "",
-      party_size: "2", reservation_date: format(selectedDate, "yyyy-MM-dd"),
+      party_size: "2", reservation_date: format(new Date(), "yyyy-MM-dd"),
       start_time: "19:00", slot_duration_hours: "1", notes: "", status: "confirmed",
     });
     setReservationDialogOpen(true);
@@ -388,6 +476,37 @@ export default function TableReservations() {
     else toast.error("Update failed");
   };
 
+  const handleCustomerArrived = async (res: Reservation) => {
+    if (!res.table_id && !res.table_number) {
+      toast.warning("Table assignment required", {
+        description: `Please assign a table for customer ${res.customer_name} first.`,
+      });
+      openEditReservation(res);
+      return;
+    }
+
+    try {
+      const r = await fetch(`${API}/reservations/${res.id}`, {
+        method: "PATCH",
+        headers: authHeader(),
+        body: JSON.stringify({ status: "seated" }),
+      });
+      if (r.ok) {
+        await loadReservations();
+        const tblName = displayTableNumber(res.table_number) || "their assigned table";
+        toast.success(`🎉 Customer Arrived: ${res.customer_name}`, {
+          description: `Booking confirmed! Guest is checked in and proceeding to ${tblName}.`,
+          duration: 6000,
+        });
+      } else {
+        const d = await r.json().catch(() => ({}));
+        toast.error(d.error || "Failed to confirm arrival");
+      }
+    } catch {
+      toast.error("Network error while confirming arrival");
+    }
+  };
+
   const confirmDeleteReservation = async () => {
     if (!deleteReservationId) return;
     const r = await fetch(`${API}/reservations/${deleteReservationId}`, { method: "DELETE", headers: authHeader() });
@@ -395,109 +514,586 @@ export default function TableReservations() {
     setDeleteReservationId(null);
   };
 
-  // ── Filtered list ──────────────────────────────────────
-  const filtered = reservations.filter((r) =>
-    !searchTerm || r.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (r.customer_phone || "").includes(searchTerm) ||
-    (r.table_number || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // ── Status counts and filtered list ─────────────────────
+  const statusCounts = useMemo(() => {
+    return {
+      all: reservations.length,
+      confirmed: reservations.filter((r) => r.status === "confirmed").length,
+      seated: reservations.filter((r) => r.status === "seated").length,
+      pending: reservations.filter((r) => r.status === "pending").length,
+      completed: reservations.filter((r) => r.status === "completed").length,
+      cancelled: reservations.filter((r) => ["cancelled", "no_show"].includes(r.status)).length,
+    };
+  }, [reservations]);
+
+  const filtered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return reservations.filter((r) => {
+      const matchSearch =
+        !q ||
+        r.customer_name.toLowerCase().includes(q) ||
+        (r.customer_phone || "").includes(q) ||
+        (r.customer_email || "").toLowerCase().includes(q) ||
+        (r.table_number || "").toLowerCase().includes(q);
+
+      const matchStatus =
+        statusFilter === "all"
+          ? true
+          : statusFilter === "cancelled"
+          ? ["cancelled", "no_show"].includes(r.status)
+          : r.status === statusFilter;
+
+      return matchSearch && matchStatus;
+    });
+  }, [reservations, searchTerm, statusFilter]);
+
+  const floorById = useMemo(() => {
+    const map = new Map<string, FloorTableState>();
+    for (const t of floorTables) map.set(t.id, t);
+    return map;
+  }, [floorTables]);
+
+  const displayTables = useMemo(() => {
+    const catalogIds = new Set(tables.map((t) => t.id));
+    const extras = floorTables.filter((t) => !catalogIds.has(t.id) && t.occupied);
+    return [...tables, ...extras];
+  }, [tables, floorTables]);
 
   const activeTables = tables.filter((t) => t.is_active);
   const totalCapacity = activeTables.reduce((s, t) => s + t.capacity, 0);
-  const todayRes = reservations.filter((r) => ["confirmed", "pending", "seated"].includes(r.status)).length;
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const todayRes = useMemo(() => {
+    return reservations.filter(
+      (r) =>
+        ["confirmed", "pending", "seated"].includes(r.status) &&
+        (!r.reservation_date || r.reservation_date.startsWith(todayStr))
+    ).length;
+  }, [reservations, todayStr]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <CalendarDays className="h-6 w-6 text-primary" />
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-border/40">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+              Front Desk & Floor Operations
+            </span>
+            <span className="text-xs text-muted-foreground font-medium">
+              {activeRestaurant?.name || "Restaurant"}
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-2.5">
+            <CalendarDays className="h-7 w-7 text-primary" />
             Table Reservations
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Manage tables and bookings for your restaurant</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">
+            Manage live guest bookings, arrivals, table allocation, and dining status.
+          </p>
         </div>
-        <Button id="btn-add-reservation" onClick={openAddReservation} className="gradient-primary shadow-lg gap-2">
-          <Plus className="h-4 w-4" /> New Reservation
-        </Button>
+
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <Button
+            id="btn-add-reservation"
+            onClick={openAddReservation}
+            className="gradient-primary text-primary-foreground font-semibold shadow-md gap-2 h-10 px-5 rounded-xl flex-1 sm:flex-initial"
+          >
+            <Plus className="h-4 w-4" /> New Reservation
+          </Button>
+        </div>
       </div>
 
-      {/* Stats */}
+      {/* KPI Overview Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Active Tables", value: activeTables.length, icon: TableProperties, color: "text-blue-500" },
-          { label: "Total Capacity", value: totalCapacity, icon: Users, color: "text-violet-500" },
-          { label: "Today's Bookings", value: todayRes, icon: CalendarDays, color: "text-emerald-500" },
-          { label: "Total Tonight", value: reservations.filter((r) => r.status !== "cancelled").length, icon: Clock, color: "text-orange-500" },
+          {
+            label: "Today's Bookings",
+            value: todayRes,
+            desc: `${statusCounts.confirmed} confirmed · ${statusCounts.seated} seated`,
+            icon: CalendarDays,
+            color: "text-emerald-600 dark:text-emerald-400",
+            bg: "bg-emerald-500/10 border-emerald-500/20",
+          },
+          {
+            label: "Awaiting Arrival",
+            value: statusCounts.confirmed,
+            desc: "Ready for check-in",
+            icon: Clock,
+            color: "text-amber-600 dark:text-amber-400",
+            bg: "bg-amber-500/10 border-amber-500/20",
+          },
+          {
+            label: "Currently Seated",
+            value: statusCounts.seated,
+            desc: "Guests dining right now",
+            icon: UtensilsCrossed,
+            color: "text-blue-600 dark:text-blue-400",
+            bg: "bg-blue-500/10 border-blue-500/20",
+          },
+          {
+            label: "Floor Capacity",
+            value: `${activeTables.length} Tables`,
+            desc: `${totalCapacity} seats total capacity`,
+            icon: TableProperties,
+            color: "text-violet-600 dark:text-violet-400",
+            bg: "bg-violet-500/10 border-violet-500/20",
+          },
         ].map((s) => (
-          <div key={s.label} className="bg-card border border-border rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-muted">
-                <s.icon className={`h-4 w-4 ${s.color}`} />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
-                <p className="text-xl font-bold text-foreground">{s.value}</p>
-              </div>
+          <div
+            key={s.label}
+            className="bg-card border border-border/70 rounded-2xl p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3"
+          >
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">{s.label}</p>
+              <p className="text-2xl font-black text-foreground mt-1 tracking-tight">{s.value}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{s.desc}</p>
+            </div>
+            <div className={cn("w-11 h-11 rounded-2xl flex items-center justify-center border shrink-0", s.bg)}>
+              <s.icon className={cn("h-5 w-5", s.color)} />
             </div>
           </div>
         ))}
       </div>
 
       {/* Main Tabs */}
-      <Tabs defaultValue="reservations">
-        <TabsList className="mb-4">
-          <TabsTrigger value="reservations" id="tab-reservations">
-            <CalendarDays className="h-4 w-4 mr-2" /> Reservations
-          </TabsTrigger>
-          <TabsTrigger value="tables" id="tab-tables">
-            <TableProperties className="h-4 w-4 mr-2" /> Tables
-          </TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="reservations" className="space-y-4">
+        <div className="flex items-center justify-between gap-4 border-b border-border/60 pb-1">
+          <TabsList className="bg-muted/60 p-1 rounded-xl">
+            <TabsTrigger value="reservations" id="tab-reservations" className="rounded-lg text-xs font-semibold px-4 py-2 gap-2">
+              <CalendarDays className="h-4 w-4" /> Bookings ({reservations.length})
+            </TabsTrigger>
+            <TabsTrigger value="tables" id="tab-tables" className="rounded-lg text-xs font-semibold px-4 py-2 gap-2">
+              <TableProperties className="h-4 w-4" /> Tables & Floor ({tables.length})
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* ─── RESERVATIONS TAB ─────────────────────── */}
-        <TabsContent value="reservations" className="space-y-4">
-          {/* Date Navigator */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => subDays(d, 1))}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2 bg-card border border-border rounded-lg px-4 py-2 shadow-sm">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              <span className="font-semibold text-sm">
-                {isToday(selectedDate) ? "Today — " : ""}{format(selectedDate, "EEEE, MMMM d, yyyy")}
-              </span>
+        <TabsContent value="reservations" className="space-y-4 pt-1">
+          {/* ─── Unified Modern Control & Filter Bar ─── */}
+          <div className="bg-card border border-border/80 rounded-2xl p-4 sm:p-4.5 shadow-2xs space-y-3.5">
+            {/* Top Row: Date Scope Segmented Bar + View Switcher + Search & Refresh */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              {/* Left: Date Scope (All Reservations / Today) */}
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {/* Segmented Control */}
+                <div className="inline-flex items-center p-1 bg-muted/80 rounded-xl border border-border/70 shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => setDateFilterMode("all")}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all",
+                      dateFilterMode === "all"
+                        ? "bg-background text-foreground shadow-xs font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    All Reservations
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateFilterMode("today")}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all",
+                      dateFilterMode === "today"
+                        ? "bg-background text-foreground shadow-xs font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Today
+                  </button>
+                </div>
+              </div>
+
+              {/* Right: Search, Refresh & View Mode Switcher */}
+              <div className="flex items-center gap-2 w-full lg:w-auto">
+                <div className="relative flex-1 lg:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search guest name, phone, table..."
+                    className="pl-8 pr-8 h-9 text-xs rounded-xl bg-background border-border/80 focus-visible:ring-primary/20"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded-full"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* View Mode Switcher */}
+                <div className="inline-flex items-center p-1 bg-muted/80 rounded-xl border border-border/70 shadow-inner shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("table")}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all",
+                      viewMode === "table"
+                        ? "bg-background text-foreground shadow-xs font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    title="Table View"
+                  >
+                    <TableProperties className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Table</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("cards")}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all",
+                      viewMode === "cards"
+                        ? "bg-background text-foreground shadow-xs font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    title="Cards View"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Cards</span>
+                  </button>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 rounded-xl shrink-0 border-border/80 hover:bg-muted"
+                  onClick={loadReservations}
+                  title="Refresh reservations"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+                </Button>
+              </div>
             </div>
-            <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => addDays(d, 1))}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            {!isToday(selectedDate) && (
-              <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())}>Today</Button>
-            )}
-            <Button variant="ghost" size="icon" onClick={loadReservations} title="Refresh">
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            </Button>
-            <div className="ml-auto relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search guest, table…"
-                className="pl-8 h-9 w-52 text-sm"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+
+            {/* Bottom Row: Status Filter Tabs Strip */}
+            <div className="pt-2.5 border-t border-border/50 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none w-full sm:w-auto">
+                {[
+                  { id: "all", label: "All Bookings", count: statusCounts.all, dot: null },
+                  { id: "confirmed", label: "Confirmed", count: statusCounts.confirmed, dot: "bg-emerald-500" },
+                  { id: "seated", label: "Arrived & Seated", count: statusCounts.seated, dot: "bg-blue-500" },
+                  { id: "pending", label: "Pending", count: statusCounts.pending, dot: "bg-amber-500" },
+                  { id: "completed", label: "Completed", count: statusCounts.completed, dot: "bg-slate-400" },
+                  { id: "cancelled", label: "Cancelled / No-Show", count: statusCounts.cancelled, dot: "bg-rose-500" },
+                ].map((tab) => {
+                  const isActive = statusFilter === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setStatusFilter(tab.id)}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap",
+                        isActive
+                          ? "bg-primary text-primary-foreground shadow-xs font-bold"
+                          : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted border border-border/40"
+                      )}
+                    >
+                      {tab.dot && <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", tab.dot, isActive && "ring-2 ring-white/50")} />}
+                      <span>{tab.label}</span>
+                      <span
+                        className={cn(
+                          "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
+                          isActive
+                            ? "bg-primary-foreground/20 text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {tab.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Status summary pill */}
+              <div className="text-xs text-muted-foreground font-medium hidden sm:block">
+                Showing <span className="font-bold text-foreground">{filtered.length}</span> {filtered.length === 1 ? "booking" : "bookings"}
+              </div>
             </div>
           </div>
 
-          {/* Reservation Cards */}
+          {/* Reservation List: Table View or Cards Grid */}
           {loading ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
               <RefreshCw className="h-5 w-5 animate-spin" /> Loading…
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border/70 rounded-2xl p-8">
               <CalendarDays className="h-12 w-12 text-muted-foreground/30 mb-3" />
               <p className="text-muted-foreground font-medium">No reservations found</p>
-              <p className="text-sm text-muted-foreground/60 mt-1">Try a different date or add a new reservation</p>
+              <p className="text-sm text-muted-foreground/60 mt-1">Try a different filter or add a new reservation</p>
+            </div>
+          ) : viewMode === "table" ? (
+            <div className="bg-card border border-border/80 rounded-2xl shadow-2xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/40 border-b border-border/70">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="py-3.5 pl-4 sm:pl-5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Customer / Guest
+                      </TableHead>
+                      <TableHead className="py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Contact
+                      </TableHead>
+                      <TableHead className="py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Date & Schedule
+                      </TableHead>
+                      <TableHead className="py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Party
+                      </TableHead>
+                      <TableHead className="py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Assigned Table
+                      </TableHead>
+                      <TableHead className="py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Status
+                      </TableHead>
+                      <TableHead className="py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Source
+                      </TableHead>
+                      <TableHead className="py-3.5 pr-4 sm:pr-5 text-right text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Actions
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-border/40">
+                    {filtered.map((res) => (
+                      <TableRow
+                        key={res.id}
+                        className="hover:bg-muted/40 transition-colors group cursor-pointer"
+                        onClick={(e) => {
+                          const target = e.target as HTMLElement;
+                          if (target.closest("button") || target.closest("a")) return;
+                          openDetailReservation(res);
+                        }}
+                      >
+                        {/* Customer / Guest */}
+                        <TableCell className="py-3.5 pl-4 sm:pl-5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 border border-primary/25 flex items-center justify-center font-bold text-xs text-primary shadow-2xs shrink-0 tracking-wider">
+                              {getInitials(res.customer_name)}
+                            </div>
+                            <div className="min-w-0 max-w-[200px]">
+                              <p className="font-bold text-sm text-foreground truncate group-hover:text-primary transition-colors leading-tight">
+                                {res.customer_name}
+                              </p>
+                              {(() => {
+                                const note = getDisplayNotes(res.notes);
+                                if (!note) return null;
+                                return (
+                                  <p className="text-[11px] text-muted-foreground italic truncate flex items-center gap-1 mt-0.5" title={note}>
+                                    <MessageSquare className="h-2.5 w-2.5 shrink-0 text-primary/70" />
+                                    <span className="truncate">"{note}"</span>
+                                  </p>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        {/* Contact */}
+                        <TableCell className="py-3.5 text-xs">
+                          <div className="space-y-0.5">
+                            {res.customer_phone ? (
+                              <a
+                                href={`tel:${res.customer_phone}`}
+                                className="inline-flex items-center gap-1.5 text-foreground hover:text-primary transition-colors font-medium truncate max-w-[160px]"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Phone className="h-3 w-3 shrink-0 text-primary/70" />
+                                <span className="truncate">{res.customer_phone}</span>
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground/60 italic text-[11px]">No phone</span>
+                            )}
+                            {res.customer_email && (
+                              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground truncate max-w-[160px]">
+                                <Mail className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+                                <span className="truncate">{res.customer_email}</span>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        {/* Date & Schedule */}
+                        <TableCell className="py-3.5 text-xs whitespace-nowrap">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5 font-bold text-foreground">
+                              <CalendarDays className="h-3.5 w-3.5 text-primary shrink-0" />
+                              <span>{formatSafeDate(res.reservation_date)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+                              <Clock className="h-3 w-3 shrink-0" />
+                              <span>
+                                {res.start_time.slice(0, 5)} · {res.slot_duration_hours}h duration
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        {/* Party Size */}
+                        <TableCell className="py-3.5 text-xs whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/60 border border-border/60 font-semibold text-foreground">
+                            <Users className="h-3.5 w-3.5 text-primary shrink-0" />
+                            <span>{res.party_size} {res.party_size > 1 ? "Guests" : "Guest"}</span>
+                          </span>
+                        </TableCell>
+
+                        {/* Table Assignment */}
+                        <TableCell className="py-3.5 text-xs whitespace-nowrap">
+                          {res.table_number ? (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-800 dark:text-emerald-300 font-bold">
+                              <TableProperties className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              <span>{displayTableNumber(res.table_number)}</span>
+                              {res.table_location && (
+                                <span className="text-[10px] font-normal opacity-75">· {res.table_location}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[11px] px-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-200 border-amber-500/30 font-semibold gap-1 rounded-lg shadow-2xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditReservation(res);
+                              }}
+                            >
+                              <AlertCircle className="h-3 w-3 text-amber-600" />
+                              <span>Assign Table</span>
+                            </Button>
+                          )}
+                        </TableCell>
+
+                        {/* Status */}
+                        <TableCell className="py-3.5 text-xs whitespace-nowrap">
+                          <Badge
+                            variant="outline"
+                            className={`text-xs px-2.5 py-0.5 font-semibold border gap-1.5 shadow-2xs ${STATUS_COLORS[res.status] || ""}`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT_COLORS[res.status] || "bg-muted-foreground"} ${
+                                res.status === "confirmed" ? "animate-pulse" : ""
+                              }`}
+                            />
+                            {STATUS_LABELS[res.status] || res.status}
+                          </Badge>
+                        </TableCell>
+
+                        {/* Source */}
+                        <TableCell className="py-3.5 text-xs whitespace-nowrap">
+                          {res.source === "phone" ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] gap-1 px-2 py-0.5 font-medium text-violet-600 dark:text-violet-400 border-violet-500/25 bg-violet-500/10"
+                            >
+                              <PhoneCall className="h-2.5 w-2.5" /> Voice AI
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-2 py-0.5 font-medium text-sky-600 dark:text-sky-400 border-sky-500/25 bg-sky-500/10"
+                            >
+                              Online
+                            </Badge>
+                          )}
+                        </TableCell>
+
+                        {/* Actions */}
+                        <TableCell className="py-3.5 pr-4 sm:pr-5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {res.status === "confirmed" && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs hover:shadow-md transition-all"
+                                onClick={() => handleCustomerArrived(res)}
+                              >
+                                <UserCheck className="h-3.5 w-3.5" />
+                                <span>Seat Guest</span>
+                              </Button>
+                            )}
+                            {res.status === "pending" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs font-semibold gap-1 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-xl"
+                                onClick={() => quickStatus(res.id, "confirmed")}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <span>Confirm</span>
+                              </Button>
+                            )}
+                            {res.status === "seated" && (
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs font-semibold gap-1 bg-slate-900 hover:bg-black text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl shadow-xs"
+                                onClick={() => quickStatus(res.id, "completed")}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <span>Complete</span>
+                              </Button>
+                            )}
+
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted"
+                              onClick={() => openDetailReservation(res)}
+                              title="View full booking details"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted"
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-44 rounded-xl shadow-md">
+                                <DropdownMenuItem onClick={() => openDetailReservation(res)} className="gap-2 text-xs">
+                                  <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span>View Details</span>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openEditReservation(res)} className="gap-2 text-xs">
+                                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span>Edit Booking</span>
+                                </DropdownMenuItem>
+                                {["pending", "confirmed"].includes(res.status) && (
+                                  <DropdownMenuItem
+                                    onClick={() => quickStatus(res.id, "no_show")}
+                                    className="gap-2 text-xs text-amber-700 dark:text-amber-400"
+                                  >
+                                    <XCircle className="h-3.5 w-3.5" />
+                                    <span>Mark as No-Show</span>
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => setDeleteReservationId(res.id)}
+                                  className="gap-2 text-xs text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <span>Delete Booking</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -552,6 +1148,16 @@ export default function TableReservations() {
 
                   {/* Middle: Schedule & Table details */}
                   <div className="space-y-2.5">
+                    {/* Booking Date Indicator (when viewing all dates or search) */}
+                    {(dateFilterMode === "all" || searchTerm.trim() !== "") && (
+                      <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[11px] font-semibold">
+                        <span className="flex items-center gap-1.5">
+                          <CalendarDays className="h-3.5 w-3.5" /> Booking Date:
+                        </span>
+                        <span>{formatSafeDate(res.reservation_date)}</span>
+                      </div>
+                    )}
+
                     {/* Schedule & Guest Ribbon */}
                     <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-muted/40 border border-border/50 text-xs">
                       <div className="flex items-center gap-2 min-w-0">
@@ -641,29 +1247,52 @@ export default function TableReservations() {
                     {res.status === "confirmed" && (
                       <Button
                         size="sm"
-                        className="w-full h-9 text-xs font-semibold gap-2 gradient-primary text-primary-foreground rounded-xl shadow-xs hover:shadow-md hover:brightness-105 active:scale-[0.99] transition-all"
-                        onClick={() => quickStatus(res.id, "seated")}
+                        className="w-full h-9 text-xs font-semibold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs hover:shadow-md hover:brightness-105 active:scale-[0.99] transition-all"
+                        onClick={() => handleCustomerArrived(res)}
                       >
-                        <UtensilsCrossed className="h-4 w-4" /> Seat Guests
+                        <UserCheck className="h-4 w-4" />
+                        {res.table_number
+                          ? `✓ Customer Arrived · Seat at ${displayTableNumber(res.table_number)}`
+                          : "✓ Customer Arrived (Assign & Seat)"}
                       </Button>
                     )}
                     {res.status === "pending" && (
-                      <Button
-                        size="sm"
-                        className="w-full h-9 text-xs font-semibold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs hover:shadow-md active:scale-[0.99] transition-all"
-                        onClick={() => quickStatus(res.id, "confirmed")}
-                      >
-                        <CheckCircle2 className="h-4 w-4" /> Confirm Booking
-                      </Button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 text-xs font-semibold gap-1.5 border-emerald-600/50 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-xl"
+                          onClick={() => quickStatus(res.id, "confirmed")}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Confirm
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-9 text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs hover:shadow-md"
+                          onClick={() => handleCustomerArrived(res)}
+                        >
+                          <UserCheck className="h-3.5 w-3.5" /> Arrived & Seat
+                        </Button>
+                      </div>
                     )}
                     {res.status === "seated" && (
-                      <Button
-                        size="sm"
-                        className="w-full h-9 text-xs font-semibold gap-2 bg-slate-900 hover:bg-black text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl shadow-xs hover:shadow-md active:scale-[0.99] transition-all"
-                        onClick={() => quickStatus(res.id, "completed")}
-                      >
-                        <CheckCircle2 className="h-4 w-4" /> Complete Dining
-                      </Button>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-700 dark:text-blue-300 text-xs font-semibold">
+                          <span className="flex items-center gap-1.5">
+                            <UtensilsCrossed className="h-3.5 w-3.5 text-blue-500" /> Customer Arrived & Seated
+                          </span>
+                          <Badge variant="outline" className="bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40 text-[10px] font-bold">
+                            {displayTableNumber(res.table_number)}
+                          </Badge>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full h-8 text-xs font-semibold gap-1.5 bg-slate-900 hover:bg-black text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl shadow-xs hover:shadow-md active:scale-[0.99] transition-all"
+                          onClick={() => quickStatus(res.id, "completed")}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Complete Dining (Free Table)
+                        </Button>
+                      </div>
                     )}
 
                     {/* Secondary Controls Toolbar */}
@@ -730,11 +1359,21 @@ export default function TableReservations() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {tables.map((t) => (
+            {displayTables.map((t) => {
+              const floor = floorById.get(t.id) || (t as FloorTableState);
+              const bills = floor.sessions || [];
+              const occupied = Boolean(floor.occupied || bills.length);
+              const guest = bills[0]?.session?.customer_name;
+              const orderCount = bills.reduce((n, b) => n + (b.orders?.length || b.totals?.order_count || 0), 0);
+              const billTotal = bills.reduce((n, b) => n + Number(b.totals?.total_amount || 0), 0);
+              const isCatalog = tables.some((c) => c.id === t.id);
+              return (
               <div
                 key={t.id}
                 className={`border rounded-xl p-4 shadow-sm transition-all ${
-                  t.is_active ? "bg-card border-border" : "bg-muted/40 border-border/50 opacity-60"
+                  occupied
+                    ? "bg-amber-500/5 border-amber-500/30"
+                    : t.is_active ? "bg-card border-border" : "bg-muted/40 border-border/50 opacity-60"
                 }`}
               >
                 <div className="flex items-start justify-between mb-3">
@@ -743,26 +1382,48 @@ export default function TableReservations() {
                       <TableProperties className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <p className="font-bold text-foreground">{t.table_number}</p>
+                      <p className="font-bold text-foreground">{displayTableNumber(t.table_number)}</p>
                       <p className="text-xs text-muted-foreground">{t.location || "No location"}</p>
                     </div>
                   </div>
-                  <Badge variant={t.is_active ? "default" : "secondary"} className="text-xs">
-                    {t.is_active ? "Active" : "Inactive"}
+                  <Badge
+                    variant={occupied ? "outline" : t.is_active ? "default" : "secondary"}
+                    className={cn("text-xs", occupied && "bg-amber-500/15 text-amber-800 border-amber-500/30")}
+                  >
+                    {occupied ? "Occupied" : t.is_active ? "Active" : "Inactive"}
                   </Badge>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-3">
                   <Users className="h-3.5 w-3.5 text-primary/70" />
-                  Up to {t.capacity} guests
+                  {t.capacity > 0 ? `Up to ${t.capacity} guests` : "Walk-in / QR sitting"}
                 </div>
+
+                {occupied && (
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 mb-3">
+                    <p className="text-sm font-bold text-foreground">{guest || "Guest"}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {orderCount} order{orderCount === 1 ? "" : "s"}
+                      {billTotal ? ` · ${formatCurrency(billTotal)}` : ""}
+                    </p>
+                  </div>
+                )}
 
                 {t.notes && (
                   <p className="text-xs text-muted-foreground italic mb-3">"{t.notes}"</p>
                 )}
 
+                {isCatalog && (
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" className="flex-1 h-8 text-xs gap-1" onClick={() => openEditTable(t)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 h-8 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/10 border-primary/30"
+                    onClick={() => setQrTable(t)}
+                  >
+                    <QrCode className="h-3.5 w-3.5" /> Table QR
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => openEditTable(t)}>
                     <Pencil className="h-3 w-3" /> Edit
                   </Button>
                   <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-destructive hover:text-destructive"
@@ -770,10 +1431,12 @@ export default function TableReservations() {
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
+                )}
               </div>
-            ))}
+              );
+            })}
 
-            {tables.length === 0 && (
+            {displayTables.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
                 <TableProperties className="h-10 w-10 text-muted-foreground/30 mb-3" />
                 <p className="text-muted-foreground font-medium">No tables configured</p>
@@ -1090,39 +1753,55 @@ export default function TableReservations() {
               <div className="pt-3 border-t border-border/60 flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   {detailReservation.status === "pending" && (
-                    <Button
-                      size="sm"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-1.5 shadow-sm"
-                      onClick={() => {
-                        quickStatus(detailReservation.id, "confirmed");
-                        setDetailReservation((r) => r ? { ...r, status: "confirmed" } : null);
-                      }}
-                    >
-                      <CheckCircle2 className="h-4 w-4" /> Confirm Booking
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-emerald-700 dark:text-emerald-400 border-emerald-600/50 hover:bg-emerald-500/10 font-medium gap-1.5"
+                        onClick={() => {
+                          quickStatus(detailReservation.id, "confirmed");
+                          setDetailReservation((r) => r ? { ...r, status: "confirmed" } : null);
+                        }}
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Confirm Booking
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 shadow-sm"
+                        onClick={() => {
+                          handleCustomerArrived(detailReservation);
+                          setDetailReservation((r) => r ? { ...r, status: "seated" } : null);
+                        }}
+                      >
+                        <UserCheck className="h-4 w-4" /> Arrived & Seat
+                      </Button>
+                    </div>
                   )}
                   {detailReservation.status === "confirmed" && (
                     <Button
                       size="sm"
-                      className="gradient-primary text-primary-foreground font-semibold gap-1.5 shadow-sm hover:brightness-105"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 shadow-sm hover:brightness-105"
                       onClick={() => {
-                        quickStatus(detailReservation.id, "seated");
+                        handleCustomerArrived(detailReservation);
                         setDetailReservation((r) => r ? { ...r, status: "seated" } : null);
                       }}
                     >
-                      <UtensilsCrossed className="h-4 w-4" /> Seat Guests
+                      <UserCheck className="h-4 w-4" />
+                      {detailReservation.table_number
+                        ? `✓ Customer Arrived · Seat at ${displayTableNumber(detailReservation.table_number)}`
+                        : "✓ Customer Arrived (Assign & Seat)"}
                     </Button>
                   )}
                   {detailReservation.status === "seated" && (
                     <Button
                       size="sm"
-                      className="bg-slate-800 hover:bg-slate-900 text-white font-medium gap-1.5 shadow-sm"
+                      className="bg-slate-900 hover:bg-black text-white font-medium gap-1.5 shadow-sm"
                       onClick={() => {
                         quickStatus(detailReservation.id, "completed");
                         setDetailReservation((r) => r ? { ...r, status: "completed" } : null);
                       }}
                     >
-                      <CheckCircle2 className="h-4 w-4" /> Mark Completed
+                      <CheckCircle2 className="h-4 w-4" /> Complete Dining (Free Table)
                     </Button>
                   )}
                   {["pending", "confirmed"].includes(detailReservation.status) && (
@@ -1204,6 +1883,132 @@ export default function TableReservations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* ─── TABLE QR CODE DIALOG ─────────────────────── */}
+      <Dialog open={!!qrTable} onOpenChange={(open) => !open && setQrTable(null)}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <QrCode className="h-5 w-5 text-primary" />
+              Table QR Scanner Stand
+            </DialogTitle>
+            <DialogDescription>
+              Guests scan this QR code with their mobile phone to check in as Seated and browse your live updated menu.
+            </DialogDescription>
+          </DialogHeader>
+
+          {qrTable && (
+            <div className="space-y-4 py-2">
+              {/* Stand Preview Card (Printable) */}
+              <div
+                id="printable-qr-stand"
+                className="bg-card border-2 border-primary/30 rounded-2xl p-6 text-center shadow-md flex flex-col items-center justify-center space-y-3 bg-gradient-to-b from-primary/5 via-card to-card"
+              >
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-widest font-extrabold text-primary">
+                    {activeRestaurant?.name || "Restaurant"}
+                  </p>
+                  <h3 className="text-2xl font-black text-foreground tracking-tight">
+                    {displayTableNumber(qrTable.table_number)}
+                  </h3>
+                  {qrTable.location && (
+                    <p className="text-xs text-muted-foreground font-medium">
+                      {qrTable.location} · Up to {qrTable.capacity} Guests
+                    </p>
+                  )}
+                </div>
+
+                <div className="p-3 bg-white rounded-2xl shadow-inner border border-border">
+                  <QRCodeSVG
+                    value={getTableMenuUrl(qrTable)}
+                    size={190}
+                    level="H"
+                    includeMargin
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-foreground">
+                    Scan to Check In & Order Menu
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Point your camera to view today's live menu directly at this table
+                  </p>
+                </div>
+              </div>
+
+              {/* URL Display & Copy */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground">Menu & Check-In URL</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    value={getTableMenuUrl(qrTable)}
+                    className="font-mono text-xs h-9 bg-muted/60"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-3 shrink-0 gap-1 text-xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(getTableMenuUrl(qrTable));
+                      toast.success("Table menu link copied!");
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => window.open(getTableMenuUrl(qrTable), "_blank")}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Test Menu
+                </Button>
+                <Button
+                  type="button"
+                  className="gap-1.5 text-xs gradient-primary"
+                  onClick={() => {
+                    const printContents = document.getElementById("printable-qr-stand")?.innerHTML;
+                    if (!printContents) return;
+                    const printWindow = window.open("", "_blank");
+                    if (!printWindow) return;
+                    printWindow.document.write(`
+                      <html>
+                        <head>
+                          <title>Table ${qrTable.table_number} QR - ${activeRestaurant?.name || "Restaurant"}</title>
+                          <style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                            .print-card { text-align: center; border: 2px solid #e2e8f0; border-radius: 16px; padding: 32px; max-width: 320px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+                            h3 { margin: 0 0 4px; font-size: 24px; }
+                            p { margin: 4px 0; color: #64748b; font-size: 13px; }
+                          </style>
+                        </head>
+                        <body>
+                          <div class="print-card">${printContents}</div>
+                        </body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(() => {
+                      printWindow.print();
+                      printWindow.close();
+                    }, 250);
+                  }}
+                >
+                  <Printer className="h-3.5 w-3.5" /> Print Stand Card
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -67,7 +67,10 @@ export async function aiReserveTable(req, res) {
       return res.status(200).json({
         success: false,
         available: false,
-        message: `I'm sorry, we don't have an available table for ${pSize} guests on ${isoDate} at ${isoTime} for ${duration} hour(s). Would you like to try a different time or date?`,
+        message:
+          `I'm sorry, all tables are booked at ${isoTime} on ${isoDate}. ` +
+          `Tables stay booked until the guests dining there pay their bill. ` +
+          `As soon as a table pays, it becomes available. Would you like to try a different time?`,
       });
     }
 
@@ -100,7 +103,7 @@ export async function aiReserveTable(req, res) {
     const confirmMsg =
       `Your table reservation is confirmed! Table ${availableTable.table_number} ` +
       `(seats up to ${availableTable.capacity}) has been reserved for ${pSize} guest(s) ` +
-      `on ${isoDate} at ${isoTime} for ${duration} hour(s). ` +
+      `on ${isoDate} at ${isoTime}. ` +
       `Your reservation ID is ${reservation.id.slice(0, 8).toUpperCase()}. ` +
       `We look forward to seeing you!`;
 

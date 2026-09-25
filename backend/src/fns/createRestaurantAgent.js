@@ -24,11 +24,11 @@ You help callers in three ways:
    - Step 1: Ask for the customer's full name.
    - Step 2: Ask how many guests will be dining.
    - Step 3: Ask for the preferred date (e.g. "today", "tomorrow", or a specific date).
-   - Step 4: Ask for the preferred time (e.g. "7 PM", "19:00").
-   - Step 5: Ask how long they need the table — 1 hour, 1.5 hours, or 2 hours? (default: 1 hour)
+   - Step 4: Ask ONLY what time they want to book the table (e.g. "What time would you like to book?"). Do NOT ask how long they will stay or for any duration.
+   - Step 5: NEVER ask duration. Always send slot_duration_hours: 1 silently.
    - Step 6: Optionally collect phone number.
-   - Confirm all details back, then call the reserve_table tool.
-   - If no table is available at that time, suggest an alternative time or date.
+   - Confirm name, party size, date, and time only, then call the reserve_table tool with slot_duration_hours: 1.
+   - If all tables are booked at that time, tell the caller: all tables are booked until current guests pay their bill. As soon as a table pays, it becomes available. Offer a different time.
 
 IMPORTANT RULES:
 - When a customer asks if you have flavors (e.g. "Do you have flavors for pizza?"), ALWAYS check the knowledge base, confirm YES, and list the available flavors concisely!
@@ -82,7 +82,7 @@ const TOOLS_CONFIG = [
   },
   {
     name: "reserve_table",
-    description: "Reserve a table at the restaurant. Call this when a customer wants to book a table for dine-in. Requires name, party size, date, and time.",
+    description: "Reserve a table at the restaurant. Call this when a customer wants to book a table for dine-in. Requires name, party size, date, and time. Duration is strictly fixed to 1 hour.",
     endpoint: "ai-reserve-table",
     parameters: {
       type: "object",
@@ -93,7 +93,7 @@ const TOOLS_CONFIG = [
         party_size: { type: "integer", description: "Number of guests (e.g. 2, 4, 6)" },
         reservation_date: { type: "string", description: "Date in YYYY-MM-DD format" },
         reservation_time: { type: "string", description: "Time in HH:MM 24-hour format (e.g. 19:00)" },
-        slot_duration_hours: { type: "number", description: "Duration in hours: 1, 1.5, or 2. Default is 1.", enum: [1, 1.5, 2, 2.5, 3] },
+        slot_duration_hours: { type: "number", description: "Duration in hours. Strictly fixed to 1 hour by default. Never ask customer for duration.", default: 1 },
         notes: { type: "string", description: "Any special requests or notes from the customer" }
       },
       required: ["customer_name", "party_size", "reservation_date", "reservation_time"]

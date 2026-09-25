@@ -28,6 +28,8 @@ import { useTranslation } from "react-i18next";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { ReceptionistDashboard } from "@/components/dashboard/ReceptionistDashboard";
+import { StaffDashboard } from "@/components/dashboard/StaffDashboard";
 import { cn } from "@/lib/utils";
 import { getToken } from "@/lib/authStorage";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
@@ -1182,10 +1184,12 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
    ROOT EXPORT
    ════════════════════════════════════════════════════════════ */
 export default function Dashboard() {
-  const { profile, role } = useAuth();
+  const { profile, role, isReceptionist, isStaff } = useAuth();
   const isSuperAdmin = role === "super_admin";
   const firstName = profile?.full_name?.split(" ")[0] || "Admin";
 
   if (isSuperAdmin) return <SuperAdminDashboard firstName={firstName} />;
+  if (isReceptionist || role === "receptionist") return <ReceptionistDashboard firstName={firstName} />;
+  if (isStaff || role === "staff") return <StaffDashboard firstName={firstName} />;
   return <RestaurantDashboard firstName={firstName} />;
 }

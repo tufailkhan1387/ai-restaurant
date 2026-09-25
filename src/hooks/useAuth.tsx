@@ -2,7 +2,17 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-type AppRole = "super_admin" | "admin" | "manager" | "agent" | "driver";
+export type AppRole =
+  | "super_admin"
+  | "admin"
+  | "manager"
+  | "kitchen"
+  | "chef"
+  | "receptionist"
+  | "staff"
+  | "cashier"
+  | "agent"
+  | "driver";
 type AgentStatus = "available" | "on_call" | "busy" | "offline" | "break";
 
 /** Minimal user object from the standalone API (replaces Supabase Auth User). */
@@ -36,6 +46,9 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
   isManagement: boolean;
   isDriver: boolean;
+  isKitchen: boolean;
+  isReceptionist: boolean;
+  isStaff: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -205,6 +218,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isManagement = role === "super_admin" || role === "admin" || role === "manager";
   const isDriver = role === "driver";
+  const isKitchen = role === "kitchen" || role === "chef";
+  const isReceptionist = role === "receptionist";
+  const isStaff = role === "staff";
 
   return (
     <AuthContext.Provider
@@ -221,6 +237,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshProfile,
         isManagement,
         isDriver,
+        isKitchen,
+        isReceptionist,
+        isStaff,
       }}
     >
       {children}

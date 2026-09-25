@@ -37,6 +37,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "@/i18n/formatters";
 import { cn } from "@/lib/utils";
+import { getApiBase } from "@/lib/apiBase";
+import { getToken } from "@/lib/authStorage";
 
 interface MenuItem {
   id: string;
@@ -69,14 +71,36 @@ interface VariantItem {
 
 interface Props {
   onOrderCreated?: () => void;
+  defaultTableId?: string;
+  defaultCustomerName?: string;
+  defaultCustomerPhone?: string;
+  hideTrigger?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  triggerLabel?: string;
 }
 
-export function CreateManualOrderDialog({ onOrderCreated }: Props) {
+export function CreateManualOrderDialog({
+  onOrderCreated,
+  defaultTableId,
+  defaultCustomerName,
+  defaultCustomerPhone,
+  hideTrigger,
+  open: openProp,
+  onOpenChange,
+  triggerLabel,
+}: Props) {
   const { t } = useTranslation(["orders", "common"]);
   const { toast } = useToast();
   const { restaurantId: activeRestaurantId } = useActiveRestaurant();
 
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? Boolean(openProp) : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setInternalOpen(v);
+    onOpenChange?.(v);
+  };
   const [submitting, setSubmitting] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
 
@@ -87,6 +111,14 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
   const [orderType, setOrderType] = useState<"delivery" | "pickup" | "dine_in">("dine_in");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentStatus, setPaymentStatus] = useState("unpaid");
+  const [tables, setTables] = useState<Array<{ id: string; table_number: string; is_active?: boolean }>>([]);
+  const [selectedTableId, setSelectedTableId] = useState("");
+  const [tableBill, setTableBill] = useState<{
+    session?: { id: string; customer_name?: string | null; customer_phone?: string | null; table_number?: string };
+    orders?: Array<{ id: string; order_number: string; total_amount: number; items?: Array<{ item_name: string; quantity: number }> }>;
+    totals?: { order_count: number; total_amount: number };
+  } | null>(null);
+  const [sessionChoices, setSessionChoices] = useState<typeof tableBill[]>([]);
 
   // Menu items & Cart
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -142,6 +174,20 @@ export function CreateManualOrderDialog({ onOrderCreated }: Props) {
           setMenuItems(finalItems.filter((i) => i.is_available !== false));
           if (variantsData) {
             setVariants((variantsData as VariantItem[]).filter((v) => v.is_active !== false));
+          }
+        }
+
+        if (activeRestaurantId) {
+          try {
+            const tblRes = await fetch(`${getApiBase()}/api/restaurants/${activeRestaurantId}/tables`, {
+              headers: { Authorization: `Bearer ${getToken()}` },
+            });
+            if (tblRes.ok) {
+              const d = await tblRes.json();
+              if (isMounted) setTables((d.tables || []).filter((t: any) => t.is_active !== false));
+            }
+          } catch {
+            // tables optional
           }
         }
 
@@ -253,6 +299,9 @@ interface AddToCartParams {
     setOrderType("dine_in");
     setPaymentMethod("cash");
     setPaymentStatus("unpaid");
+    setSelectedTableId("");
+    setTableBill(null);
+    setSessionChoices([]);
     setCart([]);
     setItemSearch("");
     setShowCustomItem(false);
@@ -260,10 +309,60 @@ interface AddToCartParams {
     setCustomItemPrice("");
   };
 
+  useEffect(() => {
+    if (!open) return;
+    if (defaultTableId) setSelectedTableId(defaultTableId);
+    if (defaultCustomerName) setCustomerName(defaultCustomerName);
+    if (defaultCustomerPhone) setCustomerPhone(defaultCustomerPhone);
+  }, [open, defaultTableId, defaultCustomerName, defaultCustomerPhone]);
+
   const targetRestaurantId =
     activeRestaurantId ||
     menuItems[0]?.restaurant_id ||
     fallbackRestaurantId;
+
+  const selectedTable = tables.find((t) => t.id === selectedTableId);
+
+  useEffect(() => {
+    if (!open || orderType !== "dine_in" || !targetRestaurantId || !selectedTable) {
+      if (!selectedTable) {
+        setTableBill(null);
+        setSessionChoices([]);
+      }
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = new URLSearchParams({ table_id: selectedTable.id, table_number: selectedTable.table_number });
+        if (customerPhone.trim()) q.set("phone", customerPhone.trim());
+        const res = await fetch(
+          `${getApiBase()}/api/restaurants/${targetRestaurantId}/table-sessions/by-table?${q.toString()}`,
+          { headers: { Authorization: `Bearer ${getToken()}` } },
+        );
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const bills = data.sessions || [];
+        if (cancelled) return;
+        setSessionChoices(bills);
+        const first = bills[0] || null;
+        setTableBill(first);
+        if (first?.session) {
+          if (!customerName.trim() && first.session.customer_name) {
+            setCustomerName(first.session.customer_name);
+          }
+          if (!customerPhone.trim() && first.session.customer_phone) {
+            setCustomerPhone(first.session.customer_phone);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, orderType, targetRestaurantId, selectedTableId, customerPhone]);
 
   const handleSubmit = async () => {
     if (!customerName.trim()) {
@@ -271,6 +370,22 @@ interface AddToCartParams {
         variant: "destructive",
         title: t("common:validationError", "Validation Error"),
         description: t("orders:customerNameRequired", "Customer name is required."),
+      });
+      return;
+    }
+    if (orderType === "delivery" && !deliveryAddress.trim()) {
+      toast({
+        variant: "destructive",
+        title: t("common:validationError", "Validation Error"),
+        description: t("orders:addressRequired", "Delivery address is required."),
+      });
+      return;
+    }
+    if (orderType === "dine_in" && !selectedTable) {
+      toast({
+        variant: "destructive",
+        title: t("common:validationError", "Validation Error"),
+        description: "Select a table number for dine-in orders.",
       });
       return;
     }
@@ -282,66 +397,62 @@ interface AddToCartParams {
       });
       return;
     }
+    if (!targetRestaurantId) {
+      toast({
+        variant: "destructive",
+        title: t("common:error", "Error"),
+        description: "Restaurant is not selected.",
+      });
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const orderNum = `ORD-${Date.now().toString().slice(-6)}`;
-
-      // 1. Insert order
-      const { data: orderData, error: orderErr } = await supabase
-        .from("orders")
-        .insert({
-          restaurant_id: targetRestaurantId,
-          order_number: orderNum,
-          tracking_code: Math.random().toString(36).slice(2, 10).toUpperCase(),
+      const res = await fetch(`${getApiBase()}/api/restaurants/${targetRestaurantId}/staff-orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({
           customer_name: customerName.trim(),
-          customer_phone: customerPhone.trim() || "—",
-          delivery_address: deliveryAddress.trim() || (orderType === "dine_in" ? "Dine In" : "Takeaway"),
-          delivery_notes: null,
-          status: "pending",
-          source: "manual",
+          customer_phone: customerPhone.trim(),
+          delivery_address: deliveryAddress.trim(),
+          fulfillment_type: orderType,
+          table_id: selectedTable?.id || null,
+          table_number: selectedTable?.table_number || null,
           payment_method: paymentMethod,
           payment_status: paymentStatus,
           subtotal,
           tax_amount: 0,
           delivery_fee: 0,
-          discount_amount: 0,
           total_amount: total,
-          driver_id: null,
-          call_id: null,
-        })
-        .select("id")
-        .single();
+          lines: cart.map((c) => ({
+            menu_item_id: c.menu_item_id || null,
+            item_name: c.item_name,
+            quantity: c.quantity,
+            unit_price: c.unit_price,
+            line_total: c.unit_price * c.quantity,
+            notes: c.notes || null,
+          })),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Failed to create order");
 
-      if (orderErr) throw orderErr;
-
-      // 2. Insert order items
-      const orderItemsToInsert = cart.map((c) => ({
-        order_id: orderData.id,
-        menu_item_id: c.menu_item_id || null,
-        item_name: c.item_name,
-        quantity: c.quantity,
-        unit_price: c.unit_price,
-        line_total: c.unit_price * c.quantity,
-        notes: c.notes || null,
-      }));
-
-      const { error: itemsErr } = await supabase.from("order_items").insert(orderItemsToInsert);
-      if (itemsErr) console.warn("Items insert warning:", itemsErr);
-
+      const created = body.order;
       toast({
         title: t("orders:orderCreated", "✅ Order Created"),
-        description: `${orderNum} · ${customerName} · ${formatCurrency(total)}`,
+        description: `${created?.order_number || ""} · ${customerName} · ${formatCurrency(total)}`,
         duration: 5000,
       });
 
-      // Dispatch real-time event for the notification bell
       window.dispatchEvent(
         new CustomEvent("new-order-created", {
           detail: {
-            id: orderData.id,
+            id: created?.id,
             restaurant_id: targetRestaurantId,
-            order_number: orderNum,
+            order_number: created?.order_number,
             customer_name: customerName.trim(),
             total_amount: total,
             created_at: new Date().toISOString(),
@@ -372,12 +483,14 @@ interface AddToCartParams {
         if (!v) resetForm();
       }}
     >
-      <DialogTrigger asChild>
-        <Button className="gap-2 gradient-primary text-primary-foreground shadow-sm" id="btn-create-manual-order">
-          <Plus className="h-4 w-4" />
-          {t("orders:newManualOrder", "New Order")}
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button className="gap-2 gradient-primary text-primary-foreground shadow-sm" id="btn-create-manual-order">
+            <Plus className="h-4 w-4" />
+            {triggerLabel || t("orders:newManualOrder", "New Order")}
+          </Button>
+        </DialogTrigger>
+      )}
 
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-2 border-b border-border">
@@ -420,18 +533,89 @@ interface AddToCartParams {
               </div>
             </div>
 
+            {orderType === "delivery" && (
             <div className="space-y-1.5">
               <Label htmlFor="cust-addr" className="flex items-center gap-1.5 text-xs font-semibold">
                 <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                {t("common:address", "Delivery / Table Address")}
+                {t("common:address", "Delivery Address")} <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="cust-addr"
-                placeholder={t("orders:addressPlaceholder", "Table # / Street, City")}
+                placeholder={t("orders:addressPlaceholder", "Street, City")}
                 value={deliveryAddress}
                 onChange={(e) => setDeliveryAddress(e.target.value)}
               />
             </div>
+            )}
+
+            {orderType === "dine_in" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">
+                  Table number <span className="text-destructive">*</span>
+                </Label>
+                <Select value={selectedTableId} onValueChange={setSelectedTableId}>
+                  <SelectTrigger><SelectValue placeholder="Select table" /></SelectTrigger>
+                  <SelectContent>
+                    {tables.length === 0 ? (
+                      <SelectItem value="__none" disabled>No tables configured</SelectItem>
+                    ) : (
+                      tables.map((tbl) => (
+                        <SelectItem key={tbl.id} value={tbl.id}>
+                          {/^table\b/i.test(String(tbl.table_number || "").trim())
+                            ? String(tbl.table_number).trim()
+                            : `Table ${tbl.table_number}`}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {orderType === "dine_in" && sessionChoices.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Guest at this table</Label>
+                <Select
+                  value={tableBill?.session?.id || ""}
+                  onValueChange={(id) => {
+                    const picked = sessionChoices.find((s) => s?.session?.id === id) || null;
+                    setTableBill(picked);
+                    if (picked?.session?.customer_name) setCustomerName(picked.session.customer_name);
+                    if (picked?.session?.customer_phone) setCustomerPhone(picked.session.customer_phone);
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select guest" /></SelectTrigger>
+                  <SelectContent>
+                    {sessionChoices.map((s) => (
+                      <SelectItem key={s?.session?.id} value={s?.session?.id || ""}>
+                        {s?.session?.customer_name || "Guest"} · {s?.session?.customer_phone || "No phone"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {orderType === "dine_in" && tableBill?.orders && tableBill.orders.length > 0 && (
+              <div className="p-3 rounded-xl border border-primary/25 bg-primary/5 space-y-2">
+                <p className="text-xs font-bold text-foreground">
+                  Already ordered at this table ({tableBill.totals?.order_count || tableBill.orders.length} orders)
+                </p>
+                <ul className="space-y-1 text-xs">
+                  {tableBill.orders.map((o) => (
+                    <li key={o.id} className="flex justify-between gap-2">
+                      <span className="truncate">
+                        {o.order_number}: {(o.items || []).map((i) => `${i.quantity}× ${i.item_name}`).join(", ")}
+                      </span>
+                      <span className="font-semibold shrink-0">{formatCurrency(o.total_amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-muted-foreground">
+                  A new order will be added to the same table invoice for this guest.
+                </p>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <div className="space-y-1.5">

@@ -49,7 +49,15 @@ export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
     hideForSuperAdmin: true,
     hideForBranch: true,
   },
+  {
+    label: "Reservations",
+    href: "/reservations",
+    section: "Management",
+    keywords: ["reservations", "tables", "booking", "table reservation"],
+    hideForSuperAdmin: true,
+  },
   { label: "Settings", href: "/settings", section: "Management", keywords: ["preferences", "account"] },
+  { label: "Tables", href: "/tables", section: "Management", keywords: ["tables", "floor", "dine-in", "table orders"] },
   {
     label: "Restaurants",
     href: "/restaurants",
@@ -83,9 +91,24 @@ function normalize(s: string) {
 
 export function filterSidebarNavItems(
   query: string,
-  options: { isSuperAdmin: boolean; isBranch?: boolean },
+  options: { isSuperAdmin: boolean; isBranch?: boolean; isReceptionist?: boolean; isStaff?: boolean },
 ): SidebarNavSearchItem[] {
   const base = SIDEBAR_NAV_SEARCH_ITEMS.filter((i) => {
+    if (options.isReceptionist) {
+      return i.href === "/" || i.href === "/reservations" || i.href === "/settings";
+    }
+    if (options.isStaff) {
+      return (
+        i.href === "/" ||
+        i.href === "/settings" ||
+        i.href === "/deals" ||
+        i.href === "/tables" ||
+        i.href === "/menu" ||
+        i.href.startsWith("/menu") ||
+        i.href.startsWith("/orders") ||
+        i.href.startsWith("/reports")
+      );
+    }
     if (i.superAdminOnly && !options.isSuperAdmin) return false;
     if (i.hideForSuperAdmin && options.isSuperAdmin) return false;
     if (i.hideForBranch && options.isBranch) return false;

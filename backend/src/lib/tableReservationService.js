@@ -1,4 +1,44 @@
 import { randomUUID } from "node:crypto";
+import { resolveRestaurantFamilyIds, normalizeTableNumber } from "./tableSessions.js";
+
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Tables currently occupied by unpaid dine-in guests (stay booked until the bill is paid). */
+export async function getOccupiedDiningTableIds(knex, restaurantId) {
+  const familyIds = await resolveRestaurantFamilyIds(knex, restaurantId);
+  const ids = familyIds.length ? familyIds : restaurantId ? [restaurantId] : [];
+  if (!ids.length) return new Set();
+
+  const catalog = await knex("restaurant_tables").whereIn("restaurant_id", ids).select("id", "table_number");
+  const occupied = new Set();
+  const mark = (tableId, tableNumber) => {
+    if (tableId) occupied.add(tableId);
+    const norm = normalizeTableNumber(tableNumber);
+    if (!norm) return;
+    const match = catalog.find((t) => t.id === tableId || normalizeTableNumber(t.table_number) === norm);
+    if (match) occupied.add(match.id);
+  };
+
+  const openSessions = await knex("table_sessions")
+    .whereIn("restaurant_id", ids)
+    .andWhere({ status: "open" })
+    .select("table_id", "table_number");
+  for (const s of openSessions) mark(s.table_id, s.table_number);
+
+  const unpaid = await knex("orders")
+    .whereIn("restaurant_id", ids)
+    .where({ fulfillment_type: "dine_in" })
+    .whereNotIn("status", ["cancelled", "delivered"])
+    .where((qb) => {
+      qb.whereNull("payment_status").orWhereNot("payment_status", "paid");
+    })
+    .select("table_id", "table_number");
+  for (const o of unpaid) mark(o.table_id, o.table_number);
+
+  return occupied;
+}
 
 /**
  * Convert time string "HH:MM" (or "H:MM") to minutes from midnight.
@@ -17,19 +57,28 @@ export async function findAvailableTable(knex, { restaurantId, partySize, reserv
   const duration = Number(slotDurationHours) || 1;
 
   // Get all active tables that can seat the party
+  const familyIds = await resolveRestaurantFamilyIds(knex, restaurantId);
+  const ids = familyIds.length ? familyIds : [restaurantId];
+
   const tables = await knex("restaurant_tables")
-    .where({ restaurant_id: restaurantId, is_active: true })
+    .whereIn("restaurant_id", ids)
+    .andWhere({ is_active: true })
     .where("capacity", ">=", pSize)
     .orderBy("capacity", "asc");
 
   if (!tables.length) return null;
+
+  const diningOccupied = reservationDate === localDateStr()
+    ? await getOccupiedDiningTableIds(knex, restaurantId)
+    : new Set();
 
   const reqStart = timeToMins(startTime);
   const reqEnd = reqStart + duration * 60;
 
   // Load all confirmed/pending/seated reservations for that date
   const existing = await knex("table_reservations")
-    .where({ restaurant_id: restaurantId, reservation_date: reservationDate })
+    .whereIn("restaurant_id", ids)
+    .andWhere({ reservation_date: reservationDate })
     .whereIn("status", ["pending", "confirmed", "seated"])
     .whereIn("table_id", tables.map((t) => t.id))
     .select("table_id", "start_time", "slot_duration_hours");
@@ -44,6 +93,7 @@ export async function findAvailableTable(knex, { restaurantId, partySize, reserv
   }
 
   for (const table of tables) {
+    if (diningOccupied.has(table.id)) continue;
     const conflicts = busyMap[table.id] || [];
     const blocked = conflicts.some(({ s, e }) => reqStart < e && reqEnd > s);
     if (!blocked) return table;

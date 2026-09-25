@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 export function TopBar() {
   const { t } = useTranslation(["sidebar", "common", "auth"]);
-  const { user, profile, signOut, role } = useAuth();
+  const { user, profile, signOut, role, isReceptionist, isStaff } = useAuth();
   const { restaurantId, activeRestaurant, restaurants, setRestaurantId } = useActiveRestaurant();
   const navigate = useNavigate();
   const isSuperAdmin = role === "super_admin";
@@ -38,8 +38,8 @@ export function TopBar() {
   );
 
   const results = useMemo(
-    () => filterSidebarNavItems(query, { isSuperAdmin, isBranch }),
-    [query, isSuperAdmin, isBranch],
+    () => filterSidebarNavItems(query, { isSuperAdmin, isBranch, isReceptionist, isStaff }),
+    [query, isSuperAdmin, isBranch, isReceptionist, isStaff],
   );
 
   const close = useCallback(() => {
@@ -129,9 +129,11 @@ export function TopBar() {
         <div className="flex items-center gap-2.5 shrink-0">
           <LanguageSwitcher />
 
-          <div className="[&_button]:rounded-lg [&_button]:bg-card [&_button]:border [&_button]:border-border/80 [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:shadow-sm">
-            <OrderNotificationBell />
-          </div>
+          {!isReceptionist && (
+            <div className="[&_button]:rounded-lg [&_button]:bg-card [&_button]:border [&_button]:border-border/80 [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:shadow-sm">
+              <OrderNotificationBell />
+            </div>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

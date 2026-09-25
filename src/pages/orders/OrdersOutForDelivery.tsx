@@ -7,8 +7,8 @@ export default function OrdersOutForDelivery() {
   return (
     <OrdersListView
       status={["assigned", "out_for_delivery"]}
-      title={t("orders:outForDelivery", "Out for delivery")}
-      description={t("orders:orderOutAt", "Driver assigned — on the way")}
+      title={t("orders:outForDeliveryOrServed", "Out for delivery / Served")}
+      description={t("orders:orderOutAt", "Driver assigned — on the way or served to table")}
       icon={<Truck className="h-6 w-6" />}
     />
   );

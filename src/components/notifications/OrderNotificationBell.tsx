@@ -145,8 +145,11 @@ export function OrderNotificationBell() {
     return () => window.removeEventListener("notification-prefs-changed", handler);
   }, []);
 
+  const isKitchen = role === "kitchen" || role === "chef";
+
   const startRinging = useCallback(() => {
-    if (isSuperAdmin) return;
+    // Orders alert only rings for kitchen role, not admin
+    if (!isKitchen || isSuperAdmin) return;
     const currentPrefs = prefsRef.current;
     if (!currentPrefs.enabled) return;
 
@@ -156,7 +159,7 @@ export function OrderNotificationBell() {
     } else {
       playNotificationSound("classic-bell", currentPrefs.volume);
     }
-  }, [isSuperAdmin]);
+  }, [isKitchen, isSuperAdmin]);
 
   const stopRinging = useCallback(() => {
     setRinging(false);
@@ -171,6 +174,16 @@ export function OrderNotificationBell() {
         return;
       }
 
+      const isTransfer =
+        order.type === "transfer_requested" ||
+        order.type === "transfer_accepted" ||
+        order.type === "transfer_rejected";
+
+      // Food orders only go to the kitchen role; admin does not receive kitchen order notifications
+      if (!isKitchen && !isTransfer) {
+        return;
+      }
+
       const newNotif: OrderNotification = { ...order, seen: false };
 
       setNotifications((prev) => {
@@ -181,7 +194,8 @@ export function OrderNotificationBell() {
       knownIdsRef.current.add(order.id);
       saveKnownIds(knownIdsRef.current, restaurantId);
 
-      if (triggerAlert) {
+      // Only alert kitchen staff for new incoming food orders
+      if (triggerAlert && (isKitchen || isTransfer)) {
         let toastTitle = t("orders:newOrderAlert", "🛒 New Order Received");
         let toastDesc = `${order.order_number} · ${order.customer_name} · ${formatCurrency(order.total_amount)}`;
 
@@ -202,12 +216,12 @@ export function OrderNotificationBell() {
           duration: 7000,
         });
 
-        if (prefsRef.current.enabled) {
+        if (prefsRef.current.enabled && isKitchen) {
           startRinging();
         }
       }
     },
-    [startRinging, t, isSuperAdmin, restaurantId]
+    [startRinging, t, isSuperAdmin, restaurantId, isKitchen]
   );
 
   const addNotificationRef = useRef(addNotification);

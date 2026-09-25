@@ -53,6 +53,7 @@ import RestaurantOwnersPage from "@/pages/users/RestaurantOwnersPage";
 import TeamMembersPage from "@/pages/users/TeamMembersPage";
 import BranchPortal from "@/pages/BranchPortal";
 import TableReservations from "@/pages/TableReservations";
+import StaffTables from "@/pages/StaffTables";
 
 const queryClient = new QueryClient();
 
@@ -68,6 +69,8 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/track/:code" element={<Track />} />
               <Route path="/order" element={<Order />} />
+              <Route path="/:restaurantSlug/:branchId/menu" element={<Order />} />
+              <Route path="/:restaurantSlug/menu" element={<Order />} />
               <Route
                 path="/driver"
                 element={
@@ -86,7 +89,7 @@ const App = () => (
               >
                 <Route index element={<Dashboard />} />
                 <Route path="calls" element={<Calls />} />
-                
+
                 <Route path="customers" element={<Navigate to="/users/customers" replace />} />
                 <Route path="users" element={<Navigate to="/users/team-members" replace />} />
                 <Route path="users/customers" element={<Customers />} />
@@ -131,6 +134,7 @@ const App = () => (
                 <Route path="coupons" element={<Coupons />} />
                 <Route path="cuisines" element={<Cuisines />} />
                 <Route path="reservations" element={<TableReservations />} />
+                <Route path="tables" element={<StaffTables />} />
                 <Route path="profile" element={<Profile />} />
               </Route>
               <Route path="*" element={<NotFound />} />

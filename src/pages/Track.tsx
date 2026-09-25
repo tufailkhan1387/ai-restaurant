@@ -87,6 +87,19 @@ export default function Track() {
   const paid = String(order.payment_status || "").toLowerCase() === "paid" || order.status === "delivered"
     || String(tableSession?.session?.status || "") === "closed";
   const billTotal = tableSession?.totals?.total_amount ?? order.total_amount;
+  const orderMorePath = (() => {
+    if (!menuPath) return null;
+    const [path, qs] = menuPath.split("?");
+    const q = new URLSearchParams(qs || "");
+    const name = order.customer_name || tableSession?.session?.customer_name;
+    const phone = order.customer_phone || tableSession?.session?.customer_phone;
+    const email = order.customer_email;
+    if (name && !q.get("name")) q.set("name", String(name));
+    if (phone && !q.get("phone")) q.set("phone", String(phone));
+    if (email && !q.get("email")) q.set("email", String(email));
+    const query = q.toString();
+    return query ? `${path}?${query}` : path;
+  })();
 
   return (
     <div className="min-h-screen bg-background">
@@ -187,7 +200,7 @@ export default function Track() {
           </CardContent>
         </Card>
 
-        {isDineIn && !cancelled && menuPath && !paid && (
+        {isDineIn && !cancelled && orderMorePath && !paid && (
           <Card className="border-primary/30 bg-primary/5">
             <CardContent className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -195,7 +208,7 @@ export default function Track() {
                 <p className="text-xs text-muted-foreground">Place another order for this table. It will be added to the same bill.</p>
               </div>
               <Button asChild className="font-bold gap-1.5">
-                <Link to={menuPath}>
+                <Link to={orderMorePath}>
                   <Plus className="h-4 w-4" /> Order more
                 </Link>
               </Button>

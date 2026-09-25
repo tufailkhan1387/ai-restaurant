@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getApiBase, resolveMediaUrl } from "@/lib/apiBase";
+import { loadDineInGuest, saveDineInGuest } from "@/lib/dineInGuest";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -118,7 +119,13 @@ export default function Order() {
   const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup" | "dine_in">("delivery");
   const [tableInfo, setTableInfo] = useState<{ id?: string; table_number?: string } | null>(null);
   const [checkInNotice, setCheckInNotice] = useState<string | null>(null);
-  const [form, setForm] = useState({ customer_name: "", customer_phone: "", customer_email: "", delivery_address: "", notes: "" });
+  const [form, setForm] = useState({
+    customer_name: searchParams.get("name") || searchParams.get("customer_name") || "",
+    customer_phone: searchParams.get("phone") || searchParams.get("customer_phone") || "",
+    customer_email: searchParams.get("email") || searchParams.get("customer_email") || "",
+    delivery_address: "",
+    notes: "",
+  });
   const [tableBill, setTableBill] = useState<{
     session?: { id: string; table_number?: string; customer_name?: string };
     orders?: Array<{ id: string; order_number: string; total_amount: number; items?: Array<{ item_name: string; quantity: number }> }>;
@@ -190,6 +197,22 @@ export default function Order() {
 
       if ((bundle.deals?.length ?? 0) === 0 && (bundle.categories?.length ?? 0) > 0) {
         setActiveCat(bundle.categories[0].id);
+      }
+
+      if (bundle.table || tableParam || tableIdParam) {
+        const saved = loadDineInGuest(
+          r.id,
+          tableIdParam || bundle.table?.id,
+          tableParam || bundle.table?.table_number,
+        );
+        if (saved) {
+          setForm((f) => ({
+            ...f,
+            customer_name: f.customer_name || saved.customer_name,
+            customer_phone: f.customer_phone || saved.customer_phone,
+            customer_email: f.customer_email || saved.customer_email,
+          }));
+        }
       }
     })();
   }, [restaurantSlug, branchId, tableParam, tableIdParam]);
@@ -431,6 +454,13 @@ export default function Order() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Order failed");
       const order = body.order;
+      if (isDineIn) {
+        saveDineInGuest(restaurantId, tableId, tableNumber, {
+          customer_name: form.customer_name.trim(),
+          customer_phone: form.customer_phone.trim(),
+          customer_email: form.customer_email.trim(),
+        });
+      }
       toast.success(isDineIn ? "Dine-in order placed to kitchen!" : "Order placed!");
       navigate(`/track/${order.tracking_code}`);
     } catch (e: any) {

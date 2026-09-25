@@ -240,6 +240,9 @@ router.get("/track/:code", async (req, res) => {
         const q = new URLSearchParams();
         if (order.table_number) q.set("table", String(order.table_number));
         if (order.table_id) q.set("table_id", String(order.table_id));
+        if (order.customer_name) q.set("name", String(order.customer_name));
+        if (order.customer_phone) q.set("phone", String(order.customer_phone));
+        if (order.customer_email) q.set("email", String(order.customer_email));
         menuPath = `/${slug}/${branch}/menu?${q.toString()}`;
       }
     }

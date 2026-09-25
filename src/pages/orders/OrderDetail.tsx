@@ -381,6 +381,61 @@ export default function OrderDetail() {
         } catch {
           setTableBill(null);
         }
+      } else if (o.fulfillment_type === "dine_in" || o.table_number) {
+        const day = String(o.created_at || "").slice(0, 10);
+        const tableNorm = String(o.table_number || "")
+          .trim()
+          .toLowerCase()
+          .replace(/^table[\s._-]*/i, "");
+        const phoneNorm = String(o.customer_phone || "").replace(/\D/g, "");
+        const { data: sibs } = await supabase
+          .from("orders")
+          .select("*")
+          .eq("restaurant_id", o.restaurant_id)
+          .neq("status", "cancelled")
+          .limit(200);
+        const siblings = ((sibs as any[]) || [])
+          .filter((s) => {
+            const dine = s.fulfillment_type === "dine_in" || s.table_number;
+            if (!dine) return false;
+            const t = String(s.table_number || "")
+              .trim()
+              .toLowerCase()
+              .replace(/^table[\s._-]*/i, "");
+            const p = String(s.customer_phone || "").replace(/\D/g, "");
+            const d = String(s.created_at || "").slice(0, 10);
+            return t === tableNorm && p === phoneNorm && d === day;
+          })
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        if (siblings.length) {
+          const ids = siblings.map((s) => s.id);
+          const { data: sibItems } = await supabase.from("order_items").select("*").in("order_id", ids);
+          const byOrder: Record<string, any[]> = {};
+          for (const it of (sibItems as any[]) || []) {
+            if (!byOrder[it.order_id]) byOrder[it.order_id] = [];
+            byOrder[it.order_id].push(it);
+          }
+          const billed = siblings.map((s) => ({ ...s, items: byOrder[s.id] || [] }));
+          const totals = billed.reduce(
+            (acc, row) => {
+              acc.subtotal += Number(row.subtotal || 0);
+              acc.tax_amount += Number(row.tax_amount || 0);
+              acc.delivery_fee += Number(row.delivery_fee || 0);
+              acc.discount_amount += Number(row.discount_amount || 0);
+              acc.total_amount += Number(row.total_amount || 0);
+              acc.order_count += 1;
+              return acc;
+            },
+            { subtotal: 0, tax_amount: 0, delivery_fee: 0, discount_amount: 0, total_amount: 0, order_count: 0 },
+          );
+          setTableBill({
+            session: { id: null, table_number: o.table_number, status: "open" },
+            orders: billed,
+            totals,
+          });
+        } else {
+          setTableBill(null);
+        }
       } else {
         setTableBill(null);
       }
@@ -644,17 +699,18 @@ export default function OrderDetail() {
   const updateStatus = async (nextStatus: OrderStatus, extra: Record<string, any> = {}) => {
     if (!order) return;
     try {
-      const { error: updErr } = await supabase
-        .from("orders")
-        .update({ status: nextStatus, ...extra })
-        .eq("id", order.id);
+      const ids: string[] =
+        tableBill?.orders?.length > 0 ? tableBill.orders.map((row: any) => row.id) : [order.id];
+      const { error: updErr } = await supabase.from("orders").update({ status: nextStatus, ...extra }).in("id", ids);
       if (updErr) throw updErr;
 
-      await supabase.from("order_status_history").insert({
-        order_id: order.id,
-        status: nextStatus,
-        notes: `Updated to ${nextStatus}`,
-      });
+      await supabase.from("order_status_history").insert(
+        ids.map((oid) => ({
+          order_id: oid,
+          status: nextStatus,
+          notes: `Updated to ${nextStatus}`,
+        })),
+      );
 
       toast({ title: t("orders:statusUpdated", `Order status: ${nextStatus}`) });
       void load();
@@ -747,7 +803,33 @@ export default function OrderDetail() {
     );
   }
 
-  const st = order.status;
+  const sittingOrders: any[] = tableBill?.orders?.length ? tableBill.orders : [];
+  const isSittingBill = sittingOrders.length > 1;
+  const sittingTotal = isSittingBill ? Number(tableBill?.totals?.total_amount || 0) : order.total_amount;
+  const displayRounds = isSittingBill
+    ? sittingOrders.map((sessOrder: any, idx: number) => ({
+        key: sessOrder.id,
+        label: `Order ${idx + 1}`,
+        order_number: sessOrder.order_number,
+        items: (sessOrder.items || []) as any[],
+      }))
+    : [{ key: order.id, label: null as string | null, order_number: order.order_number, items }];
+  const displayItemRows = displayRounds.flatMap((round) => round.items);
+  const st = isSittingBill
+    ? sittingOrders.reduce((best: any, row: any) => {
+        const rank: Record<string, number> = {
+          pending: 0,
+          confirmed: 1,
+          preparing: 2,
+          ready: 3,
+          assigned: 3,
+          out_for_delivery: 4,
+          delivered: 5,
+          cancelled: 99,
+        };
+        return (rank[row.status] ?? 0) < (rank[best.status] ?? 0) ? row : best;
+      }).status
+    : order.status;
   const isDineIn = order.fulfillment_type === "dine_in" || Boolean(order.table_number);
   const isPickup = !isDineIn && (order.fulfillment_type === "pickup" || order.delivery_address?.toLowerCase().includes("pickup"));
   const isCash = !order.payment_method || order.payment_method.toLowerCase().includes("cash");
@@ -872,8 +954,8 @@ export default function OrderDetail() {
                       {order.source === "staff"
                         ? "Staff took this dine-in order at the table"
                         : "Customer scanned table QR code & placed dine-in order"}
-                      {tableBill?.totals?.order_count > 1
-                        ? ` · ${tableBill.totals.order_count} orders on this table bill`
+                      {isSittingBill
+                        ? ` · ${sittingOrders.length} orders combined on this table sitting`
                         : ""}
                     </p>
                   </div>
@@ -883,8 +965,13 @@ export default function OrderDetail() {
               {/* Big Order Title & Tracking code */}
               <div className="flex items-center gap-4 flex-wrap">
                 <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-foreground">
-                  {order.order_number}
+                  {isSittingBill ? sittingOrders[0].order_number : order.order_number}
                 </h1>
+                {isSittingBill && (
+                  <Badge variant="outline" className="text-xs font-bold bg-amber-500/10 text-amber-800 border-amber-500/30">
+                    {sittingOrders.length} orders · one table bill
+                  </Badge>
+                )}
                 <div className="flex items-center gap-2 bg-muted/40 border border-border/60 rounded-xl px-3 py-1.5 text-xs font-medium">
                   <span className="text-muted-foreground">Tracking Code:</span>
                   <code className="font-mono font-bold text-foreground text-sm">{order.tracking_code}</code>
@@ -998,27 +1085,8 @@ export default function OrderDetail() {
           </CardHeader>
           <CardContent className="p-6 space-y-3">
             <p className="text-xs text-muted-foreground">
-              {order.customer_name} · {order.customer_phone} · all dine-in orders from this guest at this table
+              {order.customer_name} · {order.customer_phone} · all dine-in rounds from this table are one bill
             </p>
-            <div className="space-y-2">
-              {tableBill.orders.map((sessOrder: any) => (
-                <div key={sessOrder.id} className="rounded-xl border border-border/60 p-3">
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <Link to={`/orders/${sessOrder.id}`} className="text-xs font-bold text-primary hover:underline">
-                      {sessOrder.order_number}
-                    </Link>
-                    <span className="text-xs font-semibold">{formatCurrency(sessOrder.total_amount)}</span>
-                  </div>
-                  <ul className="text-xs text-muted-foreground space-y-0.5">
-                    {(sessOrder.items || []).map((it: any) => (
-                      <li key={it.id}>
-                        {it.quantity}× {it.item_name}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
           </CardContent>
         </Card>
       )}
@@ -1085,25 +1153,40 @@ export default function OrderDetail() {
               <div className="flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4 text-orange-500" />
                 <CardTitle className="text-sm font-bold">
-                  {t("orders:orderedItems", "Ordered Items")} ({items.length})
+                  {t("orders:orderedItems", "Ordered Items")} ({displayItemRows.length})
                 </CardTitle>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-lg border border-border/40">
-                  Total Items: {totalItemsCount}
+                  Total Items: {displayItemRows.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0)}
                 </span>
                 <span className="text-xs font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 border border-orange-200/60 px-2.5 py-1 rounded-lg">
-                  Total: {formatCurrency(order.total_amount)}
+                  Total: {formatCurrency(sittingTotal)}
                 </span>
               </div>
             </CardHeader>
 
             <CardContent className="p-6 space-y-4">
               {/* Item Cards List */}
-              <div className="space-y-3.5">
-                {items.map((it) => {
+              <div className="space-y-5">
+                {displayRounds.map((round) => (
+                  <div key={round.key} className="space-y-3.5">
+                    {round.label && (
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          {round.label}
+                        </p>
+                        {round.order_number && (
+                          <span className="text-[11px] font-mono text-muted-foreground">{round.order_number}</span>
+                        )}
+                      </div>
+                    )}
+                {round.items.map((it: any) => {
                   const parsed = parseItemDisplay(it.item_name, it.notes);
-                  const fallbackImg = it.image_url || getItemImage(it.item_name, null);
+                  const fallbackImg =
+                    it.image_url ||
+                    items.find((row) => row.menu_item_id && row.menu_item_id === it.menu_item_id)?.image_url ||
+                    getItemImage(it.item_name, null);
                   const qty = Math.max(1, Number(it.quantity || 1));
 
                   return (
@@ -1181,8 +1264,10 @@ export default function OrderDetail() {
                     </div>
                   );
                 })}
+                  </div>
+                ))}
 
-                {items.length === 0 && (
+                {displayItemRows.length === 0 && (
                   <div className="py-12 text-center text-muted-foreground text-sm">
                     No items in this order.
                   </div>
@@ -1193,7 +1278,7 @@ export default function OrderDetail() {
               <div className="flex items-center justify-between pt-4 border-t border-border/50 text-sm font-semibold">
                 <span className="text-muted-foreground">Subtotal</span>
                 <span className="text-base font-extrabold text-foreground">
-                  {formatCurrency(order.subtotal || order.total_amount)}
+                  {formatCurrency(isSittingBill ? Number(tableBill?.totals?.subtotal || 0) : order.subtotal || order.total_amount)}
                 </span>
               </div>
             </CardContent>
@@ -1432,26 +1517,26 @@ export default function OrderDetail() {
                 <div className="flex justify-between text-muted-foreground">
                   <span>Subtotal</span>
                   <span className="font-semibold text-foreground tabular-nums">
-                    {formatCurrency(order.subtotal || order.total_amount)}
+                    {formatCurrency(isSittingBill ? Number(tableBill?.totals?.subtotal || 0) : order.subtotal || order.total_amount)}
                   </span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Tax Amount</span>
                   <span className="font-semibold text-foreground tabular-nums">
-                    {formatCurrency(order.tax_amount || 0)}
+                    {formatCurrency(isSittingBill ? Number(tableBill?.totals?.tax_amount || 0) : order.tax_amount || 0)}
                   </span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Delivery Fee</span>
                   <span className="font-semibold text-foreground tabular-nums">
-                    {formatCurrency(order.delivery_fee || 0)}
+                    {formatCurrency(isSittingBill ? Number(tableBill?.totals?.delivery_fee || 0) : order.delivery_fee || 0)}
                   </span>
                 </div>
-                {Number(order.discount_amount) > 0 && (
+                {Number(isSittingBill ? tableBill?.totals?.discount_amount : order.discount_amount) > 0 && (
                   <div className="flex justify-between text-red-600 dark:text-red-400">
                     <span>Discount</span>
                     <span className="font-bold tabular-nums">
-                      -{formatCurrency(order.discount_amount)}
+                      -{formatCurrency(isSittingBill ? Number(tableBill?.totals?.discount_amount || 0) : order.discount_amount)}
                     </span>
                   </div>
                 )}
@@ -1463,7 +1548,7 @@ export default function OrderDetail() {
                     <p className="text-[10px] text-muted-foreground">Net amount including taxes</p>
                   </div>
                   <span className="text-2xl font-extrabold text-foreground tabular-nums">
-                    {formatCurrency(order.total_amount)}
+                    {formatCurrency(sittingTotal)}
                   </span>
                 </div>
               </div>

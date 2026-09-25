@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { getApiBase } from "@/lib/apiBase";
+import { getApiBase, resolveMediaUrl } from "@/lib/apiBase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -586,7 +586,7 @@ export default function Order() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {deals.map((d) => (
                 <Card key={d.id} className="overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow">
-                  {d.image_url && <img src={d.image_url} alt={d.name} className="h-40 w-full object-cover" />}
+                  {d.image_url && <img src={resolveMediaUrl(d.image_url) || d.image_url} alt={d.name} className="h-40 w-full object-cover" />}
                   <CardContent className="p-4 flex flex-col justify-between flex-1">
                     <div>
                       <div className="flex items-start justify-between gap-2">
@@ -630,7 +630,7 @@ export default function Order() {
 
                 return (
                   <Card key={it.id} className={cn("overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow", isOutOfStock && "opacity-60")}>
-                    {it.image_url && <img src={it.image_url} alt={it.name} className="h-40 w-full object-cover" />}
+                    {it.image_url && <img src={resolveMediaUrl(it.image_url) || it.image_url} alt={it.name} className="h-40 w-full object-cover" />}
                     <CardContent className="p-4 flex flex-col justify-between flex-1">
                       <div>
                         <div className="flex items-start justify-between gap-2">

@@ -12,6 +12,7 @@ import {
   normalizeTableNumber,
   resolveRestaurantFamilyIds,
 } from "../lib/tableSessions.js";
+import { nextOrderNumber } from "../lib/orderNumbers.js";
 
 const router = Router();
 
@@ -368,7 +369,7 @@ router.post("/restaurants/:id/staff-orders", optionalAuth, requireAuth, async (r
     }
 
     const tableNumber = session?.table_number || (table_number ? String(table_number).trim() : null);
-    const orderNumber = "ORD-" + Math.random().toString(36).substring(2, 8).toUpperCase() + "-" + Math.floor(1000 + Math.random() * 9000);
+    const orderNumber = await nextOrderNumber(trx, restaurantId);
     const trackingCode = "TRK-" + Math.random().toString(36).substring(2, 8).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
 
     const [order] = await trx("orders")

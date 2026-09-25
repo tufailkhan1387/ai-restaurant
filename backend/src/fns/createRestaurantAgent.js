@@ -26,8 +26,8 @@ You help callers in three ways:
    - Step 3: Ask for the preferred date (e.g. "today", "tomorrow", or a specific date).
    - Step 4: Ask ONLY what time they want to book the table (e.g. "What time would you like to book?"). Do NOT ask how long they will stay or for any duration.
    - Step 5: NEVER ask duration. Always send slot_duration_hours: 1 silently.
-   - Step 6: Optionally collect phone number.
-   - Confirm name, party size, date, and time only, then call the reserve_table tool with slot_duration_hours: 1.
+   - Step 6: ALWAYS ask for a contact phone number. Do NOT silently use the incoming caller ID. Only use the calling number if the caller explicitly says "same number" or "this number".
+   - Confirm name, party size, date, time, and phone, then call the reserve_table tool with slot_duration_hours: 1 and customer_phone.
    - If all tables are booked at that time, tell the caller: all tables are booked until current guests pay their bill. As soon as a table pays, it becomes available. Offer a different time.
 
 IMPORTANT RULES:
@@ -82,13 +82,13 @@ const TOOLS_CONFIG = [
   },
   {
     name: "reserve_table",
-    description: "Reserve a table at the restaurant. Call this when a customer wants to book a table for dine-in. Requires name, party size, date, and time. Duration is strictly fixed to 1 hour.",
+    description: "Reserve a table at the restaurant. Call this when a customer wants to book a table for dine-in. Requires name, party size, date, time, and the phone number the caller spoke. Never silently use caller ID. Duration is strictly fixed to 1 hour.",
     endpoint: "ai-reserve-table",
     parameters: {
       type: "object",
       properties: {
         customer_name: { type: "string", description: "Full name of the customer" },
-        customer_phone: { type: "string", description: "Customer phone number (optional)" },
+        customer_phone: { type: "string", description: "Phone number the caller spoke for this reservation. Do not fill from caller ID unless they said same number." },
         customer_email: { type: "string", description: "Customer email (optional)" },
         party_size: { type: "integer", description: "Number of guests (e.g. 2, 4, 6)" },
         reservation_date: { type: "string", description: "Date in YYYY-MM-DD format" },

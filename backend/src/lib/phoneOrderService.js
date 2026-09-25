@@ -1,5 +1,6 @@
 import { normalizeE164 } from "./voiceWebhookUtils.js";
 import { geocodeAddress, haversineDistanceKm } from "./geocoding.js";
+import { nextOrderNumber } from "./orderNumbers.js";
 
 /**
  * Find the nearest active branch for a parent restaurant within service radius.
@@ -435,7 +436,6 @@ export async function createPhoneOrder(knex, input) {
   const tax = Number((taxableBase * taxRate).toFixed(2));
   const total = Number((taxableBase + tax + deliveryFee).toFixed(2));
 
-  const orderNumber = "ORD-" + Math.random().toString(36).substr(2, 9).toUpperCase();
   const trackingCode = Math.random().toString(36).substr(2, 10).toUpperCase();
 
   const phone = normalizeE164(customer_phone) || String(customer_phone || "0000000000");
@@ -444,6 +444,7 @@ export async function createPhoneOrder(knex, input) {
     : delivery_address || "Address not provided";
 
   const result = await knex.transaction(async (trx) => {
+    const orderNumber = await nextOrderNumber(trx, targetRestaurantId);
     const [order] = await trx("orders")
       .insert({
         restaurant_id: targetRestaurantId,

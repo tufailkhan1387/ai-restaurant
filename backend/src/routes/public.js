@@ -11,6 +11,8 @@ import {
   findOpenSessionsForTable,
   resolveRestaurantFamilyIds,
 } from "../lib/tableSessions.js";
+import { nextOrderNumber } from "../lib/orderNumbers.js";
+import { withAbsoluteMedia } from "../lib/mediaUrl.js";
 
 const router = Router();
 
@@ -105,11 +107,11 @@ router.get("/storefront", async (req, res) => {
         .select("id", "name", "address", "phone", "service_radius_km", "latitude", "longitude", "is_accepting_orders"),
     ]);
     return res.json({
-      restaurant: r,
+      restaurant: withAbsoluteMedia(r, ["logo_url", "cover_image_url"]),
       settings: settings || null,
       categories,
-      items,
-      deals,
+      items: (items || []).map((it) => withAbsoluteMedia(it, ["image_url"])),
+      deals: (deals || []).map((d) => withAbsoluteMedia(d, ["image_url"])),
       hours: hours || [],
       variants: variants || [],
       addons: addons || [],
@@ -469,7 +471,6 @@ router.post("/orders", async (req, res) => {
     const effectiveFulfillmentType = isDineIn ? "dine_in" : isPickup ? "pickup" : "delivery";
     const effectiveDeliveryFee = isDineIn || isPickup ? 0 : (delivery_fee || 0);
 
-    const orderNumber = "ORD-" + Math.random().toString(36).substring(2, 8).toUpperCase() + "-" + Math.floor(1000 + Math.random() * 9000);
     const trackingCode = "TRK-" + Math.random().toString(36).substring(2, 8).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
 
     const finalPhone = String(customer_phone).trim();
@@ -488,6 +489,8 @@ router.post("/orders", async (req, res) => {
         targetRestaurantId = tableSession.restaurant_id;
       }
     }
+
+    const orderNumber = await nextOrderNumber(trx, targetRestaurantId);
 
     const [order] = await trx("orders")
       .insert({

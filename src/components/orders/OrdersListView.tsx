@@ -98,8 +98,14 @@ interface Order {
   fulfillment_type?: string;
   table_id?: string | null;
   table_number?: string | null;
+  table_session_id?: string | null;
   reservation_id?: string | null;
 }
+
+type DisplayOrder = Order & {
+  sittingOrderIds: string[];
+  sittingCount: number;
+};
 
 interface OrderItem {
   id: string;
@@ -117,6 +123,37 @@ interface Driver {
   full_name: string;
   phone: string;
   status: string;
+}
+
+const STATUS_RANK: Record<string, number> = {
+  pending: 0,
+  confirmed: 1,
+  preparing: 2,
+  ready: 3,
+  assigned: 3,
+  out_for_delivery: 4,
+  delivered: 5,
+  cancelled: 99,
+};
+
+function sittingKey(o: Order): string | null {
+  const isDineIn = o.fulfillment_type === "dine_in" || Boolean(o.table_number);
+  if (!isDineIn) return null;
+  if (o.table_session_id) return `session:${o.table_session_id}`;
+  const table = String(o.table_number || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^table[\s._-]*/i, "");
+  const phone = String(o.customer_phone || "").replace(/\D/g, "");
+  const day = String(o.created_at || "").slice(0, 10);
+  if (!table) return null;
+  return `table:${o.restaurant_id || ""}:${table}:${phone}:${day}`;
+}
+
+function sittingStatus(list: Order[]): OrderStatus {
+  const active = list.filter((o) => o.status !== "cancelled");
+  if (!active.length) return "cancelled";
+  return active.reduce((best, o) => ((STATUS_RANK[o.status] ?? 0) < (STATUS_RANK[best.status] ?? 0) ? o : best)).status;
 }
 
 interface Category {
@@ -418,20 +455,23 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
     return map;
   }, [menuItems]);
 
-  const updateStatus = async (id: string, next: OrderStatus, extra: Record<string, any> = {}) => {
-    const { error } = await supabase.from("orders").update({ status: next, ...extra }).eq("id", id);
+  const updateStatus = async (id: string | string[], next: OrderStatus, extra: Record<string, any> = {}) => {
+    const ids = Array.isArray(id) ? id : [id];
+    const { error } = await supabase.from("orders").update({ status: next, ...extra }).in("id", ids);
     if (error) toast({ variant: "destructive", title: "Failed", description: (error as any).message });
     else {
       toast({ title: `Order ${next.replace(/_/g, " ")}` });
       if (next === "confirmed" || next === "out_for_delivery") {
-        supabase.functions.invoke("send-order-notification", { body: { order_id: id } }).catch(() => {});
+        ids.forEach((oid) => {
+          supabase.functions.invoke("send-order-notification", { body: { order_id: oid } }).catch(() => {});
+        });
       }
       load();
     }
   };
 
-  const confirmOrder = (o: Order) =>
-    updateStatus(o.id, "confirmed", { verified_at: new Date().toISOString() });
+  const confirmOrder = (o: DisplayOrder) =>
+    updateStatus(o.sittingOrderIds, "confirmed", { verified_at: new Date().toISOString() });
 
   const orderItems = (id: string) => items.filter((i) => i.order_id === id);
 
@@ -582,6 +622,51 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
     sortBy,
     isAllOrdersPage,
   ]);
+
+  const displayRows = useMemo((): DisplayOrder[] => {
+    const groups = new Map<string, Order[]>();
+    const singles: Order[] = [];
+    for (const o of filtered) {
+      const key = sittingKey(o);
+      if (!key) {
+        singles.push(o);
+        continue;
+      }
+      const list = groups.get(key) || [];
+      list.push(o);
+      groups.set(key, list);
+    }
+
+    const grouped: DisplayOrder[] = [];
+    for (const list of groups.values()) {
+      const chronological = [...list].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+      const first = chronological[0];
+      grouped.push({
+        ...first,
+        status: sittingStatus(chronological),
+        total_amount: chronological.reduce((sum, row) => sum + Number(row.total_amount || 0), 0),
+        sittingOrderIds: chronological.map((row) => row.id),
+        sittingCount: chronological.length,
+      });
+    }
+
+    const lone: DisplayOrder[] = singles.map((o) => ({
+      ...o,
+      sittingOrderIds: [o.id],
+      sittingCount: 1,
+    }));
+
+    const all = [...grouped, ...lone];
+    const index = new Map(filtered.map((o, i) => [o.id, i]));
+    all.sort((a, b) => {
+      const aLatest = Math.min(...a.sittingOrderIds.map((id) => index.get(id) ?? 9999));
+      const bLatest = Math.min(...b.sittingOrderIds.map((id) => index.get(id) ?? 9999));
+      return aLatest - bLatest;
+    });
+    return all;
+  }, [filtered]);
 
   const transferCounts = useMemo(() => {
     const transferred = orders.filter((o) => Boolean(o.is_transferred || (o.branch_assigned_at && !o.auto_assigned))).length;
@@ -992,8 +1077,8 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
 
         {/* Orders List Cards */}
         <div className="grid gap-4">
-          {filtered.map((o) => {
-            const its = orderItems(o.id);
+          {displayRows.map((o) => {
+            const its = o.sittingOrderIds.flatMap((oid) => orderItems(oid));
             const driver = drivers.find((d) => d.id === o.driver_id);
             const isTransferredOrder = Boolean(o.is_transferred || (o.branch_assigned_at && !o.auto_assigned));
             const isIncomingTransferForMe = Boolean(
@@ -1126,6 +1211,11 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           <Badge variant="outline" className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30 text-xs font-bold flex items-center gap-1">
                             <UtensilsCrossed className="h-3 w-3" />
                             <span>Dine-In{o.table_number ? ` · Table ${o.table_number}` : ""}</span>
+                          </Badge>
+                        )}
+                        {o.sittingCount > 1 && (
+                          <Badge variant="outline" className="bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/30 text-xs font-bold">
+                            {o.sittingCount} orders
                           </Badge>
                         )}
 
@@ -1266,7 +1356,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => updateStatus(o.id, "preparing")}
+                            onClick={() => updateStatus(o.sittingOrderIds, "preparing")}
                           >
                             {t("orders:startPrep", "Start prep")}
                           </Button>
@@ -1275,7 +1365,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => updateStatus(o.id, o.fulfillment_type === "dine_in" ? "out_for_delivery" : "ready")}
+                            onClick={() => updateStatus(o.sittingOrderIds, o.fulfillment_type === "dine_in" ? "out_for_delivery" : "ready")}
                           >
                             {o.fulfillment_type === "dine_in" ? "🍽️ Serve Table" : t("orders:ready", "Ready")}
                           </Button>
@@ -1284,7 +1374,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => updateStatus(o.id, "out_for_delivery")}
+                            onClick={() => updateStatus(o.sittingOrderIds, "out_for_delivery")}
                           >
                             {o.fulfillment_type === "dine_in" ? "🍽️ Serve Table" : t("orders:outForDelivery", "Out for delivery")}
                           </Button>
@@ -1294,7 +1384,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                             size="sm"
                             variant="outline"
                             onClick={() =>
-                              updateStatus(o.id, "delivered", {
+                              updateStatus(o.sittingOrderIds, "delivered", {
                                 delivered_at: new Date().toISOString(),
                               })
                             }
@@ -1308,7 +1398,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                             variant="ghost"
                             className="text-destructive"
                             onClick={() => {
-                              if (confirm(t("orders:cancelOrder", "Cancel order?"))) updateStatus(o.id, "cancelled");
+                              if (confirm(t("orders:cancelOrder", "Cancel order?"))) updateStatus(o.sittingOrderIds, "cancelled");
                             }}
                           >
                             {t("orders:cancel", "Cancel")}
@@ -1322,7 +1412,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
             );
           })}
 
-          {filtered.length === 0 && !loading && (
+          {displayRows.length === 0 && !loading && (
             <Card className="border-dashed">
               <CardContent className="py-12 text-center text-muted-foreground space-y-3">
                 <ShoppingBag className="h-10 w-10 mx-auto text-muted-foreground/50" />

@@ -799,12 +799,19 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
       period,
       category_id,
       customer_type,
+      fulfillment_type,
       search,
       sort_by = "total_spent",
       sort_order = "desc",
     } = req.query;
 
-    const limit = parsePositiveInt(req.query.limit, 50, 500);
+    const limit = parsePositiveInt(req.query.limit, 2000, 5000);
+    const fulfillmentFilter = String(fulfillment_type || "").trim().toLowerCase();
+    const CUSTOMER_KEY_SQL = `COALESCE(
+      NULLIF(TRIM(orders.customer_phone), ''),
+      NULLIF(LOWER(TRIM(COALESCE(orders.customer_email, ''))), ''),
+      CONCAT('guest:', LOWER(TRIM(COALESCE(NULLIF(orders.customer_name, ''), 'unknown'))))
+    )`;
 
     const baseOrders = knex("orders")
       .whereNot("status", "cancelled")
@@ -835,6 +842,10 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
           }
         }
 
+        if (["dine_in", "delivery", "pickup"].includes(fulfillmentFilter)) {
+          qb.where("orders.fulfillment_type", fulfillmentFilter);
+        }
+
         // Category filter (orders that contain items belonging to category_id)
         if (category_id && category_id !== "all") {
           qb.whereExists(function () {
@@ -846,33 +857,38 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
           });
         }
 
-        // Search by customer name, phone, or email
+        // Search by customer name, phone, email, or table
         if (search && search.trim()) {
           const s = `%${search.trim().toLowerCase()}%`;
           qb.where(function () {
             this.whereRaw("LOWER(COALESCE(orders.customer_name, '')) LIKE ?", [s])
               .orWhereRaw("LOWER(COALESCE(orders.customer_phone, '')) LIKE ?", [s])
-              .orWhereRaw("LOWER(COALESCE(orders.customer_email, '')) LIKE ?", [s]);
+              .orWhereRaw("LOWER(COALESCE(orders.customer_email, '')) LIKE ?", [s])
+              .orWhereRaw("LOWER(COALESCE(orders.table_number, '')) LIKE ?", [s]);
           });
         }
       });
 
-    // Customer rows query
+    // Customer rows query — include dine-in guests even when phone is missing
     let customerQuery = baseOrders
       .clone()
       .select(
         "orders.restaurant_id",
-        knex.raw("TRIM(orders.customer_phone) as customer_phone"),
+        knex.raw(`${CUSTOMER_KEY_SQL} as customer_key`),
+        knex.raw("MAX(NULLIF(TRIM(orders.customer_phone), '')) as customer_phone"),
         knex.raw("MAX(orders.customer_name) as customer_name"),
         knex.raw("MAX(orders.customer_email) as customer_email"),
         knex.raw("COUNT(*)::int as order_count"),
         knex.raw("SUM(orders.total_amount) as total_spent"),
         knex.raw("AVG(orders.total_amount) as avg_order_value"),
         knex.raw("MAX(orders.created_at) as last_order_at"),
-        knex.raw("MIN(orders.created_at) as first_order_at")
+        knex.raw("MIN(orders.created_at) as first_order_at"),
+        knex.raw("COUNT(*) FILTER (WHERE orders.fulfillment_type = 'dine_in')::int as dine_in_orders"),
+        knex.raw("COUNT(*) FILTER (WHERE COALESCE(orders.fulfillment_type, 'delivery') = 'delivery')::int as delivery_orders"),
+        knex.raw("COUNT(*) FILTER (WHERE orders.fulfillment_type = 'pickup')::int as pickup_orders"),
+        knex.raw("MAX(CASE WHEN orders.fulfillment_type = 'dine_in' THEN orders.table_number END) as table_number")
       )
-      .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''")
-      .groupBy("orders.restaurant_id", knex.raw("TRIM(orders.customer_phone)"));
+      .groupBy("orders.restaurant_id", knex.raw(CUSTOMER_KEY_SQL));
 
     // Filter by Customer Segment / Type
     if (customer_type === "repeat") {
@@ -907,19 +923,35 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
       for (const r of rests) restaurantNameById.set(r.id, r.name);
     }
 
-    const customers = customerRows.map((r) => ({
-      restaurant_id: r.restaurant_id,
-      restaurant_name: restaurantNameById.get(r.restaurant_id) || "—",
-      customer_phone: r.customer_phone,
-      customer_name: r.customer_name || "—",
-      customer_email: r.customer_email || null,
-      order_count: Number(r.order_count || 0),
-      total_spent: Number(r.total_spent || 0),
-      avg_order_value: Number(r.avg_order_value || 0),
-      last_order_at: r.last_order_at,
-      first_order_at: r.first_order_at,
-      is_repeat: Number(r.order_count || 0) > 1,
-    }));
+    const customers = customerRows.map((r) => {
+      const dineIn = Number(r.dine_in_orders || 0);
+      const delivery = Number(r.delivery_orders || 0);
+      const pickup = Number(r.pickup_orders || 0);
+      const orderTypes = [];
+      if (dineIn > 0) orderTypes.push("dine_in");
+      if (delivery > 0) orderTypes.push("delivery");
+      if (pickup > 0) orderTypes.push("pickup");
+      return {
+        restaurant_id: r.restaurant_id,
+        restaurant_name: restaurantNameById.get(r.restaurant_id) || "—",
+        customer_key: r.customer_key,
+        customer_phone: r.customer_phone || "—",
+        customer_name: r.customer_name || "—",
+        customer_email: r.customer_email || null,
+        order_count: Number(r.order_count || 0),
+        total_spent: Number(r.total_spent || 0),
+        avg_order_value: Number(r.avg_order_value || 0),
+        last_order_at: r.last_order_at,
+        first_order_at: r.first_order_at,
+        is_repeat: Number(r.order_count || 0) > 1,
+        dine_in_orders: dineIn,
+        delivery_orders: delivery,
+        pickup_orders: pickup,
+        table_number: r.table_number || null,
+        has_dine_in: dineIn > 0,
+        order_types: orderTypes,
+      };
+    });
 
     // Categories query for filter
     let catQuery = knex("menu_categories")
@@ -937,20 +969,18 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
         knex.raw("COUNT(*)::int as total_orders"),
         knex.raw("SUM(orders.total_amount) as total_revenue"),
         knex.raw("AVG(orders.total_amount) as avg_order_value"),
-        knex.raw("COUNT(DISTINCT TRIM(orders.customer_phone))::int as unique_customers")
-      )
-      .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''");
+        knex.raw(`COUNT(DISTINCT ${CUSTOMER_KEY_SQL})::int as unique_customers`)
+      );
 
     const repeatRow = await knex
       .from(
         baseOrders
           .clone()
           .select(
-            knex.raw("TRIM(orders.customer_phone) as customer_phone"),
+            knex.raw(`${CUSTOMER_KEY_SQL} as customer_key`),
             knex.raw("COUNT(*)::int as order_count")
           )
-          .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''")
-          .groupBy(knex.raw("TRIM(orders.customer_phone)"))
+          .groupBy(knex.raw(CUSTOMER_KEY_SQL))
           .having(knex.raw("COUNT(*) > 1"))
           .as("repeat_customers")
       )
@@ -958,10 +988,9 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
 
     const newCustomersSubq = baseOrders
       .clone()
-      .select(knex.raw("TRIM(orders.customer_phone) as customer_phone"))
+      .select(knex.raw(`${CUSTOMER_KEY_SQL} as customer_key`))
       .select(knex.raw("MIN(orders.created_at) as first_order_at"))
-      .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''")
-      .groupBy(knex.raw("TRIM(orders.customer_phone)"))
+      .groupBy(knex.raw(CUSTOMER_KEY_SQL))
       .havingRaw("MIN(orders.created_at) >= NOW() - INTERVAL '30 days'")
       .as("new_customers");
 
@@ -974,12 +1003,11 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
     const customerAggSubq = baseOrders
       .clone()
       .select(
-        knex.raw("TRIM(orders.customer_phone) as customer_phone"),
+        knex.raw(`${CUSTOMER_KEY_SQL} as customer_key`),
         knex.raw("COUNT(*)::int as order_count"),
         knex.raw("SUM(orders.total_amount) as total_spent")
       )
-      .whereRaw("TRIM(COALESCE(orders.customer_phone, '')) <> ''")
-      .groupBy(knex.raw("TRIM(orders.customer_phone)"))
+      .groupBy(knex.raw(CUSTOMER_KEY_SQL))
       .as("cust_agg");
 
     const breakdownRows = await knex
@@ -1043,7 +1071,7 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
       .from(
         baseOrders
           .clone()
-          .join(customerAggSubq, knex.raw("TRIM(orders.customer_phone)"), "cust_agg.customer_phone")
+          .join(customerAggSubq, knex.raw(CUSTOMER_KEY_SQL), "cust_agg.customer_key")
           .select(
             knex.raw("TO_CHAR(orders.created_at, 'YYYY-MM-DD') as date_str"),
             knex.raw("TO_CHAR(orders.created_at, 'Mon DD') as formatted_date"),
@@ -1100,6 +1128,8 @@ router.get("/customer-analytics", optionalAuth, requireAuth, async (req, res) =>
         period_days: days ? Number(days) : null,
         one_time_breakdown: oneTimeBreakdown,
         repeat_breakdown: repeatBreakdown,
+        dining_customers: customers.filter((c) => c.has_dine_in).length,
+        fulfillment_type: fulfillmentFilter || "all",
       },
     });
   } catch (e) {

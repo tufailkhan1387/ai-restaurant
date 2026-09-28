@@ -20,6 +20,7 @@ import {
   Check,
   Lightbulb,
   ArrowUpDown,
+  Utensils,
 } from "lucide-react";
 import {
   AreaChart,
@@ -59,6 +60,12 @@ type CustomerRow = {
   last_order_at: string;
   first_order_at: string;
   is_repeat: boolean;
+  dine_in_orders?: number;
+  delivery_orders?: number;
+  pickup_orders?: number;
+  table_number?: string | null;
+  has_dine_in?: boolean;
+  order_types?: string[];
 };
 
 type CategoryItem = {
@@ -98,6 +105,7 @@ type CustomerAnalyticsResponse = {
     period_days: number | null;
     one_time_breakdown?: BreakdownData;
     repeat_breakdown?: BreakdownData;
+    dining_customers?: number;
   };
 };
 
@@ -114,7 +122,8 @@ export default function CustomerAnalyticsPage() {
   const [endDate, setEndDate] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [categorySearch, setCategorySearch] = useState("");
-  const [activeTabFilter, setActiveTabFilter] = useState<"all" | "one_time" | "repeat">("all");
+  const [orderTypeFilter, setOrderTypeFilter] = useState<"all" | "dine_in" | "delivery" | "pickup">("all");
+  const [activeTabFilter, setActiveTabFilter] = useState<"all" | "one_time" | "repeat" | "dine_in">("all");
   const [sortBy, setSortBy] = useState<
     "total_spent" | "order_count" | "avg_order_value" | "last_order_at" | "first_order_at" | "customer_name"
   >("total_spent");
@@ -141,6 +150,7 @@ export default function CustomerAnalyticsPage() {
       endDate,
       selectedCategory,
       searchQuery,
+      orderTypeFilter,
       sortBy,
       sortOrder,
     ],
@@ -168,13 +178,17 @@ export default function CustomerAnalyticsPage() {
         params.set("category_id", selectedCategory);
       }
 
+      if (orderTypeFilter !== "all") {
+        params.set("fulfillment_type", orderTypeFilter);
+      }
+
       if (searchQuery.trim()) {
         params.set("search", searchQuery.trim());
       }
 
       params.set("sort_by", sortBy);
       params.set("sort_order", sortOrder);
-      params.set("limit", "500");
+      params.set("limit", "2000");
 
       const res = await fetch(`${getApiBase()}/api/stats/customer-analytics?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -193,13 +207,11 @@ export default function CustomerAnalyticsPage() {
 
   // Filter by segment tab (All / One-Time / Repeat)
   const displayedRows = useMemo(() => {
-    if (activeTabFilter === "one_time") {
-      return rawRows.filter((r) => !r.is_repeat);
-    }
-    if (activeTabFilter === "repeat") {
-      return rawRows.filter((r) => r.is_repeat);
-    }
-    return rawRows;
+    let rows = rawRows;
+    if (activeTabFilter === "one_time") rows = rows.filter((r) => !r.is_repeat);
+    else if (activeTabFilter === "repeat") rows = rows.filter((r) => r.is_repeat);
+    else if (activeTabFilter === "dine_in") rows = rows.filter((r) => r.has_dine_in);
+    return rows;
   }, [rawRows, activeTabFilter]);
 
   // Breakdowns
@@ -313,13 +325,17 @@ export default function CustomerAnalyticsPage() {
       "Total Spent",
       "Avg Order Value",
       "Customer Type",
+      "Order Type",
+      "Table",
+      "Dining Orders",
       "First Order Date",
       "Last Order Date",
     ];
     const csvRows = displayedRows.map((row, idx) => {
       const phoneRaw = row.customer_phone || "";
       const phoneClean = phoneRaw.replace(/"/g, '""');
-      const phoneCell = phoneClean ? `="""${phoneClean}"""` : `"—"`;
+      const phoneCell = phoneClean && phoneClean !== "—" ? `="""${phoneClean}"""` : `"—"`;
+      const orderTypeLabel = formatOrderTypes(row);
 
       return [
         idx + 1,
@@ -330,6 +346,9 @@ export default function CustomerAnalyticsPage() {
         row.total_spent.toFixed(2),
         row.avg_order_value.toFixed(2),
         `"${row.is_repeat ? "Repeat" : "One-Time"}"`,
+        `"${orderTypeLabel}"`,
+        `"${(row.table_number || "").replace(/"/g, '""')}"`,
+        row.dine_in_orders ?? 0,
         row.first_order_at ? `"${new Date(row.first_order_at).toLocaleDateString()}"` : `""`,
         row.last_order_at ? `"${new Date(row.last_order_at).toLocaleDateString()}"` : `""`,
       ].join(",");
@@ -504,6 +523,27 @@ export default function CustomerAnalyticsPage() {
               </div>
             </PopoverContent>
           </Popover>
+
+          {/* Order type filter — Dining / Delivery / Pickup */}
+          <Select
+            value={orderTypeFilter}
+            onValueChange={(v) => {
+              setOrderTypeFilter(v as "all" | "dine_in" | "delivery" | "pickup");
+              if (v === "dine_in") setActiveTabFilter("dine_in");
+              else if (activeTabFilter === "dine_in") setActiveTabFilter("all");
+            }}
+          >
+            <SelectTrigger className="h-10 bg-card border-border/80 rounded-xl px-3.5 text-xs font-medium gap-2 shadow-sm hover:border-border whitespace-nowrap w-[150px]">
+              <Utensils className="h-4 w-4 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All order types</SelectItem>
+              <SelectItem value="dine_in">Dining only</SelectItem>
+              <SelectItem value="delivery">Delivery only</SelectItem>
+              <SelectItem value="pickup">Pickup only</SelectItem>
+            </SelectContent>
+          </Select>
 
           {/* Refresh Button */}
           <Button
@@ -787,18 +827,30 @@ export default function CustomerAnalyticsPage() {
         <CardHeader className="py-5 px-6 border-b border-border/50">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <CardTitle className="text-lg font-bold text-foreground">Top Customers</CardTitle>
+              <CardTitle className="text-lg font-bold text-foreground">All Customers</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Grouped by phone number · excludes cancelled orders
+                Everyone who placed an order · dining customers tagged by table
               </p>
             </div>
 
             {/* Segment Toggle Buttons & Counter */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search name, phone, table..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-9 w-[200px] pl-8 pr-2 text-xs bg-muted/50 rounded-xl"
+                />
+              </div>
               <div className="flex items-center bg-muted/60 p-1 rounded-full border border-border/60">
                 <button
                   type="button"
-                  onClick={() => setActiveTabFilter("all")}
+                  onClick={() => {
+                    setActiveTabFilter("all");
+                    setOrderTypeFilter("all");
+                  }}
                   className={cn(
                     "px-3.5 py-1 text-xs font-semibold rounded-full transition-all",
                     activeTabFilter === "all"
@@ -810,7 +862,25 @@ export default function CustomerAnalyticsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTabFilter("one_time")}
+                  onClick={() => {
+                    setActiveTabFilter("dine_in");
+                    setOrderTypeFilter("dine_in");
+                  }}
+                  className={cn(
+                    "px-3.5 py-1 text-xs font-semibold rounded-full transition-all",
+                    activeTabFilter === "dine_in" || orderTypeFilter === "dine_in"
+                      ? "bg-teal-600 text-white shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Dining
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTabFilter("one_time");
+                    setOrderTypeFilter("all");
+                  }}
                   className={cn(
                     "px-3.5 py-1 text-xs font-semibold rounded-full transition-all",
                     activeTabFilter === "one_time"
@@ -822,7 +892,10 @@ export default function CustomerAnalyticsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTabFilter("repeat")}
+                  onClick={() => {
+                    setActiveTabFilter("repeat");
+                    setOrderTypeFilter("all");
+                  }}
                   className={cn(
                     "px-3.5 py-1 text-xs font-semibold rounded-full transition-all",
                     activeTabFilter === "repeat"
@@ -835,7 +908,10 @@ export default function CustomerAnalyticsPage() {
               </div>
 
               <span className="text-xs text-muted-foreground hidden sm:inline whitespace-nowrap">
-                Showing {displayedRows.length} items
+                Showing {displayedRows.length} customers
+                {typeof summary?.dining_customers === "number" && orderTypeFilter === "all"
+                  ? ` · ${summary.dining_customers} dining`
+                  : ""}
               </span>
             </div>
           </div>
@@ -865,6 +941,8 @@ export default function CustomerAnalyticsPage() {
                     </div>
                   </th>
                   <th className="px-5 py-3.5">PHONE</th>
+                  <th className="px-5 py-3.5">TABLE</th>
+                  <th className="px-5 py-3.5">ORDER TYPE</th>
                   <th
                     className="px-5 py-3.5 text-right cursor-pointer select-none hover:text-foreground transition-colors"
                     onClick={() => handleSortToggle("order_count")}
@@ -950,7 +1028,7 @@ export default function CustomerAnalyticsPage() {
               <tbody className="divide-y divide-border/40">
                 {isLoading && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-16 text-center text-muted-foreground">
+                    <td colSpan={11} className="px-6 py-16 text-center text-muted-foreground">
                       <Loader2 className="h-7 w-7 animate-spin text-primary inline mb-2" />
                       <p className="text-sm">Loading customer data...</p>
                     </td>
@@ -992,7 +1070,20 @@ export default function CustomerAnalyticsPage() {
                           </div>
                         </td>
                         <td className="px-5 py-4 font-mono text-xs text-sky-600 dark:text-sky-400 font-medium">
-                          {row.customer_phone}
+                          {row.customer_phone || "—"}
+                        </td>
+                        <td className="px-5 py-4 text-xs font-medium text-foreground">
+                          {row.has_dine_in && row.table_number ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20 px-2 py-0.5">
+                              <Utensils className="h-3 w-3" />
+                              {row.table_number}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4">
+                          <OrderTypeBadges row={row} />
                         </td>
                         <td className="px-5 py-4 text-right font-medium text-foreground">
                           {row.order_count}
@@ -1022,7 +1113,7 @@ export default function CustomerAnalyticsPage() {
 
                 {!isLoading && displayedRows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
+                    <td colSpan={11} className="px-6 py-12 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center space-y-3">
                         <div className="p-3 rounded-full bg-muted/50 text-muted-foreground">
                           <Users className="h-6 w-6" />
@@ -1043,6 +1134,7 @@ export default function CustomerAnalyticsPage() {
                             setSelectedCategory("all");
                             setSearchQuery("");
                             setActiveTabFilter("all");
+                            setOrderTypeFilter("all");
                           }}
                           className="mt-2 text-xs"
                         >
@@ -1058,6 +1150,68 @@ export default function CustomerAnalyticsPage() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function formatOrderTypes(row: CustomerRow) {
+  const types = row.order_types?.length
+    ? row.order_types
+    : [
+        ...(row.dine_in_orders ? ["dine_in"] : []),
+        ...(row.delivery_orders ? ["delivery"] : []),
+        ...(row.pickup_orders ? ["pickup"] : []),
+      ];
+  if (!types.length) return "—";
+  return types
+    .map((t) => (t === "dine_in" ? "Dining" : t === "pickup" ? "Pickup" : "Delivery"))
+    .join(" + ");
+}
+
+function OrderTypeBadges({ row }: { row: CustomerRow }) {
+  const types = row.order_types?.length
+    ? row.order_types
+    : [
+        ...(row.has_dine_in || (row.dine_in_orders || 0) > 0 ? ["dine_in"] : []),
+        ...((row.delivery_orders || 0) > 0 ? ["delivery"] : []),
+        ...((row.pickup_orders || 0) > 0 ? ["pickup"] : []),
+      ];
+  if (!types.length) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {types.map((t) => {
+        if (t === "dine_in") {
+          return (
+            <span
+              key={t}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20"
+            >
+              <Utensils className="h-3 w-3" />
+              Dining{row.dine_in_orders && row.dine_in_orders > 1 ? ` ×${row.dine_in_orders}` : ""}
+            </span>
+          );
+        }
+        if (t === "pickup") {
+          return (
+            <span
+              key={t}
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20"
+            >
+              Pickup
+            </span>
+          );
+        }
+        return (
+          <span
+            key={t}
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-violet-500/10 text-violet-700 dark:text-violet-400 border border-violet-500/20"
+          >
+            Delivery
+          </span>
+        );
+      })}
     </div>
   );
 }

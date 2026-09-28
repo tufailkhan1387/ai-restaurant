@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { getKnex } from "../db.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import { getOccupiedDiningTableIds } from "../lib/tableReservationService.js";
+import { getOccupiedDiningTableIds, diningOccupancyBlocksSlot, localDateStr, timeToMins } from "../lib/tableReservationService.js";
 
 const router = Router();
 
@@ -194,9 +194,7 @@ router.get("/restaurants/:id/reservations/availability", optionalAuth, requireAu
       .where("capacity", ">=", Number(party_size))
       .orderBy("capacity", "asc");
 
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const diningOccupied = String(date) === todayStr
+    const diningOccupied = String(date) === localDateStr()
       ? await getOccupiedDiningTableIds(knex, req.params.id)
       : new Set();
 
@@ -205,11 +203,6 @@ router.get("/restaurants/:id/reservations/availability", optionalAuth, requireAu
       .whereIn("status", ["pending", "confirmed", "seated"])
       .whereIn("table_id", tables.map((t) => t.id))
       .select("table_id", "start_time", "slot_duration_hours");
-
-    function timeToMins(t) {
-      const [h, m] = String(t).split(":").map(Number);
-      return h * 60 + (m || 0);
-    }
 
     const busyMap = {};
     for (const r of existing) {
@@ -222,17 +215,20 @@ router.get("/restaurants/:id/reservations/availability", optionalAuth, requireAu
 
     // Generate half-hour slots from 09:00 to 22:00
     const slots = [];
-    const duration = Number(slot_duration_hours) * 60;
+    const durationHours = Number(slot_duration_hours) || 1;
+    const duration = durationHours * 60;
     for (let start = 9 * 60; start + duration <= 22 * 60; start += 30) {
-      const end = start + duration;
-      const availTables = tables.filter((t) => {
-        if (diningOccupied.has(t.id)) return false;
-        const busy = busyMap[t.id] || [];
-        return !busy.some(({ s, e }) => start < e && end > s);
-      });
+      const slotEnd = start + duration;
       const h = Math.floor(start / 60).toString().padStart(2, "0");
       const m = (start % 60).toString().padStart(2, "0");
-      slots.push({ time: `${h}:${m}`, available: availTables.length > 0, available_tables: availTables.length });
+      const slotTime = `${h}:${m}`;
+      const occupyBlocks = diningOccupied.size > 0 && diningOccupancyBlocksSlot(slotTime, durationHours);
+      const availTables = tables.filter((t) => {
+        if (occupyBlocks && diningOccupied.has(t.id)) return false;
+        const busy = busyMap[t.id] || [];
+        return !busy.some(({ s, e }) => start < e && slotEnd > s);
+      });
+      slots.push({ time: slotTime, available: availTables.length > 0, available_tables: availTables.length });
     }
 
     return res.json({ date, party_size: Number(party_size), slot_duration_hours: Number(slot_duration_hours), slots, tables });

@@ -3,7 +3,13 @@ import { getKnex } from "../db.js";
 import { createPhoneOrder, parseOrderItemsText } from "../lib/phoneOrderService.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
 import { parseTranscriptIntoTurns } from "./synthflowSyncCalls.js";
-import { findAvailableTable, createReservation } from "../lib/tableReservationService.js";
+import {
+  findAvailableTable,
+  createReservation,
+  parseReservationDate,
+  parseReservationTime,
+  lastSpokenReservationTime,
+} from "../lib/tableReservationService.js";
 
 function truthyYes(v) {
   if (v == null) return false;
@@ -16,6 +22,18 @@ function emptyish(v) {
   if (v == null) return true;
   const s = String(v).trim().toLowerCase();
   return !s || s === "none" || s === "null" || s === "n/a" || s === "na" || s === "unknown" || s === "aucun" || s === "aucune";
+}
+
+function customerTranscriptFrom(transcript) {
+  if (!transcript || typeof transcript !== "string") return "";
+  try {
+    return parseTranscriptIntoTurns(transcript)
+      .filter((t) => t.speaker === "customer" && t.message)
+      .map((t) => t.message)
+      .join("\n");
+  } catch {
+    return "";
+  }
 }
 
 function cleanEmail(v) {
@@ -109,15 +127,24 @@ export function extractSynthflowFields(payload) {
   /** @type {Record<string, string | null>} */
   const out = {};
   for (const [canon, keys] of Object.entries(aliases)) {
+    const takeLast = canon === "reservation_time" || canon === "reservation_date";
     let found = null;
     for (const k of keys) {
       for (const [fk, fv] of Object.entries(fields)) {
-        if (fk.toLowerCase() === k || fk.toLowerCase().includes(k)) {
+        const fl = fk.toLowerCase();
+        const exact = fl === k;
+        const fuzzy = k !== "time" && k !== "date" && fl.includes(k);
+        if (!exact && !fuzzy) continue;
+        if (canon === "reservation_time") {
+          const parsed = parseReservationTime(fv);
+          if (parsed) found = parsed;
+          else if (takeLast) found = fv;
+        } else {
           found = fv;
-          break;
         }
+        if (found != null && !takeLast) break;
       }
-      if (found != null) break;
+      if (found != null && !takeLast) break;
     }
     out[canon] = found;
   }
@@ -127,9 +154,14 @@ export function extractSynthflowFields(payload) {
 export function supplementFieldsFromTranscript(fields, transcript, callNotes = null) {
   const out = { ...fields };
   const combined = `${transcript || ""} ${callNotes || ""}`;
+  let customerTranscript = "";
 
   if (transcript && typeof transcript === "string") {
     const turns = parseTranscriptIntoTurns(transcript);
+    customerTranscript = turns
+      .filter((t) => t.speaker === "customer" && t.message)
+      .map((t) => t.message)
+      .join("\n");
 
     for (let i = 0; i < turns.length; i++) {
       const turn = turns[i];
@@ -196,25 +228,28 @@ export function supplementFieldsFromTranscript(fields, transcript, callNotes = n
           if (numMatch) out.party_size = numMatch[1];
         }
 
-        if (emptyish(out.reservation_date) && (prevBotMsg.includes("date") || prevBotMsg.includes("what day"))) {
-          const isoMatch = msg.match(/\b(202\d-\d{2}-\d{2})\b/);
-          if (isoMatch) out.reservation_date = isoMatch[1];
+        const askedDate =
+          prevBotMsg.includes("what day") ||
+          prevBotMsg.includes("which day") ||
+          prevBotMsg.includes("preferred date") ||
+          (prevBotMsg.includes("date") && (prevBotMsg.includes("book") || prevBotMsg.includes("reserv") || prevBotMsg.includes("table")));
+        if (askedDate && /\btoday\b|\btomorrow\b|\btonight\b|\d{4}-\d{2}-\d{2}/i.test(msg)) {
+          out.reservation_date = parseReservationDate(msg);
         }
 
-        if (emptyish(out.reservation_time) && (prevBotMsg.includes("time") || prevBotMsg.includes("what time"))) {
-          const tm = msg.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || msg.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
-          if (tm) {
-            if (tm[3]) {
-              let h = parseInt(tm[1], 10);
-              const m = tm[2] || "00";
-              const ampm = tm[3].toLowerCase();
-              if (ampm === "pm" && h < 12) h += 12;
-              if (ampm === "am" && h === 12) h = 0;
-              out.reservation_time = `${String(h).padStart(2, "0")}:${m}`;
-            } else {
-              out.reservation_time = `${tm[1].padStart(2, "0")}:${tm[2]}`;
-            }
-          }
+        const askedTime =
+          prevBotMsg.includes("what time") ||
+          prevBotMsg.includes("preferred time") ||
+          prevBotMsg.includes("booking time") ||
+          (prevBotMsg.includes("time") &&
+            (prevBotMsg.includes("book") ||
+              prevBotMsg.includes("reserv") ||
+              prevBotMsg.includes("table") ||
+              prevBotMsg.includes("would you like") ||
+              prevBotMsg.includes("different")));
+        if (askedTime) {
+          const parsed = parseReservationTime(msg) || lastSpokenReservationTime(msg);
+          if (parsed) out.reservation_time = parsed;
         }
 
         if (emptyish(out.slot_duration_hours) && (prevBotMsg.includes("how long") || prevBotMsg.includes("slot") || prevBotMsg.includes("duration"))) {
@@ -250,33 +285,12 @@ export function supplementFieldsFromTranscript(fields, transcript, callNotes = n
       const dm = combined.match(/\b(202\d-\d{2}-\d{2})\b/);
       if (dm) {
         out.reservation_date = dm[1];
-      } else {
-        const today = new Date();
-        if (/\btonight\b|\btoday\b/i.test(combined)) {
-          out.reservation_date = today.toISOString().split("T")[0];
-        } else if (/\btomorrow\b/i.test(combined)) {
-          const d = new Date(today);
-          d.setDate(d.getDate() + 1);
-          out.reservation_date = d.toISOString().split("T")[0];
-        }
+      } else if (/\btonight\b|\btoday\b|\btomorrow\b/i.test(combined)) {
+        out.reservation_date = parseReservationDate(combined);
       }
     }
-    if (emptyish(out.reservation_time)) {
-      const tm = combined.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) ||
-                 combined.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
-      if (tm) {
-        if (tm[3]) {
-          let h = parseInt(tm[1], 10);
-          const m = tm[2] || "00";
-          const ampm = tm[3].toLowerCase();
-          if (ampm === "pm" && h < 12) h += 12;
-          if (ampm === "am" && h === 12) h = 0;
-          out.reservation_time = `${String(h).padStart(2, "0")}:${m}`;
-        } else {
-          out.reservation_time = `${tm[1].padStart(2, "0")}:${tm[2]}`;
-        }
-      }
-    }
+    const lastTime = lastSpokenReservationTime(customerTranscript);
+    if (lastTime) out.reservation_time = lastTime;
     if (emptyish(out.slot_duration_hours)) {
       const durMatch = combined.match(/(\d(?:\.5)?)\s*hours?/i);
       if (durMatch) out.slot_duration_hours = durMatch[1];
@@ -549,25 +563,62 @@ export async function synthflowPostCallWebhook(req, res) {
       /reserv(e|ation)|table\s+for\s+\d|book(ing)?\s+(a\s+)?table/i.test(`${transcript || ""} ${callNotes || ""}`);
 
     if (hasReservationIntent && restaurant?.id) {
+      const partySize = Math.max(1, parseInt(fields.party_size, 10) || 2);
+      const resDate = parseReservationDate(fields.reservation_date);
+      const resTime =
+        lastSpokenReservationTime(customerTranscriptFrom(transcript)) ||
+        parseReservationTime(fields.reservation_time);
+      const duration = Number(fields.slot_duration_hours) || 1;
+      const custName = (!emptyish(fields.customer_name) && fields.customer_name) || "Phone Customer";
+      const custPhone = (!emptyish(fields.customer_phone) && fields.customer_phone) || callerPhone;
+
       let existingReservation = null;
       if (callRow?.id) {
         existingReservation = await knex("table_reservations").where({ call_id: callRow.id }).first();
       }
+      if (!existingReservation && synthflowCallId) {
+        existingReservation = await knex("table_reservations")
+          .whereRaw("ai_extracted_data->>'synthflow_call_id' = ?", [String(synthflowCallId)])
+          .first();
+      }
+      if (!existingReservation && custPhone && custPhone !== "Unknown") {
+        const since = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+        existingReservation = await knex("table_reservations")
+          .where({ restaurant_id: restaurant.id, reservation_date: resDate, customer_phone: custPhone })
+          .whereIn("status", ["pending", "confirmed", "seated"])
+          .andWhere("created_at", ">=", since)
+          .orderBy("created_at", "desc")
+          .first();
+      }
 
       if (existingReservation) {
+        const existingTime = String(existingReservation.start_time || "").slice(0, 5);
+        if (resTime && existingTime !== resTime) {
+          const availableTable = await findAvailableTable(knex, {
+            restaurantId: restaurant.id,
+            partySize: existingReservation.party_size || partySize,
+            reservationDate: resDate,
+            startTime: resTime,
+            slotDurationHours: duration,
+          });
+          await knex("table_reservations").where({ id: existingReservation.id }).update({
+            reservation_date: resDate,
+            start_time: resTime,
+            table_id: availableTable ? availableTable.id : existingReservation.table_id,
+            status: availableTable ? "confirmed" : existingReservation.status,
+          });
+          console.log(`🕒 Synthflow reservation time corrected: ${existingTime} → ${resTime} id=${existingReservation.id}`);
+        }
         reservationResult = {
           created: false,
           id: existingReservation.id,
           reason: "already_created",
+          reservation_time: resTime || existingTime,
         };
+      } else if (!resTime) {
+        reservationResult = { created: false, reason: "missing_time" };
+        console.log("⏭ Synthflow reservation skipped: no booking time in call");
       } else {
-        const partySize = Math.max(1, parseInt(fields.party_size, 10) || 2);
-        const resDate = fields.reservation_date || new Date().toISOString().split("T")[0];
-        const resTime = fields.reservation_time || "19:00";
-        const duration = Number(fields.slot_duration_hours) || 1;
-        const custName = (!emptyish(fields.customer_name) && fields.customer_name) || "Phone Customer";
-        const custPhone = (!emptyish(fields.customer_phone) && fields.customer_phone) || callerPhone;
-
         const availableTable = await findAvailableTable(knex, {
           restaurantId: restaurant.id,
           partySize,
@@ -597,6 +648,8 @@ export async function synthflowPostCallWebhook(req, res) {
             transcript: transcript,
             call_summary: callNotes,
             fields,
+            reservation_time: resTime,
+            reservation_date: resDate,
           },
         });
 
@@ -610,7 +663,7 @@ export async function synthflowPostCallWebhook(req, res) {
           reservation_time: resTime,
         };
 
-        console.log(`✅ Synthflow table reservation created: id=${createdRes.id} table=${availableTable?.table_number || "unassigned"}`);
+        console.log(`✅ Synthflow table reservation created: id=${createdRes.id} table=${availableTable?.table_number || "unassigned"} time=${resTime}`);
       }
     }
 

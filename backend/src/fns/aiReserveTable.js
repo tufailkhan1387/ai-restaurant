@@ -1,6 +1,6 @@
 import { getKnex } from "../db.js";
 import { normalizeElevenLabsToolBody, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
-import { findAvailableTable, createReservation } from "../lib/tableReservationService.js";
+import { findAvailableTable, createReservation, parseReservationDate, parseReservationTime, lastSpokenReservationTime } from "../lib/tableReservationService.js";
 
 export async function aiReserveTable(req, res) {
   res.set("Access-Control-Allow-Origin", "*");
@@ -44,16 +44,20 @@ export async function aiReserveTable(req, res) {
 
     const pSize = Math.max(1, parseInt(party_size, 10) || 1);
     const duration = Number(slot_duration_hours) || 1;
+    const isoDate = parseReservationDate(reservation_date);
+    const isoTime =
+      parseReservationTime(reservation_time) ||
+      parseReservationTime(String(reservation_time).replace(/[^\d:apm.\s]/gi, "")) ||
+      lastSpokenReservationTime(String(reservation_time));
 
-    // Normalize date to YYYY-MM-DD
-    const dateObj = new Date(reservation_date);
-    const isoDate = isNaN(dateObj.getTime()) ? reservation_date : dateObj.toISOString().split("T")[0];
+    if (!isoTime) {
+      return res.status(200).json({
+        success: false,
+        message: "What time would you like to book? Please say the time once, for example 7 PM.",
+      });
+    }
 
-    // Normalize time to HH:MM
-    const timeParts = String(reservation_time).match(/(\d{1,2}):?(\d{2})?/);
-    const isoTime = timeParts ? `${timeParts[1].padStart(2, "0")}:${timeParts[2] || "00"}` : reservation_time;
-
-    console.log(`👤 Customer: ${customer_name} | Party: ${pSize} | Date: ${isoDate} | Time: ${isoTime} | Duration: ${duration}h`);
+    console.log(`👤 Customer: ${customer_name} | Party: ${pSize} | Date: ${isoDate} | Time: ${isoTime} (raw=${reservation_time}) | Duration: ${duration}h`);
 
     const availableTable = await findAvailableTable(knex, {
       restaurantId,
@@ -68,18 +72,23 @@ export async function aiReserveTable(req, res) {
         success: false,
         available: false,
         message:
-          `I'm sorry, all tables are booked at ${isoTime} on ${isoDate}. ` +
-          `Tables stay booked until the guests dining there pay their bill. ` +
-          `As soon as a table pays, it becomes available. Would you like to try a different time?`,
+          `I'm sorry, no table is free at ${isoTime} on ${isoDate}. ` +
+          `Would you like a different time?`,
       });
     }
 
-    // Create the reservation
     let callId = null;
     if (body.call_sid) {
       const c = await knex("calls").where({ twilio_call_sid: body.call_sid }).select("id").first();
       callId = c?.id ?? null;
     }
+
+    const synthflowCallId =
+      body.synthflow_call_id ||
+      body.call_id ||
+      body.conversation_id ||
+      body.executed_action_id ||
+      null;
 
     const reservation = await createReservation(knex, {
       restaurantId,
@@ -95,7 +104,14 @@ export async function aiReserveTable(req, res) {
       notes: notes || null,
       source: "phone",
       callId,
-      aiExtractedData: { raw: body, provider: body.synthflow_agent_id ? "synthflow" : "elevenlabs" },
+      aiExtractedData: {
+        raw: body,
+        provider: body.synthflow_agent_id ? "synthflow" : "elevenlabs",
+        synthflow_call_id: synthflowCallId ? String(synthflowCallId) : null,
+        reservation_time_raw: reservation_time,
+        reservation_time: isoTime,
+        reservation_date: isoDate,
+      },
     });
 
     console.log(`✅ Reservation created: id=${reservation.id} table=${availableTable.table_number}`);

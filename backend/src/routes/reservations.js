@@ -3,6 +3,7 @@ import { Router } from "express";
 import { getKnex } from "../db.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { getOccupiedDiningTableIds, diningOccupancyBlocksSlot, localDateStr, timeToMins } from "../lib/tableReservationService.js";
+import { notifyNewReservationLater } from "../lib/orderAlerts.js";
 
 const router = Router();
 
@@ -145,6 +146,12 @@ router.post("/restaurants/:id/reservations", optionalAuth, requireAuth, async (r
         source: "online",
       })
       .returning("*");
+    let tableNumber = null;
+    if (row.table_id) {
+      const table = await knex("restaurant_tables").where({ id: row.table_id }).select("table_number").first();
+      tableNumber = table?.table_number || null;
+    }
+    notifyNewReservationLater(knex, row, { table_number: tableNumber });
     return res.status(201).json({ reservation: row });
   } catch (e) {
     return res.status(500).json({ error: e.message });

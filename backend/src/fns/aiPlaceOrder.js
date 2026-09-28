@@ -83,7 +83,7 @@ export async function aiPlaceOrder(req, res) {
       tracking_code: order.tracking_code,
       total: totals.total,
       discount_amount: coupon.amount,
-      message: `Order ${order.order_number} placed successfully. Tracking code: ${order.tracking_code}. Total bill is ${totals.total.toFixed(2)}. Payment will be Cash on Delivery upon arrival.${couponNote}`,
+      message: `Order ${order.order_number} placed successfully. Tracking code: ${order.tracking_code}. Total bill is ${totals.total.toFixed(2)}. Payment will be Cash on Delivery upon arrival. They can track online or call back with order number ${order.order_number}.${couponNote}`,
     });
   } catch (e) {
     console.error("❌ Order Error:", e);

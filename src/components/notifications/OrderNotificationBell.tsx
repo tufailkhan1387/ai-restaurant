@@ -9,6 +9,7 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   XCircle,
+  CalendarCheck,
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import {
   playNotificationSound,
   startNotificationLoop,
   stopNotificationLoop,
+  unlockNotificationAudio,
 } from "@/lib/notificationSound";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -101,6 +103,8 @@ export function OrderNotificationBell() {
   const { role } = useAuth();
   const { restaurantId } = useActiveRestaurant();
   const isSuperAdmin = role === "super_admin";
+  const isDriver = role === "driver";
+  const canAlert = !isSuperAdmin && !isDriver;
 
   const [notifications, setNotifications] = useState<OrderNotification[]>(() => loadStoredNotifications(restaurantId));
   const [ringing, setRinging] = useState(false);
@@ -124,6 +128,17 @@ export function OrderNotificationBell() {
     setRinging(false);
   }, [restaurantId]);
 
+  // Unlock Web Audio after the first click so the bell can actually ring
+  useEffect(() => {
+    const unlock = () => unlockNotificationAudio();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   const unreadCount = notifications.filter((n) => !n.seen).length;
 
   // Persist notifications whenever they change for the current restaurant
@@ -145,21 +160,19 @@ export function OrderNotificationBell() {
     return () => window.removeEventListener("notification-prefs-changed", handler);
   }, []);
 
-  const isKitchen = role === "kitchen" || role === "chef";
-
   const startRinging = useCallback(() => {
-    // Orders alert only rings for kitchen role, not admin
-    if (!isKitchen || isSuperAdmin) return;
+    if (!canAlert) return;
     const currentPrefs = prefsRef.current;
     if (!currentPrefs.enabled) return;
 
     setRinging(true);
+    unlockNotificationAudio();
     if (currentPrefs.repeatUntilAcknowledged ?? true) {
       startNotificationLoop("classic-bell", currentPrefs.volume, 2800);
     } else {
       playNotificationSound("classic-bell", currentPrefs.volume);
     }
-  }, [isKitchen, isSuperAdmin]);
+  }, [canAlert]);
 
   const stopRinging = useCallback(() => {
     setRinging(false);
@@ -167,24 +180,16 @@ export function OrderNotificationBell() {
   }, []);
 
   const addNotification = useCallback(
-    (order: Omit<OrderNotification, "seen">, triggerAlert = true) => {
-      if (isSuperAdmin) return;
+    (order: Omit<OrderNotification, "seen"> & { seen?: boolean }, triggerAlert = true) => {
+      if (!canAlert) return;
 
       if (order.restaurant_id && restaurantId && order.restaurant_id !== restaurantId) {
         return;
       }
 
-      const isTransfer =
-        order.type === "transfer_requested" ||
-        order.type === "transfer_accepted" ||
-        order.type === "transfer_rejected";
+      const isReservation = order.type === "new_reservation";
 
-      // Food orders only go to the kitchen role; admin does not receive kitchen order notifications
-      if (!isKitchen && !isTransfer) {
-        return;
-      }
-
-      const newNotif: OrderNotification = { ...order, seen: false };
+      const newNotif: OrderNotification = { ...order, seen: order.seen ?? false };
 
       setNotifications((prev) => {
         if (prev.some((n) => n.id === order.id)) return prev;
@@ -192,14 +197,17 @@ export function OrderNotificationBell() {
       });
 
       knownIdsRef.current.add(order.id);
+      if (order.order_id) knownIdsRef.current.add(order.order_id);
       saveKnownIds(knownIdsRef.current, restaurantId);
 
-      // Only alert kitchen staff for new incoming food orders
-      if (triggerAlert && (isKitchen || isTransfer)) {
+      if (triggerAlert) {
         let toastTitle = t("orders:newOrderAlert", "🛒 New Order Received");
         let toastDesc = `${order.order_number} · ${order.customer_name} · ${formatCurrency(order.total_amount)}`;
 
-        if (order.type === "transfer_requested") {
+        if (isReservation) {
+          toastTitle = order.title || "📅 New table reservation";
+          toastDesc = order.message || `${order.customer_name} reserved a table.`;
+        } else if (order.type === "transfer_requested") {
           toastTitle = order.title || "🚨 Incoming Order Transfer Request";
           toastDesc = order.message || `Order #${order.order_number} was transferred to your branch.`;
         } else if (order.type === "transfer_accepted") {
@@ -208,6 +216,9 @@ export function OrderNotificationBell() {
         } else if (order.type === "transfer_rejected") {
           toastTitle = order.title || "❌ Order Transfer Rejected";
           toastDesc = order.message || `Order #${order.order_number} transfer was rejected.`;
+        } else if (order.title) {
+          toastTitle = order.title;
+          toastDesc = order.message || toastDesc;
         }
 
         toast({
@@ -216,12 +227,12 @@ export function OrderNotificationBell() {
           duration: 7000,
         });
 
-        if (prefsRef.current.enabled && isKitchen) {
+        if (prefsRef.current.enabled) {
           startRinging();
         }
       }
     },
-    [startRinging, t, isSuperAdmin, restaurantId, isKitchen]
+    [startRinging, t, canAlert, restaurantId]
   );
 
   const addNotificationRef = useRef(addNotification);
@@ -230,7 +241,7 @@ export function OrderNotificationBell() {
   // 1. Listen to instant custom event from manual order / cart checkout
   useEffect(() => {
     const handleNewOrderEvent = (e: Event) => {
-      if (isSuperAdmin) return;
+      if (!canAlert) return;
       const customEvent = e as CustomEvent<Omit<OrderNotification, "seen"> & { restaurant_id?: string }>;
       if (customEvent.detail && customEvent.detail.id) {
         if (customEvent.detail.restaurant_id && restaurantId && customEvent.detail.restaurant_id !== restaurantId) {
@@ -244,17 +255,17 @@ export function OrderNotificationBell() {
     return () => {
       window.removeEventListener("new-order-created", handleNewOrderEvent);
     };
-  }, [isSuperAdmin, restaurantId]);
+  }, [canAlert, restaurantId]);
 
   // 2. Periodic background poll
   useEffect(() => {
-    if (isSuperAdmin || !restaurantId) return;
+    if (!canAlert || !restaurantId) return;
 
     let cancelled = false;
     let isInitial = true;
 
     async function checkNewOrders() {
-      if (cancelled || !restaurantId || isSuperAdmin) return;
+      if (cancelled || !restaurantId || !canAlert) return;
       try {
         const token = getToken() || (await supabase.auth.getSession()).data.session?.access_token;
         const headers: Record<string, string> = {};
@@ -271,7 +282,32 @@ export function OrderNotificationBell() {
             const serverNotifs = (notifData?.notifications || []) as any[];
 
             if (isInitial) {
-              serverNotifs.forEach((sn) => knownIdsRef.current.add(sn.id));
+              for (const sn of serverNotifs) {
+                knownIdsRef.current.add(sn.id);
+                let meta: any = {};
+                try {
+                  meta = typeof sn.metadata === "string" ? JSON.parse(sn.metadata) : sn.metadata || {};
+                } catch {
+                  // ignore
+                }
+                addNotificationRef.current(
+                  {
+                    id: sn.id,
+                    restaurant_id: sn.restaurant_id,
+                    order_id: sn.order_id,
+                    order_number: meta.order_number || `ORD-${(sn.order_id || sn.id).slice(0, 6)}`,
+                    customer_name: meta.customer_name || sn.title,
+                    total_amount: Number(meta.total_amount ?? 0),
+                    created_at: sn.created_at ?? new Date().toISOString(),
+                    type: sn.type,
+                    title: sn.title,
+                    message: sn.message,
+                    seen: Boolean(sn.is_read),
+                  },
+                  false
+                );
+              }
+              saveKnownIds(knownIdsRef.current, restaurantId);
             } else {
               for (const sn of serverNotifs) {
                 if (!knownIdsRef.current.has(sn.id)) {
@@ -355,7 +391,7 @@ export function OrderNotificationBell() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [restaurantId, isSuperAdmin]);
+  }, [restaurantId, canAlert]);
 
   const handlePopoverChange = (open: boolean) => {
     setPopoverOpen(open);
@@ -398,6 +434,10 @@ export function OrderNotificationBell() {
     markOneSeen(notif.id);
     stopRinging();
     setPopoverOpen(false);
+    if (notif.type === "new_reservation") {
+      navigate("/reservations");
+      return;
+    }
     const targetOrderId = notif.order_id || notif.id;
     navigate(`/orders/${targetOrderId}`);
   };
@@ -533,6 +573,7 @@ export function OrderNotificationBell() {
               const isTransferReq = n.type === "transfer_requested";
               const isTransferAcc = n.type === "transfer_accepted";
               const isTransferRej = n.type === "transfer_rejected";
+              const isReservation = n.type === "new_reservation";
 
               return (
                 <button
@@ -548,7 +589,9 @@ export function OrderNotificationBell() {
                           ? "bg-rose-500/10 hover:bg-rose-500/15 border-l-4 border-l-rose-500"
                           : isTransferAcc
                             ? "bg-emerald-500/10 hover:bg-emerald-500/15 border-l-4 border-l-emerald-500"
-                            : "bg-primary/5 hover:bg-primary/10 border-l-4 border-l-primary"
+                            : isReservation
+                              ? "bg-sky-500/10 hover:bg-sky-500/15 border-l-4 border-l-sky-500"
+                              : "bg-primary/5 hover:bg-primary/10 border-l-4 border-l-primary"
                   )}
                 >
                   {/* Icon Indicator */}
@@ -564,6 +607,10 @@ export function OrderNotificationBell() {
                     ) : isTransferAcc ? (
                       <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                         <CheckCircle2 className="h-3.5 w-3.5" />
+                      </div>
+                    ) : isReservation ? (
+                      <div className="h-7 w-7 rounded-lg bg-sky-500/20 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+                        <CalendarCheck className="h-3.5 w-3.5" />
                       </div>
                     ) : (
                       <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -596,6 +643,11 @@ export function OrderNotificationBell() {
                         {isTransferAcc && (
                           <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
                             Accepted
+                          </Badge>
+                        )}
+                        {isReservation && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-500/30">
+                            Reservation
                           </Badge>
                         )}
                       </div>

@@ -1,58 +1,111 @@
 import { getKnex } from "../db.js";
 import { normalizeElevenLabsToolBody, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
 
-function statusLabel(s) {
+function statusLabel(status, fulfillmentType) {
+  const dineIn = String(fulfillmentType || "").toLowerCase() === "dine_in";
   const m = {
     pending: "received and waiting for confirmation",
     confirmed: "confirmed by the restaurant",
     preparing: "being prepared in the kitchen",
-    ready: "ready and waiting for a driver",
+    ready: dineIn ? "ready to be served" : "ready for pickup or a driver",
     assigned: "assigned to a driver",
-    out_for_delivery: "out for delivery",
-    delivered: "delivered",
+    out_for_delivery: dineIn ? "served to the table" : "out for delivery",
+    delivered: dineIn ? "complete and paid" : "delivered",
     cancelled: "cancelled",
   };
-  return m[s] || s;
+  return m[status] || status;
+}
+
+function normalizeLookup(raw) {
+  return String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/^ORDER\s+/, "")
+    .replace(/\s+/g, "");
+}
+
+async function findOrder(knex, { code, restaurantId }) {
+  if (!code) return null;
+
+  let q = knex("orders").where((builder) => {
+    builder.whereRaw("UPPER(tracking_code) = ?", [code]).orWhereRaw("UPPER(order_number) = ?", [code]);
+  });
+  if (restaurantId) q = q.andWhere({ restaurant_id: restaurantId });
+  let order = await q
+    .select(
+      "order_number",
+      "tracking_code",
+      "status",
+      "total_amount",
+      "estimated_delivery_at",
+      "customer_name",
+      "restaurant_id",
+      "fulfillment_type",
+      "table_number",
+    )
+    .orderBy("created_at", "desc")
+    .first();
+  if (order) return order;
+
+  const digits = code.replace(/\D/g, "");
+  if (!digits) return null;
+
+  let q2 = knex("orders").whereRaw(
+    "NULLIF(regexp_replace(coalesce(order_number, ''), '[^0-9]', '', 'g'), '')::bigint = ?",
+    [Number(digits)],
+  );
+  if (restaurantId) q2 = q2.andWhere({ restaurant_id: restaurantId });
+  return q2
+    .select(
+      "order_number",
+      "tracking_code",
+      "status",
+      "total_amount",
+      "estimated_delivery_at",
+      "customer_name",
+      "restaurant_id",
+      "fulfillment_type",
+      "table_number",
+    )
+    .orderBy("created_at", "desc")
+    .first();
 }
 
 export async function aiOrderStatus(req, res) {
   res.set("Access-Control-Allow-Origin", "*");
-  
+
   try {
     console.log("\n" + "-".repeat(40));
     console.log("🔍 STATUS CHECK REQUEST FROM AI");
-    const rawBody = req.body || {};
+    const rawBody = { ...(req.query || {}), ...(req.body || {}) };
     const body = normalizeElevenLabsToolBody(rawBody);
-    
-    console.log("📍 Query (tracking code):", body.tracking_code || "No code provided");
+
+    const code = normalizeLookup(
+      body.order_number || body.tracking_code || body.order_num || body.code || body.orderNumber,
+    );
+    console.log("📍 Query:", code || "No order number provided");
     console.log("-".repeat(40) + "\n");
 
-    const knex = getKnex();
-    const code = (body.tracking_code || "").trim().toUpperCase();
-    
     if (!code) {
       return res.json({
         found: false,
-        message: "I need the tracking code from your receipt to look that up.",
+        message: "I need your order number, for example ORD-0001, to look that up.",
       });
     }
 
+    const knex = getKnex();
     let restaurantId = body.restaurant_id ?? null;
-    if (!restaurantId && (body.twilio_to || body.elevenlabs_agent_id)) {
+    if (!restaurantId && (body.twilio_to || body.elevenlabs_agent_id || body.synthflow_agent_id)) {
       const resolved = await resolveRestaurantIdForVoiceTools(knex, body);
       restaurantId = resolved.id;
     }
 
-    let q = knex("orders").where({ tracking_code: code });
-    if (restaurantId) q = q.andWhere({ restaurant_id: restaurantId });
-    const order = await q
-      .select("order_number", "tracking_code", "status", "total_amount", "estimated_delivery_at", "customer_name", "restaurant_id")
-      .first();
+    const order = await findOrder(knex, { code, restaurantId });
 
     if (!order) {
       return res.json({
         found: false,
-        message: `I couldn't find an order with tracking code ${code}. Could you double-check it?`,
+        message: `I couldn't find an order with number ${code}. Could you double-check the order number?`,
       });
     }
 
@@ -60,15 +113,18 @@ export async function aiOrderStatus(req, res) {
       ? new Date(order.estimated_delivery_at).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" })
       : null;
 
-    const message = `Order ${order.order_number} for ${order.customer_name} is ${statusLabel(order.status)}.${
-      eta ? ` Estimated delivery around ${eta}.` : ""
+    const tableBit = order.table_number ? ` for table ${order.table_number}` : "";
+    const message = `Order ${order.order_number} for ${order.customer_name}${tableBit} is ${statusLabel(order.status, order.fulfillment_type)}.${
+      eta ? ` Estimated time around ${eta}.` : ""
     } Total ${Number(order.total_amount).toFixed(2)}.`;
 
     return res.json({
       found: true,
       order_number: order.order_number,
+      tracking_code: order.tracking_code,
       status: order.status,
-      status_label: statusLabel(order.status),
+      status_label: statusLabel(order.status, order.fulfillment_type),
+      fulfillment_type: order.fulfillment_type,
       estimated_delivery_at: order.estimated_delivery_at,
       total: order.total_amount,
       message,

@@ -461,7 +461,7 @@ export default function Order() {
           customer_email: form.customer_email.trim(),
         });
       }
-      toast.success(isDineIn ? "Dine-in order placed to kitchen!" : "Order placed!");
+      toast.success(isDineIn ? "Dine-in order placed to kitchen!" : "Order placed! We sent a tracking link to your phone.");
       navigate(`/track/${order.tracking_code}`);
     } catch (e: any) {
       toast.error(e.message || "Failed to place order");

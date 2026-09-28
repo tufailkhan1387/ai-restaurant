@@ -8,7 +8,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps) {
-  const { user, role, loading, isDriver, isReceptionist, isStaff } = useAuth();
+  const { user, role, loading, isDriver, isReceptionist, isStaff, isKitchen } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -31,6 +31,20 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
   // Drivers are confined to /driver portal
   if (isDriver && location.pathname !== "/driver") {
     return <Navigate to="/driver" replace />;
+  }
+
+  // Kitchen is confined to dashboard, orders, reports, settings
+  if (isKitchen) {
+    const path = location.pathname;
+    const kitchenAllowed =
+      path === "/" ||
+      path === "/settings" ||
+      path === "/profile" ||
+      path.startsWith("/orders") ||
+      path.startsWith("/reports");
+    if (!kitchenAllowed) {
+      return <Navigate to="/" replace />;
+    }
   }
 
   // Receptionist is confined strictly to /, /reservations, /settings, /profile

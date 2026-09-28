@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 export function TopBar() {
   const { t } = useTranslation(["sidebar", "common", "auth"]);
-  const { user, profile, signOut, role, isReceptionist, isStaff } = useAuth();
+  const { user, profile, signOut, role, isReceptionist, isStaff, isKitchen } = useAuth();
   const { restaurantId, activeRestaurant, restaurants, setRestaurantId } = useActiveRestaurant();
   const navigate = useNavigate();
   const isSuperAdmin = role === "super_admin";
@@ -38,8 +38,8 @@ export function TopBar() {
   );
 
   const results = useMemo(
-    () => filterSidebarNavItems(query, { isSuperAdmin, isBranch, isReceptionist, isStaff }),
-    [query, isSuperAdmin, isBranch, isReceptionist, isStaff],
+    () => filterSidebarNavItems(query, { isSuperAdmin, isBranch, isReceptionist, isStaff, isKitchen }),
+    [query, isSuperAdmin, isBranch, isReceptionist, isStaff, isKitchen],
   );
 
   const close = useCallback(() => {

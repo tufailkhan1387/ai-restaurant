@@ -53,7 +53,14 @@ export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
     label: "Reservations",
     href: "/reservations",
     section: "Management",
-    keywords: ["reservations", "tables", "booking", "table reservation"],
+    keywords: ["reservations", "booking", "table reservation"],
+    hideForSuperAdmin: true,
+  },
+  {
+    label: "Tables & Floor",
+    href: "/reservations?tab=tables",
+    section: "Management",
+    keywords: ["tables", "floor", "floor plan", "qr", "dine-in tables"],
     hideForSuperAdmin: true,
   },
   { label: "Settings", href: "/settings", section: "Management", keywords: ["preferences", "account"] },
@@ -91,11 +98,19 @@ function normalize(s: string) {
 
 export function filterSidebarNavItems(
   query: string,
-  options: { isSuperAdmin: boolean; isBranch?: boolean; isReceptionist?: boolean; isStaff?: boolean },
+  options: { isSuperAdmin: boolean; isBranch?: boolean; isReceptionist?: boolean; isStaff?: boolean; isKitchen?: boolean },
 ): SidebarNavSearchItem[] {
   const base = SIDEBAR_NAV_SEARCH_ITEMS.filter((i) => {
+    if (options.isKitchen) {
+      return (
+        i.href === "/" ||
+        i.href === "/settings" ||
+        i.href.startsWith("/orders") ||
+        i.href.startsWith("/reports")
+      );
+    }
     if (options.isReceptionist) {
-      return i.href === "/" || i.href === "/reservations" || i.href === "/settings";
+      return i.href === "/" || i.href === "/reservations" || i.href.startsWith("/reservations") || i.href === "/settings";
     }
     if (options.isStaff) {
       return (

@@ -302,11 +302,20 @@ let activeLoopInterval: number | null = null;
 let stopCurrentTone: (() => void) | null = null;
 
 export function playNotificationSound(id: RingtoneId = "classic-bell", volume = 0.9) {
+  unlockNotificationAudio();
   if (stopCurrentTone) {
     stopCurrentTone();
     stopCurrentTone = null;
   }
   stopCurrentTone = synthesizeRingtone(id, volume);
+}
+
+export function unlockNotificationAudio() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
 }
 
 export function startNotificationLoop(

@@ -5,13 +5,12 @@ import { getApiBase } from "@/lib/apiBase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Circle, Loader2, Package, Plus, Printer, Receipt } from "lucide-react";
+import { Loader2, Package, Plus, Printer, Receipt, Clock, Phone } from "lucide-react";
 import { ORDER_STATUS_COLORS, OrderStatus, formatCurrency } from "@/lib/restaurant";
-import { getOrderStatusLabel, formatDate } from "@/i18n/formatters";
+import { getOrderStatusLabel } from "@/i18n/formatters";
 import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
 import { OrderReceipt } from "@/components/orders/OrderReceipt";
-
-const TIMELINE: OrderStatus[] = ["pending", "confirmed", "preparing", "ready", "out_for_delivery", "delivered"];
+import { OrderFulfillmentTimeline } from "@/components/orders/OrderFulfillmentTimeline";
 
 export default function Track() {
   const { t } = useTranslation(["track", "orders", "common"]);
@@ -82,7 +81,6 @@ export default function Track() {
       ? String(order.table_number || tableSession?.session?.table_number).trim()
       : `Table ${String(order.table_number || tableSession?.session?.table_number).trim()}`)
     : "Assigned Table";
-  const currentIdx = TIMELINE.indexOf(order.status);
   const cancelled = order.status === "cancelled";
   const paid = String(order.payment_status || "").toLowerCase() === "paid" || order.status === "delivered"
     || String(tableSession?.session?.status || "") === "closed";
@@ -137,34 +135,46 @@ export default function Track() {
               </p>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Save this page. Quote <span className="font-mono font-semibold text-foreground">{order.order_number}</span> if you call us to hear the latest status.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border/70 shadow-xs bg-card rounded-2xl overflow-hidden">
+          <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/10">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-foreground">
+              <Clock className="h-4 w-4 text-orange-500" />
+              {t("orders:orderFulfillmentTimeline", "Order Fulfillment Timeline")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
             {cancelled ? (
               <p className="text-sm text-red-600 text-center py-6">{t("orders:orderCancelledAt", "This order was cancelled.")}</p>
             ) : (
-              <ol className="space-y-3">
-                {TIMELINE.map((s, idx) => {
-                  const ev = history.find((h) => h.status === s);
-                  const done = idx <= currentIdx;
-                  const active = idx === currentIdx;
-                  const stepLabel = isDineIn && s === "out_for_delivery"
-                    ? "Served to Table"
-                    : isDineIn && s === "delivered"
-                    ? "Complete / Paid"
-                    : getOrderStatusLabel(s, t);
-                  return (
-                    <li key={s} className="flex items-start gap-3">
-                      {done ? <CheckCircle2 className={`h-5 w-5 mt-0.5 ${active ? "text-primary animate-pulse" : "text-green-600"}`} /> : <Circle className="h-5 w-5 mt-0.5 text-muted-foreground" />}
-                      <div className="flex-1">
-                        <p className={`text-sm ${done ? "font-medium" : "text-muted-foreground"}`}>{stepLabel}</p>
-                        {ev && <p className="text-xs text-muted-foreground">{formatDate(ev.created_at, { hour: "2-digit", minute: "2-digit", month: "short", day: "numeric" })}</p>}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+              <OrderFulfillmentTimeline order={order} history={history} />
             )}
           </CardContent>
         </Card>
+
+        {restaurant?.phone && (
+          <Card>
+            <CardContent className="py-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold flex items-center gap-1.5">
+                  <Phone className="h-4 w-4" /> Call to track
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Tell the agent your order number {order.order_number} and they will read the status.
+                </p>
+              </div>
+              <Button asChild variant="outline" className="font-bold">
+                <a href={`tel:${restaurant.phone}`}>Call {restaurant.phone}</a>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {displayOrders.map((sessOrder: any, index: number) => (
           <Card key={sessOrder.id || index}>
@@ -224,8 +234,12 @@ export default function Track() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {paid
-                  ? "Your table bill is complete. View or print your invoice."
-                  : "Invoice will be ready when the table bill is paid."}
+                  ? isDineIn
+                    ? "Your table bill is complete. View or print your invoice."
+                    : "Your order is complete. View or print your invoice."
+                  : isDineIn
+                    ? "Invoice will be ready when the table bill is paid."
+                    : "Invoice will be ready when the order is complete."}
               </p>
             </div>
             <Button

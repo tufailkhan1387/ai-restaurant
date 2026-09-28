@@ -1,6 +1,7 @@
 import { normalizeE164 } from "./voiceWebhookUtils.js";
 import { geocodeAddress, haversineDistanceKm } from "./geocoding.js";
 import { nextOrderNumber } from "./orderNumbers.js";
+import { notifyNewOrderLater } from "./orderAlerts.js";
 
 /**
  * Find the nearest active branch for a parent restaurant within service radius.
@@ -505,6 +506,8 @@ export async function createPhoneOrder(knex, input) {
 
     return order;
   });
+
+  notifyNewOrderLater(knex, result);
 
   return {
     order: result,

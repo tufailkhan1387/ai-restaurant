@@ -35,6 +35,7 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      aria-describedby={undefined}
       className={cn(
         "fixed left-[50%] top-[50%] z-50 flex w-[calc(100%-2rem)] max-w-3xl max-h-[min(90vh,900px)] translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden",
         "border border-zinc-200 bg-white p-0",

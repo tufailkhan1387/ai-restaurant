@@ -21,6 +21,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -498,6 +499,9 @@ interface AddToCartParams {
             <ShoppingCart className="h-5 w-5 text-primary" />
             {t("orders:createManualOrder", "Create Manual Order")}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Create a dine-in, pickup, or delivery order from the restaurant dashboard.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">

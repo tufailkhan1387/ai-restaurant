@@ -12,6 +12,14 @@ export async function nextOrderNumber(trx, restaurantId) {
     .select(trx.raw("COALESCE(MAX(CAST(SUBSTRING(order_number FROM 5) AS INTEGER)), 0) as max_n"))
     .first();
 
-  const next = Number(row?.max_n || 0) + 1;
-  return `ORD-${String(next).padStart(4, "0")}`;
+  let n = Number(row?.max_n || 0) + 1;
+  for (let i = 0; i < 200; i += 1) {
+    const candidate = `ORD-${String(n).padStart(4, "0")}`;
+    const existing = await trx("orders")
+      .where({ restaurant_id: restaurantId, order_number: candidate })
+      .first("id");
+    if (!existing) return candidate;
+    n += 1;
+  }
+  return `ORD-${String(Date.now()).slice(-8)}`;
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
@@ -153,6 +154,8 @@ export default function TableReservations() {
   const { restaurantId, activeRestaurant } = useActiveRestaurant();
   const { role, isReceptionist } = useAuth();
   const isRestaurantAdmin = role === "admin" || role === "super_admin";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const mainTab = searchParams.get("tab") === "tables" ? "tables" : "reservations";
 
   type FloorBill = {
     session?: { id?: string; customer_name?: string | null; table_number?: string };
@@ -656,7 +659,16 @@ export default function TableReservations() {
       </div>
 
       {/* Main Tabs */}
-      <Tabs defaultValue="reservations" className="space-y-4">
+      <Tabs
+        value={mainTab}
+        onValueChange={(v) => {
+          const next = new URLSearchParams(searchParams);
+          if (v === "tables") next.set("tab", "tables");
+          else next.delete("tab");
+          setSearchParams(next, { replace: true });
+        }}
+        className="space-y-4"
+      >
         <div className="flex items-center justify-between gap-4 border-b border-border/60 pb-1">
           <TabsList className="bg-muted/60 p-1 rounded-xl">
             <TabsTrigger value="reservations" id="tab-reservations" className="rounded-lg text-xs font-semibold px-4 py-2 gap-2">

@@ -13,6 +13,7 @@ import {
   resolveRestaurantFamilyIds,
 } from "../lib/tableSessions.js";
 import { nextOrderNumber } from "../lib/orderNumbers.js";
+import { notifyNewOrderLater } from "../lib/orderAlerts.js";
 
 const router = Router();
 
@@ -418,6 +419,7 @@ router.post("/restaurants/:id/staff-orders", optionalAuth, requireAuth, async (r
 
     await trx.commit();
     const knexFresh = getKnex();
+    notifyNewOrderLater(knexFresh, order);
     const bill = session ? await loadSessionBill(knexFresh, session.id) : null;
     return res.status(201).json({ order, session, bill: serializeBill(bill) });
   } catch (e) {

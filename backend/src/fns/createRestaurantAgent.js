@@ -18,7 +18,9 @@ You help callers in three ways:
    - When ready, call the place_order tool.
 
 2) Check the status of an EXISTING order:
-   - Ask for the short tracking code (e.g. "ABC1234567"), then call the get_order_status tool. Read the status and ETA back to the caller.
+   - Ask: "What is your order number?" (for example ORD-0001). STOP and WAIT.
+   - Call the get_order_status tool with that order_number (also accept a tracking code if they give one).
+   - Read the status back in one short sentence. Do not ask them to place a new order when they only want status.
 
 3) Reserve a TABLE at the restaurant:
    - Step 1: Ask for the customer's full name.
@@ -71,14 +73,15 @@ const TOOLS_CONFIG = [
   },
   {
     name: "get_order_status",
-    description: "Check the status of a food order using the customer's tracking code.",
+    description: "Look up a food order by order number (preferred, e.g. ORD-0001) or tracking code and return the current status.",
     endpoint: "ai-order-status",
     parameters: {
       type: "object",
       properties: {
-        tracking_code: { type: "string", description: "The 10-char tracking code from the receipt" }
+        order_number: { type: "string", description: "Customer order number such as ORD-0001. Accept spoken forms like order 1 or ORD 0001." },
+        tracking_code: { type: "string", description: "Tracking code if the caller does not have the order number" }
       },
-      required: ["tracking_code"]
+      required: ["order_number"]
     }
   },
   {

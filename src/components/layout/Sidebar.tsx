@@ -127,6 +127,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         href: "/restaurant-settings",
       },
       { icon: CalendarCheck, label: t("sidebar:reservations", "Reservations"), href: "/reservations" },
+      { icon: TableProperties, label: t("sidebar:tablesAndFloor", "Tables & Floor"), href: "/reservations?tab=tables" },
       ...(!isBranch
         ? [{ icon: Building2, label: t("sidebar:branches", "Branches"), href: "/branches" }]
         : []),
@@ -183,6 +184,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       if (path === "/menu") {
         const tab = new URLSearchParams(location.search).get("tab");
         return !tab || tab === "items";
+      }
+      if (path === "/reservations") {
+        const tab = new URLSearchParams(location.search).get("tab");
+        return !tab || tab === "reservations" || tab === "bookings";
       }
       return true;
     }
@@ -497,6 +502,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               label={t("sidebar:reservations", "Reservations")}
               href="/reservations"
             />
+            <NavItem
+              icon={TableProperties}
+              label={t("sidebar:tablesAndFloor", "Tables & Floor")}
+              href="/reservations?tab=tables"
+            />
             <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
               <NavItem icon={Settings} label={t("sidebar:settings", "Settings")} href="/settings" />
             </div>
@@ -534,40 +544,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </>
             )}
 
-            {/* 3. Menu */}
-            {collapsed ? (
-              <NavItem
-                icon={UtensilsCrossed}
-                label={t("sidebar:menu", "Menu")}
-                href="/menu"
-                activeOverride={menuGroupActive}
-              />
-            ) : (
-              <>
-                <GroupButton
-                  open={menuOpen}
-                  onToggleOpen={() => setMenuOpen((v) => !v)}
-                  active={menuGroupActive}
-                  icon={UtensilsCrossed}
-                  label={t("sidebar:menu", "Menu")}
-                />
-                {menuOpen && (
-                  <div className="space-y-0.5">
-                    {menuChildren.map((item) => (
-                      <NavItem key={item.href} {...item} indent />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* 4. Deals & Offers */}
-            <NavItem icon={Tag} label={t("sidebar:dealsAndOffers", "Deals & Offers")} href="/deals" />
-
-            {/* 5. Reservations */}
-            <NavItem icon={CalendarCheck} label={t("sidebar:reservations", "Reservations")} href="/reservations" />
-
-            {/* 6. Reports */}
+            {/* 3. Reports */}
             {collapsed ? (
               <div className="pt-2 mt-2 border-t border-sidebar-border space-y-0.5">
                 <NavItem
@@ -596,7 +573,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </div>
             )}
 
-            {/* 7. Settings */}
+            {/* 4. Settings */}
             <div className={cn("border-t border-sidebar-border space-y-0.5", collapsed ? "pt-2 mt-2" : "pt-4 mt-3")}>
               <NavItem icon={Settings} label={t("sidebar:settings", "Settings")} href="/settings" />
             </div>

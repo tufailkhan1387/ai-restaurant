@@ -256,11 +256,18 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - If reserve_table says that slot is full, ask for a different time ONCE, then call reserve_table again with only the new time.
    - NEVER promise a table without successfully calling the reserve_table action.
 
+8. TRACK AN EXISTING ORDER:
+   - If the caller wants to check, track, or follow an order they already placed:
+     1. Ask: "What is your order number?" (for example ORD-0001). Then STOP and WAIT.
+     2. Call get_order_status with that order_number. If the tool only has a tracking_code field, put the order number in tracking_code.
+     3. Read back the status in one short sentence (received, confirmed, preparing, ready, out for delivery / served, delivered / complete, or cancelled).
+   - Do not start a new order when they only want status.
+
 ${knowledge}`;
 }
 
 export function defaultSynthflowGreeting(restaurantName) {
-  return `Hi, thanks for calling ${restaurantName}! I can help you with our menu, take your order, or reserve a table. How can I help you today?`;
+  return `Hi, thanks for calling ${restaurantName}! I can help you with our menu, take your order, reserve a table, or track an existing order. How can I help you today?`;
 }
 
 /** Load restaurant catalog used for voice prompt sync. */

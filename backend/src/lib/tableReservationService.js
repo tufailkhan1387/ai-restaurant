@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolveRestaurantFamilyIds, normalizeTableNumber } from "./tableSessions.js";
+import { notifyNewReservationLater } from "./orderAlerts.js";
 
 export function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -292,6 +293,13 @@ export async function createReservation(knex, {
       ai_extracted_data: aiExtractedData || null,
     })
     .returning("*");
+
+  let tableNumber = null;
+  if (row?.table_id) {
+    const table = await knex("restaurant_tables").where({ id: row.table_id }).select("table_number").first();
+    tableNumber = table?.table_number || null;
+  }
+  notifyNewReservationLater(knex, row, { table_number: tableNumber });
 
   return row;
 }

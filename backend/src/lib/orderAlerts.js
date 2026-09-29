@@ -86,12 +86,18 @@ function orderAlertTitle(order) {
   return "🛒 New delivery order";
 }
 
+function displayTableLabel(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "a table";
+  if (/^table\b/i.test(value)) return value.replace(/\s+/g, " ");
+  return `Table ${value}`;
+}
+
 function orderAlertMessage(order) {
   const ft = String(order?.fulfillment_type || "delivery").toLowerCase();
   const who = order?.customer_name || "Customer";
   if (ft === "dine_in") {
-    const table = order?.table_number ? `Table ${order.table_number}` : "a table";
-    return `${who} placed a dine-in order for ${table}.`;
+    return `${who} placed a dine-in order for ${displayTableLabel(order?.table_number)}.`;
   }
   if (ft === "pickup") return `${who} placed a pickup order.`;
   return `${who} placed a delivery order.`;
@@ -111,14 +117,17 @@ export async function notifyStaffNewOrder(knex, order) {
       total_amount: Number(order.total_amount || 0),
       fulfillment_type: order.fulfillment_type || "delivery",
       table_number: order.table_number || null,
+      source: order.source || null,
     },
   });
 }
 
 export async function notifyStaffNewReservation(knex, reservation, extra = {}) {
   if (!reservation?.id || !reservation.restaurant_id) return null;
-  const tableLabel = extra.table_number ? `Table ${extra.table_number}` : "a table";
-  const when = [reservation.reservation_date, reservation.start_time].filter(Boolean).join(" ");
+  const tableLabel = displayTableLabel(extra.table_number);
+  const when = [reservation.reservation_date, String(reservation.start_time || "").slice(0, 5)]
+    .filter(Boolean)
+    .join(" ");
   return createNotification(knex, {
     restaurant_id: reservation.restaurant_id,
     order_id: null,
@@ -132,8 +141,9 @@ export async function notifyStaffNewReservation(knex, reservation, extra = {}) {
       reservation_date: reservation.reservation_date,
       start_time: reservation.start_time,
       table_number: extra.table_number || null,
-      order_number: extra.table_number ? `Table ${extra.table_number}` : "Reservation",
+      order_number: extra.table_number ? tableLabel : "Reservation",
       total_amount: 0,
+      source: "reservation",
     },
   });
 }

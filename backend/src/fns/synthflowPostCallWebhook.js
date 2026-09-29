@@ -723,6 +723,38 @@ export async function synthflowPostCallWebhook(req, res) {
     const phone =
       (!emptyish(fields.customer_phone) && fields.customer_phone) || callerPhone;
 
+    const phoneDigits = String(phone || "").replace(/\D/g, "").slice(-10);
+    if (phoneDigits.length >= 8) {
+      const recent = await knex("orders")
+        .where({ restaurant_id: restaurant.id, source: "phone" })
+        .where("created_at", ">", new Date(Date.now() - 20 * 60 * 1000))
+        .whereRaw("right(regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g'), 10) = ?", [phoneDigits])
+        .orderBy("created_at", "desc")
+        .first();
+      if (recent) {
+        const currentAiData = recent.ai_extracted_data || {};
+        await knex("orders").where({ id: recent.id }).update({
+          call_id: callRow?.id || recent.call_id,
+          ai_extracted_data: {
+            ...currentAiData,
+            synthflow_call_id: synthflowCallId || currentAiData.synthflow_call_id,
+            recording_url: recordingUrl || currentAiData.recording_url,
+            transcript: transcript || currentAiData.transcript,
+            call_summary: callNotes || currentAiData.call_summary,
+            provider: "synthflow",
+          },
+        });
+        return res.json({
+          success: true,
+          call_id: callRow?.id,
+          order_created: false,
+          order_id: recent.id,
+          order_number: recent.order_number,
+          reason: "already_created_during_call",
+        });
+      }
+    }
+
     const { order, unmatched, coupon, totals } = await createPhoneOrder(knex, {
       restaurantId: restaurant.id,
       customer_name: (!emptyish(fields.customer_name) && fields.customer_name) || "Phone Customer",

@@ -3,6 +3,7 @@ import {
   createInboundAgent,
   updateAgent,
   createInformationExtractor,
+  createCustomAction,
   attachActions,
   toSynthflowLanguage,
   postCallWebhookUrl,
@@ -122,6 +123,107 @@ async function ensureOrderExtractors(existingIds = []) {
   return ids;
 }
 
+function liveToolUrl(endpoint) {
+  const api = String(process.env.PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+  if (!api) return null;
+  return `${api}/api/functions/${endpoint}`;
+}
+
+function duringCallVar(name, description, example) {
+  return { name, description, example, type: "string" };
+}
+
+async function ensureLiveOrderActions(restaurantId, existingIds = []) {
+  const placeUrl = liveToolUrl("ai-place-order");
+  const statusUrl = liveToolUrl("ai-order-status");
+  if (!placeUrl || !statusUrl) return { ids: existingIds, warning: "PUBLIC_API_URL is not set, so the phone agent cannot place or track orders during the call." };
+
+  const already = new Set((existingIds || []).map(String));
+  const ids = [...already];
+  const errors = [];
+
+  const specs = [
+    {
+      key: "place_order",
+      action: {
+        http_mode: "POST",
+        url: placeUrl,
+        run_action_before_call_start: false,
+        name: "place_order",
+        description:
+          "Save the caller's food order and return the real order number. Call this once after the caller confirms the order. Then read order_number out loud.",
+        speech_while_using_the_tool: "One moment while I save your order.",
+        failure_timeout: 20,
+        headers: [{ key: "Content-Type", value: "application/json" }],
+        variables_during_the_call: [
+          duringCallVar("customer_name", "Customer full name", "Ali Ahmed"),
+          duringCallVar("customer_phone", "Contact phone number", "03238439467"),
+          duringCallVar("delivery_address", "Delivery address, or Pickup", "House 12, G-9, Islamabad"),
+          duringCallVar("order_items", "Items with quantity, size, and flavor", "1 Large Classic Pizza Chicken Fajita"),
+          duringCallVar("fulfillment_type", "delivery or pickup", "delivery"),
+          duringCallVar("customer_email", "Email or none", "none"),
+          duringCallVar("coupon_code", "Coupon code or none", "none"),
+        ],
+        json_body_stringified: JSON.stringify({
+          restaurant_id: restaurantId,
+          customer_name: "<customer_name>",
+          customer_phone: "<customer_phone>",
+          delivery_address: "<delivery_address>",
+          items: "<order_items>",
+          fulfillment_type: "<fulfillment_type>",
+          customer_email: "<customer_email>",
+          coupon_code: "<coupon_code>",
+          payment_method: "cash",
+          source: "phone",
+        }),
+      },
+    },
+    {
+      key: "get_order_status",
+      action: {
+        http_mode: "POST",
+        url: statusUrl,
+        run_action_before_call_start: false,
+        name: "get_order_status",
+        description:
+          "Look up an existing order by order number and return its current status. Use this when the caller wants to track an order.",
+        speech_while_using_the_tool: "Let me check that order.",
+        failure_timeout: 15,
+        headers: [{ key: "Content-Type", value: "application/json" }],
+        variables_during_the_call: [
+          duringCallVar("order_number", "Order number such as ORD-0009", "ORD-0009"),
+        ],
+        json_body_stringified: JSON.stringify({
+          restaurant_id: restaurantId,
+          order_number: "<order_number>",
+        }),
+      },
+    },
+  ];
+
+  for (const spec of specs) {
+    const marker = `tool:${spec.key}`;
+    if ([...already].some((id) => id === marker)) continue;
+    try {
+      const created = await createCustomAction(spec.action);
+      if (created.action_id) {
+        ids.push(created.action_id);
+        ids.push(marker);
+      } else {
+        errors.push(`${spec.key}: no action_id`);
+      }
+    } catch (e) {
+      errors.push(`${spec.key}: ${e.message}`);
+      console.warn("Live tool create failed:", spec.key, e.message);
+    }
+  }
+
+  return {
+    ids,
+    warning: errors.length ? `Phone tools failed: ${errors.join("; ")}` : null,
+  };
+}
+
 /**
  * Resolve which number Synthflow can actually attach to an inbound agent.
  * Telnyx custom SIP import is Enterprise-only — fall back to a workspace Synthflow number.
@@ -198,8 +300,9 @@ export async function restaurantCreateSynthflowAgent(req, res) {
     const customPrompt = (body.system_prompt ?? "").trim();
     const looksLikeLegacyEl =
       /place_order tool|get_order_status tool|knowledge base/i.test(customPrompt);
+    const missingOrderNumber = !/your order number is/i.test(customPrompt);
     const prompt =
-      customPrompt && !looksLikeLegacyEl
+      customPrompt && !looksLikeLegacyEl && !missingOrderNumber
         ? customPrompt
         : defaultSynthflowPrompt(r.name, knowledge);
     const fullPrompt =
@@ -291,14 +394,20 @@ export async function restaurantCreateSynthflowAgent(req, res) {
     let extractorWarning = null;
     try {
       actionIds = await ensureOrderExtractors(actionIds);
+      const liveTools = await ensureLiveOrderActions(restaurant_id, actionIds);
+      actionIds = liveTools.ids;
+      if (liveTools.warning) extractorWarning = liveTools.warning;
       try {
-        await attachActions(modelId, actionIds);
+        await attachActions(
+          modelId,
+          actionIds.filter((id) => !String(id).startsWith("tool:")),
+        );
       } catch (e) {
-        extractorWarning = `Agent created but attaching extractors failed: ${e.message}`;
+        extractorWarning = `Agent created but attaching actions failed: ${e.message}`;
         console.warn(extractorWarning);
       }
     } catch (e) {
-      extractorWarning = `Agent created but order extractors failed: ${e.message}. You can retry create/update.`;
+      extractorWarning = `Agent created but order actions failed: ${e.message}. You can retry create/update.`;
       console.warn(extractorWarning);
     }
 

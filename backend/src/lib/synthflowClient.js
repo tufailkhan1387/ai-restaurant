@@ -227,6 +227,20 @@ export async function findAssistantByPhone(phoneE164) {
   return null;
 }
 
+export async function createCustomAction(customAction) {
+  const json = await synthflowRequest("/actions", {
+    method: "POST",
+    body: { CUSTOM_ACTION: customAction },
+  });
+  const actionId =
+    json?.response?.action_id ||
+    json?.action_id ||
+    json?.response?.id ||
+    json?.id ||
+    null;
+  return { raw: json, action_id: actionId };
+}
+
 export async function createInformationExtractor({ kind, identifier, description, examples, choices }) {
   /** @type {Record<string, unknown>} */
   const inner = { identifier, description };

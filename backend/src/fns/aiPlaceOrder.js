@@ -16,6 +16,9 @@ export async function aiPlaceOrder(req, res) {
       body.elevenlabs_agent_id = String(process.env.ELEVENLABS_AGENT_ID).trim();
     }
 
+    if (String(body.customer_email || "").trim().toLowerCase() === "none") body.customer_email = null;
+    if (String(body.coupon_code || "").trim().toLowerCase() === "none") body.coupon_code = null;
+
     if (!body.customer_name || !body.items) {
       console.error("❌ Validation Failed: Missing customer_name or items");
       return res.status(200).json({
@@ -83,7 +86,8 @@ export async function aiPlaceOrder(req, res) {
       tracking_code: order.tracking_code,
       total: totals.total,
       discount_amount: coupon.amount,
-      message: `Order ${order.order_number} placed successfully. Tracking code: ${order.tracking_code}. Total bill is ${totals.total.toFixed(2)}. Payment will be Cash on Delivery upon arrival. They can track online or call back with order number ${order.order_number}.${couponNote}`,
+      speak: `Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order.`,
+      message: `Tell the caller this exact sentence: Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order. Total ${totals.total.toFixed(2)}.${couponNote}`,
     });
   } catch (e) {
     console.error("❌ Order Error:", e);

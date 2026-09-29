@@ -50,6 +50,8 @@ export interface OrderNotification {
   type?: string;
   title?: string;
   message?: string;
+  source?: string | null;
+  fulfillment_type?: string | null;
 }
 
 const MAX_NOTIFICATIONS = 50;
@@ -97,11 +99,52 @@ function saveKnownIds(ids: Set<string>, restaurantId?: string | null) {
   }
 }
 
-function canSeeNotification(type: string | undefined, role: string | null, isReceptionist: boolean) {
-  const isReservation = type === "new_reservation";
-  if (isReceptionist) return isReservation;
-  if (isReservation) return role === "admin";
+const CALL_AGENT_SOURCES = new Set(["phone", "call", "voice", "ai", "synthflow", "elevenlabs"]);
+
+function isCallAgentSource(source?: string | null) {
+  return CALL_AGENT_SOURCES.has(String(source || "").trim().toLowerCase());
+}
+
+function isTableDiningAlert(n: {
+  fulfillment_type?: string | null;
+  title?: string | null;
+  message?: string | null;
+}) {
+  const ft = String(n.fulfillment_type || "").trim().toLowerCase().replace(/-/g, "_");
+  if (ft === "dine_in") return true;
+  if (ft === "pickup" || ft === "delivery") return false;
+  const text = `${n.title || ""} ${n.message || ""}`.toLowerCase();
+  if (text.includes("pickup") || text.includes("delivery")) return false;
+  if (text.includes("dine-in") || text.includes("dine in") || text.includes("table")) return true;
+  return false;
+}
+
+function canSeeNotification(
+  n: {
+    type?: string;
+    source?: string | null;
+    fulfillment_type?: string | null;
+    title?: string | null;
+    message?: string | null;
+  },
+  role: string | null,
+  isReceptionist: boolean,
+) {
+  const isReservation = n.type === "new_reservation" || n.source === "reservation";
+  const isKitchen = role === "kitchen" || role === "chef";
+  const isAdmin = role === "admin" || role === "manager";
+  const isStaff = role === "staff";
+  if (isReservation) return isReceptionist || isAdmin;
+  if (isReceptionist) return false;
+  // Call-agent orders ring in the kitchen (and show for admin). Floor staff never sees them.
+  if (isCallAgentSource(n.source)) return isKitchen || isAdmin;
+  // Floor staff only hears about guests dining at a table.
+  if (isStaff) return isTableDiningAlert(n);
   return true;
+}
+
+function tidyLabel(value?: string | null) {
+  return String(value || "").replace(/\bTable\s+Table\b/gi, "Table");
 }
 
 export function OrderNotificationBell() {
@@ -146,7 +189,9 @@ export function OrderNotificationBell() {
     };
   }, []);
 
-  const visibleNotifications = notifications.filter((n) => canSeeNotification(n.type, role, isReceptionist));
+  const visibleNotifications = notifications.filter((n) =>
+    canSeeNotification(n, role, isReceptionist),
+  );
   const unreadCount = visibleNotifications.filter((n) => !n.seen).length;
 
   // Persist notifications whenever they change for the current restaurant
@@ -199,16 +244,33 @@ export function OrderNotificationBell() {
 
       // Reservation alerts are only for the receptionist and the restaurant admin.
       // The bell sound is only for the receptionist.
-      if (!canSeeNotification(order.type, role, isReceptionist)) {
+      if (!canSeeNotification(order, role, isReceptionist)) {
         knownIdsRef.current.add(order.id);
+        if (order.order_id) knownIdsRef.current.add(order.order_id);
         saveKnownIds(knownIdsRef.current, restaurantId);
+        setNotifications((prev) =>
+          prev.filter((n) => n.id !== order.id && n.order_id !== order.order_id && n.id !== order.order_id),
+        );
         return;
       }
 
       const newNotif: OrderNotification = { ...order, seen: order.seen ?? false };
 
       setNotifications((prev) => {
-        if (prev.some((n) => n.id === order.id)) return prev;
+        const existingIndex = prev.findIndex(
+          (n) =>
+            n.id === order.id ||
+            (order.order_id &&
+              order.type !== "new_reservation" &&
+              (n.id === order.order_id || n.order_id === order.order_id)),
+        );
+        if (existingIndex >= 0) {
+          const existing = prev[existingIndex];
+          if (!order.source || existing.source === order.source) return prev;
+          const copy = prev.slice();
+          copy[existingIndex] = { ...existing, source: order.source };
+          return copy;
+        }
         return [newNotif, ...prev];
       });
 
@@ -287,6 +349,21 @@ export function OrderNotificationBell() {
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
+        const { data: orderRows } = await supabase
+          .from("orders")
+          .select("id, restaurant_id, order_number, customer_name, total_amount, created_at, transfer_status, pending_transfer_to_restaurant_id, source, call_id, fulfillment_type")
+          .or(`restaurant_id.eq.${restaurantId},pending_transfer_to_restaurant_id.eq.${restaurantId}`)
+          .order("created_at", { ascending: false })
+          .limit(15);
+        const orderSourceById = new Map<string, string>();
+        const fulfillmentById = new Map<string, string>();
+        for (const row of (orderRows || []) as any[]) {
+          if (!row?.id) continue;
+          if (row.call_id) orderSourceById.set(row.id, "phone");
+          else if (row.source) orderSourceById.set(row.id, row.source);
+          if (row.fulfillment_type) fulfillmentById.set(row.id, row.fulfillment_type);
+        }
+
         // Fetch in-app notifications
         try {
           const notifResp = await fetch(
@@ -318,6 +395,14 @@ export function OrderNotificationBell() {
                     type: sn.type,
                     title: sn.title,
                     message: sn.message,
+                    source:
+                      (sn.order_id && orderSourceById.get(sn.order_id)) ||
+                      meta.source ||
+                      null,
+                    fulfillment_type:
+                      meta.fulfillment_type ||
+                      (sn.order_id && fulfillmentById.get(sn.order_id)) ||
+                      null,
                     seen: Boolean(sn.is_read),
                   },
                   false
@@ -346,6 +431,14 @@ export function OrderNotificationBell() {
                       type: sn.type,
                       title: sn.title,
                       message: sn.message,
+                      source:
+                        (sn.order_id && orderSourceById.get(sn.order_id)) ||
+                        meta.source ||
+                        null,
+                      fulfillment_type:
+                        meta.fulfillment_type ||
+                        (sn.order_id && fulfillmentById.get(sn.order_id)) ||
+                        null,
                     },
                     true
                   );
@@ -357,22 +450,13 @@ export function OrderNotificationBell() {
           // ignore
         }
 
-        if (isReceptionist) {
+        if (isReceptionist || role === "staff") {
           isInitial = false;
           return;
         }
 
-        // Fetch latest orders
-        const { data, error } = await supabase
-          .from("orders")
-          .select("id, restaurant_id, order_number, customer_name, total_amount, created_at, transfer_status, pending_transfer_to_restaurant_id")
-          .or(`restaurant_id.eq.${restaurantId},pending_transfer_to_restaurant_id.eq.${restaurantId}`)
-          .order("created_at", { ascending: false })
-          .limit(15);
-
-        if (error || !data || cancelled) return;
-
-        const orderList = data as any[];
+        if (cancelled) return;
+        const orderList = (orderRows || []) as any[];
 
         if (isInitial) {
           orderList.forEach((o) => knownIdsRef.current.add(o.id));
@@ -395,6 +479,8 @@ export function OrderNotificationBell() {
                 created_at: o.created_at ?? new Date().toISOString(),
                 type: isTransfer ? "transfer_requested" : "new_order",
                 title: isTransfer ? "🚨 Incoming Order Transfer Request" : "🛒 New Order Received",
+                source: o.call_id ? "phone" : o.source || null,
+                fulfillment_type: o.fulfillment_type || null,
               },
               true
             );
@@ -412,7 +498,7 @@ export function OrderNotificationBell() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [restaurantId, canAlert, isReceptionist]);
+  }, [restaurantId, canAlert, isReceptionist, role]);
 
   const handlePopoverChange = (open: boolean) => {
     setPopoverOpen(open);
@@ -657,7 +743,7 @@ export function OrderNotificationBell() {
                             n.seen ? "text-muted-foreground" : "text-foreground"
                           )}
                         >
-                          {n.order_number}
+                          {tidyLabel(n.order_number)}
                         </span>
                         {isTransferReq && (
                           <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30">
@@ -698,7 +784,7 @@ export function OrderNotificationBell() {
                         n.seen ? "text-muted-foreground/80" : "text-foreground font-medium"
                       )}
                     >
-                      {n.message || n.customer_name || "Order alert"}
+                      {tidyLabel(n.message || n.customer_name || "Order alert")}
                     </p>
 
                     <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 mt-1">

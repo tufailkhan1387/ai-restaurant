@@ -97,10 +97,17 @@ function saveKnownIds(ids: Set<string>, restaurantId?: string | null) {
   }
 }
 
+function canSeeNotification(type: string | undefined, role: string | null, isReceptionist: boolean) {
+  const isReservation = type === "new_reservation";
+  if (isReceptionist) return isReservation;
+  if (isReservation) return role === "admin";
+  return true;
+}
+
 export function OrderNotificationBell() {
   const { t } = useTranslation(["orders", "common"]);
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role, isReceptionist } = useAuth();
   const { restaurantId } = useActiveRestaurant();
   const isSuperAdmin = role === "super_admin";
   const isDriver = role === "driver";
@@ -139,7 +146,8 @@ export function OrderNotificationBell() {
     };
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.seen).length;
+  const visibleNotifications = notifications.filter((n) => canSeeNotification(n.type, role, isReceptionist));
+  const unreadCount = visibleNotifications.filter((n) => !n.seen).length;
 
   // Persist notifications whenever they change for the current restaurant
   useEffect(() => {
@@ -189,6 +197,14 @@ export function OrderNotificationBell() {
 
       const isReservation = order.type === "new_reservation";
 
+      // Reservation alerts are only for the receptionist and the restaurant admin.
+      // The bell sound is only for the receptionist.
+      if (!canSeeNotification(order.type, role, isReceptionist)) {
+        knownIdsRef.current.add(order.id);
+        saveKnownIds(knownIdsRef.current, restaurantId);
+        return;
+      }
+
       const newNotif: OrderNotification = { ...order, seen: order.seen ?? false };
 
       setNotifications((prev) => {
@@ -205,8 +221,8 @@ export function OrderNotificationBell() {
         let toastDesc = `${order.order_number} · ${order.customer_name} · ${formatCurrency(order.total_amount)}`;
 
         if (isReservation) {
-          toastTitle = order.title || "📅 New table reservation";
-          toastDesc = order.message || `${order.customer_name} reserved a table.`;
+          toastTitle = "New reservation";
+          toastDesc = order.message || order.title || `${order.customer_name} reserved a table.`;
         } else if (order.type === "transfer_requested") {
           toastTitle = order.title || "🚨 Incoming Order Transfer Request";
           toastDesc = order.message || `Order #${order.order_number} was transferred to your branch.`;
@@ -227,12 +243,12 @@ export function OrderNotificationBell() {
           duration: 7000,
         });
 
-        if (prefsRef.current.enabled) {
+        if (prefsRef.current.enabled && (!isReservation || isReceptionist)) {
           startRinging();
         }
       }
     },
-    [startRinging, t, canAlert, restaurantId]
+    [startRinging, t, canAlert, restaurantId, isReceptionist, role]
   );
 
   const addNotificationRef = useRef(addNotification);
@@ -341,6 +357,11 @@ export function OrderNotificationBell() {
           // ignore
         }
 
+        if (isReceptionist) {
+          isInitial = false;
+          return;
+        }
+
         // Fetch latest orders
         const { data, error } = await supabase
           .from("orders")
@@ -391,7 +412,7 @@ export function OrderNotificationBell() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [restaurantId, canAlert]);
+  }, [restaurantId, canAlert, isReceptionist]);
 
   const handlePopoverChange = (open: boolean) => {
     setPopoverOpen(open);
@@ -512,7 +533,9 @@ export function OrderNotificationBell() {
             <div>
               <div className="flex items-center gap-1.5">
                 <p className="font-bold text-sm text-foreground">
-                  {t("orders:notifications", "Order Notifications")}
+                  {isReceptionist
+                    ? "Reservations"
+                    : t("orders:notifications", "Order Notifications")}
                 </p>
                 {ringing && (
                   <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4 animate-pulse">
@@ -522,14 +545,16 @@ export function OrderNotificationBell() {
               </div>
               <p className="text-[11px] text-muted-foreground">
                 {unreadCount > 0
-                  ? `${unreadCount} ${t("orders:unread", "unread")} order${unreadCount > 1 ? "s" : ""}`
+                  ? isReceptionist
+                    ? `${unreadCount} new reservation${unreadCount > 1 ? "s" : ""}`
+                    : `${unreadCount} ${t("orders:unread", "unread")} order${unreadCount > 1 ? "s" : ""}`
                   : "All caught up"}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            {notifications.length > 0 && (
+            {visibleNotifications.length > 0 && (
               <>
                 {unreadCount > 0 && (
                   <Button
@@ -558,18 +583,22 @@ export function OrderNotificationBell() {
 
         {/* Notification List */}
         <div className="max-h-[380px] overflow-y-auto divide-y divide-border">
-          {notifications.length === 0 ? (
+          {visibleNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
               <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
                 <Bell className="h-6 w-6 opacity-30" />
               </div>
-              <p className="text-sm font-medium">{t("orders:noNotifications", "No notifications yet")}</p>
+              <p className="text-sm font-medium">
+                {isReceptionist ? "No reservations yet" : t("orders:noNotifications", "No notifications yet")}
+              </p>
               <p className="text-xs opacity-60 text-center max-w-[200px]">
-                {t("orders:noNotificationsDesc", "New orders and transfer alerts will appear here in real time")}
+                {isReceptionist
+                  ? "A new reservation will ring this bell"
+                  : t("orders:noNotificationsDesc", "New orders and transfer alerts will appear here in real time")}
               </p>
             </div>
           ) : (
-            notifications.map((n) => {
+            visibleNotifications.map((n) => {
               const isTransferReq = n.type === "transfer_requested";
               const isTransferAcc = n.type === "transfer_accepted";
               const isTransferRej = n.type === "transfer_rejected";
@@ -689,7 +718,7 @@ export function OrderNotificationBell() {
         </div>
 
         {/* Clean Footer */}
-        {notifications.length > 0 && (
+        {visibleNotifications.length > 0 && (
           <div className="p-2 border-t border-border bg-muted/20">
             <Button
               variant="ghost"
@@ -697,10 +726,14 @@ export function OrderNotificationBell() {
               className="w-full text-xs h-8 text-primary hover:text-primary hover:bg-primary/10 font-bold justify-between"
               onClick={() => {
                 setPopoverOpen(false);
-                navigate("/orders");
+                navigate(isReceptionist ? "/reservations" : "/orders");
               }}
             >
-              <span>{t("orders:viewAllOrders", "View all orders")}</span>
+              <span>
+                {isReceptionist
+                  ? "View reservations"
+                  : t("orders:viewAllOrders", "View all orders")}
+              </span>
               <ChevronRight className="h-3.5 w-3.5" />
             </Button>
           </div>

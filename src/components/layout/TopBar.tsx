@@ -129,11 +129,9 @@ export function TopBar() {
         <div className="flex items-center gap-2.5 shrink-0">
           <LanguageSwitcher />
 
-          {!isReceptionist && (
-            <div className="[&_button]:rounded-lg [&_button]:bg-card [&_button]:border [&_button]:border-border/80 [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:shadow-sm">
-              <OrderNotificationBell />
-            </div>
-          )}
+          <div className="[&_button]:rounded-lg [&_button]:bg-card [&_button]:border [&_button]:border-border/80 [&_button]:text-foreground [&_button]:hover:bg-muted [&_button]:shadow-sm">
+            <OrderNotificationBell />
+          </div>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

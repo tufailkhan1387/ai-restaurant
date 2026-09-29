@@ -136,6 +136,7 @@ function duringCallVar(name, description, example) {
 async function ensureLiveOrderActions(restaurantId, existingIds = [], identity = {}) {
   const placeUrl = liveToolUrl("ai-place-order");
   const statusUrl = liveToolUrl("ai-order-status");
+  const reserveUrl = liveToolUrl("ai-reserve-table");
   if (!placeUrl || !statusUrl) return { ids: existingIds, warning: "PUBLIC_API_URL is not set, so the phone agent cannot place or track orders during the call." };
 
   const already = new Set((existingIds || []).map(String));
@@ -154,7 +155,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "place_order",
         description:
-          "Save the caller's food order and return the real order number. Call this once after the caller confirms the order. Then read order_number out loud.",
+          "FOOD ORDERS ONLY. Save the caller's food order and return the real order number. Never call this when the caller is reserving a table. Call this once after the caller confirms a food order. Then read order_number out loud.",
         speech_while_using_the_tool: "One moment while I save your order.",
         failure_timeout: 20,
         headers: [{ key: "Content-Type", value: "application/json" }],
@@ -202,9 +203,42 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         }),
       },
     },
+    {
+      key: "reserve_table",
+      action: {
+        http_mode: "POST",
+        url: reserveUrl,
+        run_action_before_call_start: false,
+        name: "reserve_table",
+        description:
+          "TABLE RESERVATIONS ONLY. Book a restaurant table. Use this when the caller wants to reserve or book a table. Never use place_order for a table. Never say order, bill, or order number.",
+        speech_while_using_the_tool: "One moment while I reserve your table.",
+        failure_timeout: 20,
+        headers: [{ key: "Content-Type", value: "application/json" }],
+        variables_during_the_call: [
+          duringCallVar("customer_name", "Guest full name", "Ali Ahmed"),
+          duringCallVar("customer_phone", "Phone number the guest gave for the reservation", "03238439467"),
+          duringCallVar("party_size", "Number of guests", "5"),
+          duringCallVar("reservation_date", "Date as YYYY-MM-DD", "2026-09-29"),
+          duringCallVar("reservation_time", "Latest booking time as HH:MM 24-hour", "19:00"),
+          duringCallVar("slot_duration_hours", "Always 1", "1"),
+        ],
+        json_body_stringified: JSON.stringify({
+          ...lookup,
+          customer_name: "<customer_name>",
+          customer_phone: "<customer_phone>",
+          party_size: "<party_size>",
+          reservation_date: "<reservation_date>",
+          reservation_time: "<reservation_time>",
+          slot_duration_hours: "<slot_duration_hours>",
+          source: "phone",
+        }),
+      },
+    },
   ];
 
   for (const spec of specs) {
+    if (!spec.action.url) continue;
     const marker = `tool:${spec.key}:v2`;
     if ([...already].some((id) => id === marker)) continue;
     try {

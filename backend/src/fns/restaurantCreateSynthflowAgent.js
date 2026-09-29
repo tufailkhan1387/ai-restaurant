@@ -133,7 +133,7 @@ function duringCallVar(name, description, example) {
   return { name, description, example, type: "string" };
 }
 
-async function ensureLiveOrderActions(restaurantId, existingIds = []) {
+async function ensureLiveOrderActions(restaurantId, existingIds = [], identity = {}) {
   const placeUrl = liveToolUrl("ai-place-order");
   const statusUrl = liveToolUrl("ai-order-status");
   if (!placeUrl || !statusUrl) return { ids: existingIds, warning: "PUBLIC_API_URL is not set, so the phone agent cannot place or track orders during the call." };
@@ -141,6 +141,9 @@ async function ensureLiveOrderActions(restaurantId, existingIds = []) {
   const already = new Set((existingIds || []).map(String));
   const ids = [...already];
   const errors = [];
+  const lookup = {};
+  if (identity.synthflowAgentId) lookup.synthflow_agent_id = identity.synthflowAgentId;
+  if (identity.phone) lookup.twilio_to = identity.phone;
 
   const specs = [
     {
@@ -165,7 +168,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = []) {
           duringCallVar("coupon_code", "Coupon code or none", "none"),
         ],
         json_body_stringified: JSON.stringify({
-          restaurant_id: restaurantId,
+          ...lookup,
           customer_name: "<customer_name>",
           customer_phone: "<customer_phone>",
           delivery_address: "<delivery_address>",
@@ -194,7 +197,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = []) {
           duringCallVar("order_number", "Order number such as ORD-0009", "ORD-0009"),
         ],
         json_body_stringified: JSON.stringify({
-          restaurant_id: restaurantId,
+          ...lookup,
           order_number: "<order_number>",
         }),
       },
@@ -202,13 +205,31 @@ async function ensureLiveOrderActions(restaurantId, existingIds = []) {
   ];
 
   for (const spec of specs) {
-    const marker = `tool:${spec.key}`;
+    const marker = `tool:${spec.key}:v2`;
     if ([...already].some((id) => id === marker)) continue;
     try {
       const created = await createCustomAction(spec.action);
       if (created.action_id) {
         ids.push(created.action_id);
         ids.push(marker);
+        if (identity.modelId) {
+          try {
+            await attachActions(identity.modelId, [], [
+              {
+                action_id: created.action_id,
+                attachment_type: "during",
+                trigger_condition: spec.action.description,
+                input_variables_mapping: (spec.action.variables_during_the_call || []).map((v) => ({
+                  variable_name: v.name,
+                  source: "llm",
+                  llm_config: { description: v.description, example: v.example },
+                })),
+              },
+            ]);
+          } catch (attachErr) {
+            errors.push(`${spec.key} attach: ${attachErr.message}`);
+          }
+        }
       } else {
         errors.push(`${spec.key}: no action_id`);
       }
@@ -394,7 +415,11 @@ export async function restaurantCreateSynthflowAgent(req, res) {
     let extractorWarning = null;
     try {
       actionIds = await ensureOrderExtractors(actionIds);
-      const liveTools = await ensureLiveOrderActions(restaurant_id, actionIds);
+      const liveTools = await ensureLiveOrderActions(restaurant_id, actionIds, {
+        modelId,
+        synthflowAgentId: modelId,
+        phone: r.telnyx_phone_number || r.twilio_phone_number || null,
+      });
       actionIds = liveTools.ids;
       if (liveTools.warning) extractorWarning = liveTools.warning;
       try {

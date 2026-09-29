@@ -68,7 +68,7 @@ export async function aiPlaceOrder(req, res) {
       delivery_longitude: body.delivery_longitude ?? body.longitude ?? null,
       call_id: callId,
       source: "phone",
-      ai_extracted_data: { unmatched, raw: body, provider: "elevenlabs" },
+      ai_extracted_data: { raw: body, provider: "elevenlabs" },
     });
 
     console.log(`✅ Order saved: id=${order.id} order_number=${order.order_number} restaurant_id=${order.restaurant_id} status=${assignmentStatus}`);

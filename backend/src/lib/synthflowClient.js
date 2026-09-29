@@ -262,12 +262,15 @@ export async function createInformationExtractor({ kind, identifier, description
   return { raw: json, action_id: actionId };
 }
 
-export async function attachActions(modelId, actionIds) {
+export async function attachActions(modelId, actionIds, items) {
   const ids = (actionIds || []).filter(Boolean);
-  if (!ids.length) return null;
+  if (!ids.length && !items?.length) return null;
+  const body = { model_id: modelId };
+  if (items?.length) body.items = items;
+  else body.actions = ids;
   return synthflowRequest("/actions/attach", {
     method: "POST",
-    body: { model_id: modelId, actions: ids },
+    body,
   });
 }
 

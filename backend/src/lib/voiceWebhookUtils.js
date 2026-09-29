@@ -94,7 +94,6 @@ export async function resolveRestaurantIdForVoiceTools(knex, b) {
   if (b.restaurant_id) {
     const row = await knex("restaurants").where({ id: String(b.restaurant_id) }).select("id").first();
     if (row) return { id: row.id };
-    return { id: null, error: "restaurant_id not found" };
   }
 
   if (b.elevenlabs_agent_id) {

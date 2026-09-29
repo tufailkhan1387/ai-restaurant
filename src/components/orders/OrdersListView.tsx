@@ -479,6 +479,13 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
   const filtered = useMemo(() => {
     return orders
       .filter((o) => {
+        const lines = items.filter((it) => it.order_id === o.id);
+        const reservationOnly =
+          (role === "kitchen" || role === "chef") &&
+          lines.length > 0 &&
+          lines.every((it) => /table\s*reserv|book\w*\s+(a\s+)?table/i.test(it.item_name || ""));
+        if (reservationOnly) return false;
+
         // 1. Search filter
         if (search.trim()) {
           const q = search.toLowerCase();
@@ -608,6 +615,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
     menuItems,
     itemCategoryMap,
     search,
+    role,
     datePreset,
     fromDate,
     toDate,

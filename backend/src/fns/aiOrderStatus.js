@@ -89,7 +89,7 @@ export async function aiOrderStatus(req, res) {
     if (!code) {
       return res.json({
         found: false,
-        message: "I need your order number, for example ORD-0001, to look that up.",
+        message: "I need your order number, for example ORD-260929-01, to look that up.",
       });
     }
 

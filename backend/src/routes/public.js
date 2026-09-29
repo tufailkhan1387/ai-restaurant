@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getKnex } from "../db.js";
 import { geocodeAddress } from "../lib/geocoding.js";
-import { findNearestBranch } from "../lib/phoneOrderService.js";
+import { findNearestBranch, isTableReservationLine } from "../lib/phoneOrderService.js";
 import {
   findOrCreateTableSession,
   loadSessionBill,
@@ -477,6 +477,12 @@ router.post("/orders", async (req, res) => {
       if (itemIds.length) {
         const dbItems = await trx("menu_items").whereIn("id", itemIds);
         for (const it of dbItems) {
+          if (isTableReservationLine(it.name)) {
+            await trx.rollback();
+            return res.status(400).json({
+              error: "Table reservation is not a menu item. Book a table from reservations instead of placing an order.",
+            });
+          }
           if (it.is_available === false || (it.track_inventory && Number(it.stock_quantity || 0) <= 0)) {
             await trx.rollback();
             return res.status(400).json({

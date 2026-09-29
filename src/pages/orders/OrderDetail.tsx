@@ -832,6 +832,9 @@ export default function OrderDetail() {
     : order.status;
   const isDineIn = order.fulfillment_type === "dine_in" || Boolean(order.table_number);
   const isPickup = !isDineIn && (order.fulfillment_type === "pickup" || order.delivery_address?.toLowerCase().includes("pickup"));
+  const isReservationOrder =
+    items.length > 0 &&
+    items.every((it) => /table\s*reserv|book\w*\s+(a\s+)?table/i.test(it.item_name || ""));
   const isCash = !order.payment_method || order.payment_method.toLowerCase().includes("cash");
   const isPaid = order.payment_status?.toLowerCase() === "paid";
 
@@ -844,6 +847,12 @@ export default function OrderDetail() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16 animate-fade-in text-foreground">
+      {isReservationOrder && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          This is a table reservation, not a food order. It has no price and should not be prepared in the kitchen.
+          Open Table Reservations to see the booking.
+        </div>
+      )}
       {/* 1. Top Navigation Bar */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <Button

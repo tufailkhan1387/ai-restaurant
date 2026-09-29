@@ -2,6 +2,120 @@ import { normalizeE164 } from "./voiceWebhookUtils.js";
 import { geocodeAddress, haversineDistanceKm } from "./geocoding.js";
 import { nextOrderNumber } from "./orderNumbers.js";
 import { notifyNewOrderLater } from "./orderAlerts.js";
+import {
+  createReservation,
+  findAvailableTable,
+  parseReservationDate,
+  parseReservationTime,
+} from "./tableReservationService.js";
+
+/** Menu lines and spoken item names that are a table booking, not food. */
+export function isTableReservationLine(name) {
+  return /table\s*reserv|reserv\w*\s+(a\s+)?table|book\w*\s+(a\s+)?table/i.test(String(name || ""));
+}
+
+function reservationDetailsFromText(text) {
+  const raw = String(text || "");
+  const guests = raw.match(/(\d+)\s*guests?/i);
+  const dateMatch = raw.match(/(\d{4}-\d{2}-\d{2})/);
+  const timeMatch = raw.match(/\bat\s+([0-2]?\d[:.][0-5]\d(?:\s*[ap]\.?m\.?)?)/i);
+  const clock = timeMatch ? timeMatch[1] : raw.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/)?.[0];
+  return {
+    partySize: guests ? Math.max(1, parseInt(guests[1], 10) || 1) : 2,
+    reservationDate: parseReservationDate(dateMatch ? dateMatch[1] : "today"),
+    startTime: parseReservationTime(clock || ""),
+  };
+}
+
+/**
+ * Turn a "Table Reservation for N guests on DATE at TIME" line into a real reservation.
+ * Does not create a priced order.
+ */
+async function bookReservationInsteadOfOrder(knex, {
+  restaurantId,
+  customer_name,
+  customer_phone,
+  customer_email,
+  call_id,
+  source,
+  lines,
+}) {
+  const combined = lines.map((l) => l.name).join(" ");
+  const details = reservationDetailsFromText(combined);
+  if (!details.startTime) {
+    return { reservation: null, reservationError: "missing_time" };
+  }
+
+  if (call_id) {
+    const existing = await knex("table_reservations").where({ call_id }).orderBy("created_at", "desc").first();
+    if (existing) {
+      const table = existing.table_id
+        ? await knex("restaurant_tables").where({ id: existing.table_id }).select("table_number").first()
+        : null;
+      return {
+        reservation: { ...existing, table_number: table?.table_number || null },
+        reservationError: null,
+      };
+    }
+  }
+
+  const phone = normalizeE164(customer_phone) || (customer_phone ? String(customer_phone) : null);
+  if (phone) {
+    const since = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    const recent = await knex("table_reservations")
+      .where({
+        restaurant_id: restaurantId,
+        reservation_date: details.reservationDate,
+        customer_phone: phone,
+      })
+      .whereIn("status", ["pending", "confirmed", "seated"])
+      .andWhere("created_at", ">=", since)
+      .orderBy("created_at", "desc")
+      .first();
+    if (recent) {
+      const table = recent.table_id
+        ? await knex("restaurant_tables").where({ id: recent.table_id }).select("table_number").first()
+        : null;
+      return {
+        reservation: { ...recent, table_number: table?.table_number || null },
+        reservationError: null,
+      };
+    }
+  }
+
+  const availableTable = await findAvailableTable(knex, {
+    restaurantId,
+    partySize: details.partySize,
+    reservationDate: details.reservationDate,
+    startTime: details.startTime,
+    slotDurationHours: 1,
+  });
+  if (!availableTable) {
+    return { reservation: null, reservationError: "unavailable" };
+  }
+
+  const row = await createReservation(knex, {
+    restaurantId,
+    tableId: availableTable.id,
+    customerName: customer_name,
+    customerPhone: phone,
+    customerEmail: customer_email || null,
+    partySize: details.partySize,
+    reservationDate: details.reservationDate,
+    startTime: details.startTime,
+    slotDurationHours: 1,
+    status: "confirmed",
+    notes: combined,
+    source: source || "phone",
+    callId: call_id || null,
+    aiExtractedData: { from: "place_order_reservation_line", text: combined },
+  });
+
+  return {
+    reservation: { ...row, table_number: availableTable.table_number },
+    reservationError: null,
+  };
+}
 
 /**
  * Find the nearest active branch for a parent restaurant within service radius.
@@ -334,6 +448,38 @@ export async function createPhoneOrder(knex, input) {
   const parsedItems = parseOrderItemsText(items);
   if (!parsedItems.length) throw new Error("No order items to place");
 
+  const reservationLines = parsedItems.filter((it) => isTableReservationLine(it.name));
+  const foodItems = parsedItems.filter((it) => !isTableReservationLine(it.name));
+  let bookedReservation = null;
+  let reservationError = null;
+  if (reservationLines.length) {
+    const booked = await bookReservationInsteadOfOrder(knex, {
+      restaurantId,
+      customer_name,
+      customer_phone,
+      customer_email,
+      call_id,
+      source,
+      lines: reservationLines,
+    });
+    bookedReservation = booked.reservation;
+    reservationError = booked.reservationError;
+  }
+
+  const emptyTotals = { subtotal: 0, tax: 0, deliveryFee: 0, discount: 0, total: 0 };
+  if (!foodItems.length) {
+    return {
+      order: null,
+      reservation: bookedReservation,
+      reservationError,
+      unmatched: [],
+      coupon: { code: null, amount: 0 },
+      targetRestaurantId: restaurantId,
+      assignmentStatus: "assigned",
+      totals: emptyTotals,
+    };
+  }
+
   const isPickup = String(fulfillment_type || "delivery").toLowerCase() === "pickup";
 
   // Geocode address if needed
@@ -409,7 +555,7 @@ export async function createPhoneOrder(knex, input) {
 
   const settings = await knex("restaurant_settings").where({ restaurant_id: targetRestaurantId }).first();
 
-  const { lines, unmatched, outOfStock } = matchMenuLines(menu, parsedItems, variants, addons, itemAddons, deals);
+  const { lines, unmatched, outOfStock } = matchMenuLines(menu, foodItems, variants, addons, itemAddons, deals);
 
   if (outOfStock.length > 0) {
     const err = new Error(`Item "${outOfStock.join(", ")}" is currently out of order / out of stock.`);
@@ -511,6 +657,8 @@ export async function createPhoneOrder(knex, input) {
 
   return {
     order: result,
+    reservation: bookedReservation,
+    reservationError,
     unmatched,
     coupon,
     targetRestaurantId,

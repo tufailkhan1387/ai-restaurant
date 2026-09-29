@@ -44,7 +44,7 @@ export function buildRestaurantVoiceKnowledge({
   lines.push("## Menu Categories & Available Items");
 
   const byCategory = new Map();
-  for (const it of (items || []).filter((i) => i.is_available !== false)) {
+  for (const it of (items || []).filter((i) => i.is_available !== false && !/table\s*reserv|book\w*\s+(a\s+)?table/i.test(String(i.name || "")))) {
     const k = it.category_id || "uncategorized";
     if (!byCategory.has(k)) byCategory.set(k, []);
     byCategory.get(k).push(it);
@@ -241,6 +241,8 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - NEVER invent or hallucinate fake deals, combos, or discounts!
 
 7. TABLE RESERVATIONS:
+   - A table reservation is NOT food, NOT a menu item, and has NO price.
+   - NEVER add "Table Reservation" to the order, NEVER quote a price for it, and NEVER call place_order for a booking.
    - If the caller asks to reserve a table or book a seat:
      1. Ask for their full name.
      2. Ask how many guests will be dining (party size).
@@ -262,7 +264,7 @@ CRITICAL RULES (FOLLOW STRICTLY):
 
 8. TRACK AN EXISTING ORDER:
    - If the caller wants to check, track, or follow an order they already placed:
-     1. Ask: "What is your order number?" (for example ORD-0001). Then STOP and WAIT.
+     1. Ask: "What is your order number?" (for example ORD-260929-01). Then STOP and WAIT.
      2. Call get_order_status with that order_number. If the tool only has a tracking_code field, put the order number in tracking_code.
      3. Read back the status in one short sentence (received, confirmed, preparing, ready, out for delivery / served, delivered / complete, or cancelled).
    - Do not start a new order when they only want status.

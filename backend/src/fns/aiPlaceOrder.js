@@ -53,7 +53,7 @@ export async function aiPlaceOrder(req, res) {
       callId = c?.id ?? null;
     }
 
-    const { order, unmatched, coupon, totals, targetRestaurantId, assignmentStatus } = await createPhoneOrder(knex, {
+    const { order, reservation, reservationError, unmatched, coupon, totals, targetRestaurantId, assignmentStatus } = await createPhoneOrder(knex, {
       restaurantId,
       customer_name: body.customer_name,
       customer_phone: body.customer_phone,
@@ -70,6 +70,31 @@ export async function aiPlaceOrder(req, res) {
       source: "phone",
       ai_extracted_data: { raw: body, provider: "elevenlabs" },
     });
+
+    if (!order) {
+      if (reservation) {
+        const when = [reservation.reservation_date, String(reservation.start_time || "").slice(0, 5)].filter(Boolean).join(" ");
+        const tableBit = reservation.table_number ? ` Table ${reservation.table_number}.` : "";
+        const speak = `Your table is reserved for ${reservation.party_size} guests on ${when}.${tableBit} This is a reservation, not a food order.`;
+        console.log(`✅ Reservation saved instead of order: id=${reservation.id}`);
+        return res.json({
+          success: true,
+          available: true,
+          reservation_id: reservation.id,
+          table_number: reservation.table_number || null,
+          party_size: reservation.party_size,
+          reservation_date: reservation.reservation_date,
+          reservation_time: String(reservation.start_time || "").slice(0, 5),
+          speak,
+          message: `Tell the caller: ${speak} Do not give an order number and do not quote a price.`,
+        });
+      }
+      const message =
+        reservationError === "unavailable"
+          ? "No table is free at that time. Ask for a different time. Do not create a food order."
+          : "A table reservation needs a guest count, date, and time. Do not place it as a menu order and do not quote a price.";
+      return res.status(200).json({ success: false, available: false, message });
+    }
 
     console.log(`✅ Order saved: id=${order.id} order_number=${order.order_number} restaurant_id=${order.restaurant_id} status=${assignmentStatus}`);
 

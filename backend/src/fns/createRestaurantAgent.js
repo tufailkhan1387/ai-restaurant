@@ -18,7 +18,7 @@ You help callers in three ways:
    - When ready, call the place_order tool.
 
 2) Check the status of an EXISTING order:
-   - Ask: "What is your order number?" (for example ORD-0001). STOP and WAIT.
+   - Ask: "What is your order number?" (for example ORD-260929-01). STOP and WAIT.
    - Call the get_order_status tool with that order_number (also accept a tracking code if they give one).
    - Read the status back in one short sentence. Do not ask them to place a new order when they only want status.
 
@@ -73,12 +73,12 @@ const TOOLS_CONFIG = [
   },
   {
     name: "get_order_status",
-    description: "Look up a food order by order number (preferred, e.g. ORD-0001) or tracking code and return the current status.",
+    description: "Look up a food order by order number (preferred, e.g. ORD-260929-01) or tracking code and return the current status.",
     endpoint: "ai-order-status",
     parameters: {
       type: "object",
       properties: {
-        order_number: { type: "string", description: "Customer order number such as ORD-0001. Accept spoken forms like order 1 or ORD 0001." },
+        order_number: { type: "string", description: "Customer order number such as ORD-260929-01. YYMMDD is the date, then the daily sequence." },
         tracking_code: { type: "string", description: "Tracking code if the caller does not have the order number" }
       },
       required: ["order_number"]

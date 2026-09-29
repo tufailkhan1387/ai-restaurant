@@ -755,7 +755,7 @@ export async function synthflowPostCallWebhook(req, res) {
       }
     }
 
-    const { order, unmatched, coupon, totals } = await createPhoneOrder(knex, {
+    const { order, reservation: bookedFromItems, reservationError, unmatched, coupon, totals } = await createPhoneOrder(knex, {
       restaurantId: restaurant.id,
       customer_name: (!emptyish(fields.customer_name) && fields.customer_name) || "Phone Customer",
       customer_phone: phone,
@@ -779,6 +779,21 @@ export async function synthflowPostCallWebhook(req, res) {
         end_call_reason: callMeta.end_call_reason || payload.end_call_reason,
       },
     });
+
+    if (!order) {
+      console.log("Skipped food order: call was a table reservation", {
+        reservationError,
+        reservationId: bookedFromItems?.id || reservationResult?.id,
+      });
+      return res.json({
+        success: true,
+        call_id: callRow?.id,
+        order_created: false,
+        reservation_created: Boolean(bookedFromItems || reservationResult?.created),
+        reservation: bookedFromItems || reservationResult || undefined,
+        reason: reservationError || "reservation_not_an_order",
+      });
+    }
 
     console.log(
       `✅ Synthflow order created: ${order.order_number} restaurant=${restaurant.id} total=${totals.total}`,

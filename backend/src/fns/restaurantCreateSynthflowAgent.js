@@ -194,7 +194,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         failure_timeout: 15,
         headers: [{ key: "Content-Type", value: "application/json" }],
         variables_during_the_call: [
-          duringCallVar("order_number", "Order number such as ORD-0009", "ORD-0009"),
+          duringCallVar("order_number", "Order number such as ORD-260929-01", "ORD-260929-01"),
         ],
         json_body_stringified: JSON.stringify({
           ...lookup,

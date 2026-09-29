@@ -583,16 +583,38 @@ export async function synthflowPostCallWebhook(req, res) {
       }
       if (!existingReservation && custPhone && custPhone !== "Unknown") {
         const since = new Date(Date.now() - 20 * 60 * 1000).toISOString();
-        existingReservation = await knex("table_reservations")
-          .where({ restaurant_id: restaurant.id, reservation_date: resDate, customer_phone: custPhone })
+        const phoneTail = String(custPhone).replace(/\D/g, "").slice(-10);
+        let recentQuery = knex("table_reservations")
+          .where({ restaurant_id: restaurant.id, reservation_date: resDate })
           .whereIn("status", ["pending", "confirmed", "seated"])
           .andWhere("created_at", ">=", since)
-          .orderBy("created_at", "desc")
-          .first();
+          .orderBy("created_at", "desc");
+        if (phoneTail.length >= 8) {
+          recentQuery = recentQuery.whereRaw(
+            "right(regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g'), 10) = ?",
+            [phoneTail],
+          );
+        } else {
+          recentQuery = recentQuery.where({ customer_phone: custPhone });
+        }
+        existingReservation = await recentQuery.first();
       }
 
       if (existingReservation) {
         const existingTime = String(existingReservation.start_time || "").slice(0, 5);
+        const currentAi = existingReservation.ai_extracted_data || {};
+        const patch = {
+          call_id: callRow?.id || existingReservation.call_id,
+          ai_extracted_data: {
+            ...currentAi,
+            provider: "synthflow",
+            synthflow_call_id: synthflowCallId || currentAi.synthflow_call_id,
+            recording_url: recordingUrl || currentAi.recording_url,
+            transcript: transcript || currentAi.transcript,
+            call_summary: callNotes || currentAi.call_summary,
+            duration_seconds: durationSeconds || currentAi.duration_seconds,
+          },
+        };
         if (resTime && existingTime !== resTime) {
           const availableTable = await findAvailableTable(knex, {
             restaurantId: restaurant.id,
@@ -601,14 +623,13 @@ export async function synthflowPostCallWebhook(req, res) {
             startTime: resTime,
             slotDurationHours: duration,
           });
-          await knex("table_reservations").where({ id: existingReservation.id }).update({
-            reservation_date: resDate,
-            start_time: resTime,
-            table_id: availableTable ? availableTable.id : existingReservation.table_id,
-            status: availableTable ? "confirmed" : existingReservation.status,
-          });
+          patch.reservation_date = resDate;
+          patch.start_time = resTime;
+          patch.table_id = availableTable ? availableTable.id : existingReservation.table_id;
+          patch.status = availableTable ? "confirmed" : existingReservation.status;
           console.log(`🕒 Synthflow reservation time corrected: ${existingTime} → ${resTime} id=${existingReservation.id}`);
         }
+        await knex("table_reservations").where({ id: existingReservation.id }).update(patch);
         reservationResult = {
           created: false,
           id: existingReservation.id,

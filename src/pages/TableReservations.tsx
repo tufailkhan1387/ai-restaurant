@@ -127,6 +127,7 @@ interface RestaurantTable {
 
 interface Reservation {
   id: string;
+  restaurant_id?: string | null;
   table_id: string | null;
   table_number: string | null;
   table_capacity: number | null;
@@ -203,21 +204,23 @@ export default function TableReservations() {
         if (cData) loadedCall = cData as CallData;
       }
 
-      // 3. Fallback: Match by customer phone number if exists in calls table
+      // 3. Fallback: same caller, comparing the last 10 digits (0323… and +92323… are the same number)
       if (!loadedCall && res.customer_phone) {
-        const cleanPhone = res.customer_phone.replace(/\D/g, "");
-        if (cleanPhone.length >= 6) {
+        const tail = res.customer_phone.replace(/\D/g, "").slice(-10);
+        if (tail.length >= 8) {
           const { data: cList } = await supabase
             .from("calls")
             .select("*")
             .order("created_at", { ascending: false })
-            .limit(25);
+            .limit(40);
           if (Array.isArray(cList)) {
-            const match = cList.find((c: any) => {
-              const cClean = String(c.phone_number || "").replace(/\D/g, "");
-              return cClean && (cClean.includes(cleanPhone) || cleanPhone.includes(cClean));
+            const matches = cList.filter((c: any) => {
+              const cTail = String(c.phone_number || "").replace(/\D/g, "").slice(-10);
+              return cTail && cTail === tail;
             });
-            if (match) loadedCall = match as CallData;
+            const withMedia = matches.find((c: any) => c.recording_url || c.transcript);
+            if (withMedia) loadedCall = withMedia as CallData;
+            else if (matches[0]) loadedCall = matches[0] as CallData;
           }
         }
       }

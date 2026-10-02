@@ -13,10 +13,31 @@ export async function loadActiveChildBranches(knex, restaurantId) {
     .select("id", "name", "address", "city", "area");
 }
 
+/** Older saved prompts told delivery to skip the branch question. Rewrite those lines. */
+function rewriteSavedBranchRules(text) {
+  return String(text || "")
+    .replace(
+      /Delivery: ask "What is your complete delivery address\?" Accept and record the ENTIRE address on the first try\. Do not ask for a city or an area\. Pass branch_name as none\. -> WAIT\.\s*- Pickup: do not ask for a street address\. Follow the Branch ordering section\. If branches are in more than one city, ask the city, stop and wait, then ask the area\. If every branch is in the same city, ask the area only and do not ask the city\. Pass the matching exact branch_name to place_order\. -> WAIT\./,
+      `Delivery and pickup both follow the Branch ordering section before anything else. Ask the area, or the city first when branches are in more than one city. Pass that exact branch_name to place_order. For delivery, then ask for the street address and accept it on the first try. For pickup, do not ask for a street address. -> WAIT.`,
+    )
+    .replace(
+      "4. Ask delivery or pickup. Delivery: accept the street address on the first try. Pickup or a table reservation: ask the area from the Branch ordering section. Do not ask the city when every branch is in the same city.",
+      "4. Ask delivery or pickup, then ask the area from the Branch ordering section. For delivery, then accept the street address on the first try. For pickup, do not ask for a street address.",
+    )
+    .replace(
+      "For a pickup order, the summary must include the area they chose.",
+      "The summary must include the area they chose.",
+    )
+    .replace(
+      "Delivery orders do not use this question. Collect the delivery address and pass branch_name as none.",
+      "Delivery orders use this question too. Ask the area first, then collect the street address, and pass the chosen branch_name.",
+    );
+}
+
 /** Replace or insert the branch list so a saved custom prompt stays current. */
 export function applyBranchOrdering(prompt, branches) {
   const block = branchOrderingSection(branches);
-  const text = String(prompt || "");
+  const text = rewriteSavedBranchRules(prompt);
   const start = text.indexOf("## Branch ordering");
   if (start !== -1) {
     const rest = text.slice(start + "## Branch ordering".length);
@@ -211,7 +232,7 @@ export function buildRestaurantVoiceKnowledge({
   lines.push("1. Greet calmly and ask what the caller would like to order.");
   lines.push("2. Capture ordered items, sizes, and flavors concisely, and state each item's price as it is ordered.");
   lines.push("3. Collect customer full name.");
-  lines.push("4. Collect delivery address — accept ANY address, sector, colony, or landmark on the VERY FIRST try without asking again.");
+  lines.push("4. Ask delivery or pickup, then ask the area from the Branch ordering section. For delivery, then accept the street address on the first try. For pickup, do not ask for a street address.");
   lines.push("5. Ask for email address for receipt (if provided note it down, if caller skips/declines proceed without assigning any fake email).");
   lines.push("6. Collect contact phone number.");
   lines.push("7. Payment is standard Cash on Delivery (COD) — do NOT interrogate caller to choose payment method.");
@@ -251,16 +272,16 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - Collect details in strict single-turn questions (ask 1 question, then STOP and wait for response):
      1. Items, Size & Flavor -> state exact price -> ask: "Would you like anything else, or may I take your delivery details?" -> WAIT.
      2. Name -> ask: "May I have your full name please?" -> Record whatever name the caller speaks (e.g. Tufail Khan, Zain, Bilal, etc.). Acknowledge: "Thank you, [Name]!" -> WAIT.
-     3. If they want delivery, ask: "What is your complete delivery address?" Accept the address on the first try. If they want pickup, do not ask for a street address. Follow the Branch ordering section instead. -> WAIT.
+     3. Ask: "Would you like delivery or pickup?" Then STOP and WAIT. Follow the Branch ordering section for both. Ask the area, or the city first when branches are in more than one city. Pass that exact branch_name to place_order. For delivery, then ask for the street address and accept it on the first try. For pickup, do not ask for a street address. -> WAIT.
      4. Email -> ask: "May I have your email for the receipt?" -> If given, note it; if declined/skipped, say "No problem!" and proceed without any fake email. -> WAIT.
      5. Phone -> ask: "And what is your contact phone number?" -> If caller provides a number, record it. If caller says "same number", skips, or caller ID is available, say "Got it, using your calling number!" and proceed directly. NEVER interrogate or block order for phone number! -> WAIT.
    - Payment is standard Cash on Delivery (COD) — do NOT ask caller how they will pay.
 
-5. PICKUP AND TABLE RESERVATIONS — CITY AND AREA:
-   - Follow the Branch ordering section exactly.
-   - Pickup order or table reservation: if branches are in more than one city, ask the city, stop and wait, then ask the area in that city. If every branch is in the same city, ask the area only and do not ask the city.
-   - Pass the matching branch_name to place_order for pickup, and to reserve_table for a booking.
-   - Delivery orders do not use this question. Collect the delivery address and pass branch_name as none.
+5. BRANCH FOR DELIVERY, PICKUP, AND TABLE RESERVATIONS:
+   - Follow the Branch ordering section for a delivery order, a pickup order, and a table reservation.
+   - Same city: ask the area only. Several cities: ask the city, then the area.
+   - Delivery: ask the area first, then the street address. Pickup: ask the area only, and do not ask for a street address.
+   - Pass the matching branch_name to place_order and reserve_table. Do not pass none after they choose an area.
    - Do not ask this when they only want to track an order.
 
 6. CONFIRM THE ORDER, THEN SAY THE ORDER NUMBER:

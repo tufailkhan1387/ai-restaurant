@@ -69,7 +69,7 @@ export function branchOrderingSection(branches) {
     return [
       "## Branch ordering",
       "This restaurant has no branches.",
-      "For pickup and table reservations, do not ask for a city or an area. Pass branch_name as none.",
+      "Do not ask for a city or an area. Pass branch_name as none.",
     ].join("\n");
   }
 
@@ -77,20 +77,20 @@ export function branchOrderingSection(branches) {
     const only = plan.rows[0];
     return [
       "## Branch ordering",
-      "This section overrides any older line that says to ask which branch, or that says not to ask a location for a table reservation.",
-      "Use this for PICKUP orders and TABLE RESERVATIONS.",
-      "Do not ask this for a delivery order, and do not ask it when the caller only wants to track an order.",
+      "This section overrides any older line that says not to ask which branch for a delivery order.",
+      "Use this for DELIVERY orders, PICKUP orders, and TABLE RESERVATIONS.",
+      "Do not ask this when the caller only wants to track an order.",
       `There is one location: ${only.area}${only.city ? `, ${only.city}` : ""}.`,
       "Do not ask for a city or an area.",
       `Pass branch_name as "${only.name}".`,
+      "For a delivery order, still collect the street address. For pickup, do not ask for a street address.",
     ].join("\n");
   }
 
   const lines = [
     "## Branch ordering",
-    "This section overrides any older line that says to ask which branch, or that says not to ask a location for a table reservation.",
-    "Use this for PICKUP orders and TABLE RESERVATIONS.",
-    "Do not ask this for a delivery order. For delivery, collect the delivery address and pass branch_name as none.",
+    "This section overrides any older line that told a delivery order to skip the area question.",
+    "Use this for DELIVERY orders, PICKUP orders, and TABLE RESERVATIONS.",
     "Do not ask this when the caller only wants to track an order.",
   ];
 
@@ -119,7 +119,10 @@ export function branchOrderingSection(branches) {
     }
   }
 
-  lines.push("Use only a city and area from this list. Pass the matching exact branch_name to place_order or reserve_table.");
+  lines.push("Ask this before the street address on a delivery order. After they choose the area, ask for the complete delivery address and accept it on the first try.");
+  lines.push("For a pickup order, do not ask for a street address.");
+  lines.push("Pass the matching exact branch_name to place_order and reserve_table.");
+  lines.push("Use only a city and area from this list.");
   lines.push("Never invent a city, area, or branch.");
   return lines.join("\n");
 }

@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Restaurant — Never Miss a Restaurant Order Again | Qubetech</title>
+<meta name="description" content="The AI restaurant operating system: AI phone receptionist, pickup ordering, reservations, QR table ordering and one order inbox for your kitchen.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+:root{--or:#F26A1B;--or2:#FF8A3D;--orl:#FFF1E7;--navy:#0F1B2D;--navy2:#16263D;--line2:#24364F;--ink:#0F172A;--mut:#5B6475;--line:#E8EBF0;--bg:#FAFAF8;--grn:#16A34A;--red:#E5484D;
+ --bs-body-font-family:Inter,system-ui,sans-serif;--bs-body-color:#0F172A;--bs-body-bg:#FAFAF8}
+body{-webkit-font-smoothing:antialiased}
+.container{max-width:1232px}
+h1,h2,h3,h4{letter-spacing:-.025em;font-weight:700}
+.text-mut{color:var(--mut)!important}.text-or{color:var(--or)!important}
+.bg-navy{background:var(--navy)!important}
+.eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:13px;font-weight:600;color:var(--or);background:var(--orl);padding:7px 14px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em}
+.eyebrow.dark{background:rgba(242,106,27,.15);color:var(--or2)}
+.eyebrow.red{background:#FEECEC;color:var(--red)}
+.btn-or{--bs-btn-bg:var(--or);--bs-btn-border-color:var(--or);--bs-btn-color:#fff;--bs-btn-hover-bg:#DD5A0E;--bs-btn-hover-border-color:#DD5A0E;--bs-btn-hover-color:#fff;--bs-btn-active-bg:#C94F0A;--bs-btn-active-color:#fff;font-weight:600;padding:14px 24px;border-radius:12px;box-shadow:0 10px 30px -8px rgba(242,106,27,.6)}
+.btn-ghost{background:#fff;border:1px solid var(--line);font-weight:600;padding:14px 24px;border-radius:12px}
+.sec{padding:100px 0}
+.sh{text-align:center;max-width:780px;margin:0 auto 56px}
+.sh h2{font-size:clamp(32px,4vw,50px);line-height:1.08;margin:18px 0 16px}
+.sh p{font-size:19px;color:var(--mut);line-height:1.6;margin:0}
+.cardx{background:#fff;border:1px solid var(--line);border-radius:20px;height:100%}
+.ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-size:20px;flex:none}
+.note{font-size:12px;color:var(--mut)}
+/* announcement + nav */
+.ann{background:var(--or);color:#fff;text-align:center;font-size:14px;font-weight:600;padding:10px 12px}
+.ann a{color:#fff;text-decoration:none;background:rgba(255,255,255,.2);padding:3px 10px;border-radius:99px;margin-left:8px;white-space:nowrap}
+.navbar{background:var(--navy)}
+.navbar .nav-link{color:#C5CDD9;font-size:15px;padding:8px 14px!important}
+.navbar .nav-link:hover{color:#fff}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:20px;color:#fff;text-decoration:none}
+.brand small{font-weight:500;color:#7F8BA0;font-size:13px}
+.lg{width:40px;height:40px;border-radius:11px;background:var(--or);display:grid;place-items:center}
+/* hero */
+.hero{background:radial-gradient(1000px 500px at 80% 0%,rgba(242,106,27,.28),transparent 60%),var(--navy);color:#fff;padding:70px 0 100px;overflow:hidden}
+.hero h1{font-size:clamp(42px,5.4vw,68px);line-height:1.02;margin:22px 0}
+.hero h1 span{color:var(--or2)}
+.hero .lead{font-size:20px;line-height:1.6;color:#B7C1D0;margin-bottom:30px}
+.leadform{background:#fff;border-radius:18px;padding:22px;color:var(--ink);box-shadow:0 30px 60px -20px rgba(0,0,0,.5)}
+.form-control,.form-select{border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:14px}
+.form-control:focus,.form-select:focus{border-color:var(--or);box-shadow:0 0 0 .2rem rgba(242,106,27,.15)}
+.proof{display:flex;align-items:center;gap:12px;margin-top:22px;font-size:14px;color:#B7C1D0}
+.dots{display:flex;margin-left:8px}.dots i{width:30px;height:30px;border-radius:50%;border:2px solid var(--navy);margin-left:-8px;background:linear-gradient(135deg,var(--or),#7A2E06)}
+.dots i:nth-child(2){background:linear-gradient(135deg,#3B82F6,#1E3A8A)}.dots i:nth-child(3){background:linear-gradient(135deg,#16A34A,#14532D)}
+.inbox{background:#fff;border-radius:18px;color:var(--ink);overflow:hidden;box-shadow:0 40px 80px -20px rgba(0,0,0,.6)}
+.ibh{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line)}
+.flt{display:flex;gap:6px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.flt span{font-size:12px;padding:6px 11px;border-radius:99px;border:1px solid var(--line);color:var(--mut);font-weight:500}
+.flt span.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.oc{display:grid;grid-template-columns:82px 1fr auto;gap:12px;align-items:center;padding:13px 18px;border-bottom:1px solid #F1F3F6;font-size:13px}
+.oc b{font-size:14px}
+.src{font-size:10px;font-weight:700;letter-spacing:.04em;padding:5px 7px;border-radius:6px;text-align:center}
+.s1{background:#FFF1E7;color:#C2410C}.s2{background:#E8F1FF;color:#1D4ED8}.s3{background:#ECFDF3;color:#15803D}.s5{background:#F1F3F6;color:#334155}
+.stt{font-size:11px;font-weight:600;padding:5px 9px;border-radius:99px;white-space:nowrap}
+.new{background:#FEF3C7;color:#92400E}.cook{background:#FFE4D5;color:#C2410C}.rdy{background:#DCFCE7;color:#166534}
+.float-card{position:absolute;background:#fff;color:var(--ink);border-radius:14px;padding:12px 14px;box-shadow:0 20px 40px -12px rgba(0,0,0,.45);font-size:13px;display:flex;gap:10px;align-items:center;z-index:2}
+/* stats */
+.stats{background:#fff;border-bottom:1px solid var(--line);padding:56px 0}
+.stats b{font-size:44px;font-weight:700;letter-spacing:-.02em}
+.stats b em{color:var(--or);font-style:normal}
+.stats p{color:var(--mut);margin:6px 0 0}
+/* problem */
+.pc{padding:30px}
+.pc .ic{width:50px;height:50px;background:#FEECEC;color:var(--red);font-size:22px;margin-bottom:20px}
+.pc h3{font-size:21px;margin-bottom:10px}
+.pc p{color:var(--mut);line-height:1.6;font-size:15.5px}
+.pc .cost{margin-top:18px;padding-top:16px;border-top:1px dashed var(--line);font-size:14px;color:var(--red);font-weight:600}
+/* engine */
+.sol{background:var(--navy);color:#fff}
+.sol .sh p{color:#B7C1D0}
+.ch{background:var(--navy2);border:1px solid var(--line2);border-radius:16px;padding:22px;text-align:center;height:100%}
+.ch .e{font-size:28px}.ch b{display:block;margin:10px 0 4px;font-size:17px}.ch small{color:#9AA6B8;font-size:13px}
+.ch code{display:inline-block;margin-top:10px;font-size:11px;color:var(--or2);background:rgba(242,106,27,.12);padding:3px 8px;border-radius:5px}
+.flow{height:70px}.flow svg{width:100%;height:100%;display:block}
+.core{background:var(--or);border-radius:20px;padding:26px;text-align:center;box-shadow:0 0 90px rgba(242,106,27,.55);max-width:640px;margin:0 auto}
+.core b{font-size:26px}.core p{color:#FFE2CF;margin:6px 0 0;font-size:15px}
+.core .fl{display:flex;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap}
+.core .fl span{background:rgba(255,255,255,.18);font-size:11px;padding:4px 9px;border-radius:6px;font-family:ui-monospace,monospace}
+.out{background:#fff;color:var(--ink);border-radius:14px;padding:18px;display:flex;gap:12px;align-items:center;height:100%}
+.out b{font-size:15px}.out small{display:block;color:var(--mut);font-size:12px}
+/* split features */
+.dd h2{font-size:clamp(30px,3.4vw,42px);line-height:1.1;margin:16px 0}
+.dd p.l{font-size:18px;color:var(--mut);line-height:1.6;margin-bottom:22px}
+.ticks{list-style:none;padding:0;margin:0}
+.ticks li{padding:8px 0;font-size:16px;display:flex;gap:12px}
+.ticks li::before{content:"✓";color:#fff;background:var(--or);width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;flex:none}
+.vis{border-radius:24px;padding:28px;background:linear-gradient(150deg,#FFF6EF,#FFE6D3)}
+.panel{background:#fff;border-radius:16px;padding:18px;font-size:13px;box-shadow:0 20px 40px -20px rgba(0,0,0,.25);height:100%}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F1F3F6}
+.tg{font-size:11px;padding:3px 8px;border-radius:6px;background:#F1F3F6;color:#334155;margin:3px 4px 0 0;display:inline-block}
+.sw{width:34px;height:19px;border-radius:99px;background:var(--grn);position:relative;flex:none}.sw::after{content:"";position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff}
+.sw.off{background:#CBD2DC}.sw.off::after{right:auto;left:2px}
+.bub{padding:10px 13px;border-radius:14px;font-size:12.5px;line-height:1.45;margin:8px 0;max-width:88%}
+.bub.ai{background:var(--navy);color:#fff;border-bottom-left-radius:4px}
+.bub.cu{background:#F1F3F6;margin-left:auto;border-bottom-right-radius:4px}
+.mini-card{padding:26px}
+.mini-card h3{font-size:20px;margin:14px 0 8px}
+.mini-card p{font-size:14.5px;color:var(--mut);line-height:1.55;margin-bottom:18px}
+.mini{background:#F8F9FB;border:1px solid var(--line);border-radius:14px;padding:14px;font-size:12.5px}
+.slot{display:inline-block;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:#fff;margin:4px 3px 0 0;font-weight:600}
+.slot.x{color:#B8BFCA;text-decoration:line-through}.slot.on{background:var(--or);color:#fff;border-color:var(--or)}
+.kt{background:#fff;border:1px solid var(--line);border-left:4px solid var(--or);border-radius:8px;padding:10px;margin-top:8px}
+.role{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
+.ck{color:var(--grn);font-weight:700}.no{color:#C0C6D0}
+/* performance */
+.perf{background:#fff;border:1px solid var(--line);border-radius:24px;padding:30px;box-shadow:0 30px 60px -30px rgba(15,27,45,.25)}
+.kpi{border:1px solid var(--line);border-radius:14px;padding:16px;height:100%}
+.kpi small{font-size:12px;color:var(--mut);font-weight:500}
+.kpi b{display:block;font-size:30px;margin-top:6px;letter-spacing:-.02em}
+.kpi em{font-style:normal;font-size:12px;color:var(--grn);font-weight:600}
+.box{border:1px solid var(--line);border-radius:16px;padding:20px;height:100%}
+.donut{width:150px;height:150px;border-radius:50%;background:conic-gradient(var(--or) 0 36.5%,#1D4ED8 36.5% 75%,#16A34A 75% 100%);display:grid;place-items:center;flex:none}
+.donut::after{content:"$18,742";width:96px;height:96px;border-radius:50%;background:#fff;display:grid;place-items:center;font-weight:700;font-size:17px}
+.leg div{display:flex;justify-content:space-between;gap:18px;font-size:14px;padding:7px 0;border-bottom:1px solid #F1F3F6}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px}
+.mc{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #F1F3F6;font-size:14px}
+.mc .ic{width:30px;height:30px;font-size:13px;border-radius:8px}
+.segs span{font-size:12px;padding:6px 11px;border-radius:99px;border:1px solid var(--line);color:var(--mut);font-weight:500;margin-left:4px}
+.segs span.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+/* map */
+.map{background:#EAF0F6;border-radius:16px;height:340px;position:relative;overflow:hidden;background-image:linear-gradient(#DCE4EE 1px,transparent 1px),linear-gradient(90deg,#DCE4EE 1px,transparent 1px);background-size:40px 40px}
+.pin{position:absolute;padding:8px 12px;border-radius:10px;font-size:12px;font-weight:600;background:#fff;box-shadow:0 8px 20px -8px rgba(0,0,0,.3);z-index:1}
+.pin.on{background:var(--or);color:#fff}.pin.me{background:var(--navy);color:#fff}
+/* integrations */
+.integ{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 10px;text-align:center;font-weight:600;font-size:14px;height:100%}
+.integ small{display:block;margin-top:8px;font-size:11px;font-weight:600}
+.lv{color:var(--grn)}.sn{color:#B45309}
+/* roi */
+.roi{border-radius:26px;overflow:hidden;border:1px solid var(--line)}
+.roil{background:#fff;padding:44px}
+.roil label{display:flex;justify-content:space-between;font-size:15px;font-weight:500;margin-bottom:8px}
+.roil label b{color:var(--or)}
+.form-range{margin-bottom:22px}
+.form-range::-webkit-slider-runnable-track{background:#EEF0F3;height:8px;border-radius:6px}
+.form-range::-webkit-slider-thumb{background:#fff;border:3px solid var(--or);width:20px;height:20px;margin-top:-6px}
+.form-range::-moz-range-thumb{background:#fff;border:3px solid var(--or)}
+.roir{background:var(--navy);color:#fff;padding:44px;height:100%}
+.big{font-size:clamp(44px,5vw,64px);font-weight:800;color:var(--or2);letter-spacing:-.03em;line-height:1.1}
+.rr{display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--line2);color:#C5CDD9}
+.rr b{color:#fff}
+/* case study */
+.cs{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.csb{border-radius:26px;overflow:hidden;border:1px solid var(--line)}
+.csl{background:var(--navy);color:#fff;padding:48px;height:100%}
+.csl .tag{font-size:12px;letter-spacing:.08em;color:var(--or2);font-weight:700}
+.csl h3{font-size:clamp(26px,2.6vw,34px);line-height:1.15;margin:14px 0 18px}
+.csl p{color:#B7C1D0;line-height:1.65;font-size:16px}
+.meta{background:var(--navy2);border:1px solid var(--line2);border-radius:12px;padding:14px;font-size:13px;color:#9AA6B8;height:100%}
+.meta b{display:block;color:#fff;font-size:15px;margin-top:4px}
+.csr{padding:48px;background:#FCFCFB;height:100%}
+.res{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px;height:100%}
+.res b{font-size:40px;color:var(--or);display:block;letter-spacing:-.02em}
+.res span{font-size:14px;color:var(--mut)}
+.bar{display:flex;align-items:center;gap:12px;margin:10px 0;font-size:13px}
+.bar label{width:110px;color:var(--mut)}
+.bar .tr{flex:1;height:12px;background:#F1F3F6;border-radius:6px;overflow:hidden}
+.bar .tr i{display:block;height:100%;border-radius:6px}
+.quote{margin-top:28px;padding:36px 44px;border-radius:22px;background:var(--orl);display:flex;gap:28px;align-items:center}
+.quote p{font-size:22px;line-height:1.5;font-weight:500;letter-spacing:-.01em;margin:0}
+.av{width:70px;height:70px;border-radius:50%;background:linear-gradient(135deg,var(--or),#7A2E06);flex:none;display:grid;place-items:center;color:#fff;font-weight:700;font-size:22px}
+/* audit */
+.report{background:#fff;border:1px solid var(--line);border-radius:20px;padding:26px;box-shadow:0 30px 60px -30px rgba(15,27,45,.3)}
+.ring{width:84px;height:84px;border-radius:50%;background:conic-gradient(var(--red) 0 42%,#F1F3F6 42%);display:grid;place-items:center;flex:none}
+.ring::after{content:"42";width:64px;height:64px;border-radius:50%;background:#fff;display:grid;place-items:center;font-weight:800;font-size:24px;color:var(--red)}
+.ai2{display:flex;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid #F1F3F6;font-size:14px}
+.bad{color:var(--red);font-weight:600}.ok{color:var(--grn);font-weight:600}.mid{color:#B45309;font-weight:600}
+.pilot{background:var(--orl);border:1px dashed var(--or);border-radius:14px;padding:16px 18px;margin-top:18px;font-size:14px}
+.spots{display:flex;gap:6px;margin-top:10px}.spots i{flex:1;height:8px;border-radius:4px;background:var(--or)}.spots i.f{background:#F6D3BC}
+/* steps */
+.st{padding:28px}
+.st .n{width:46px;height:46px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:700;margin-bottom:18px}
+.st h3{font-size:19px;margin-bottom:8px}.st p{color:var(--mut);font-size:15px;line-height:1.55;margin:0}
+.st .t{margin-top:14px;font-size:13px;font-weight:600;color:var(--or)}
+/* pricing */
+.pp{padding:36px;display:flex;flex-direction:column}
+.pp h3{font-size:22px;margin:0}
+.pp .pz{font-size:48px;font-weight:700;margin:16px 0 4px;letter-spacing:-.02em}
+.pp .pz small{font-size:16px;color:var(--mut);font-weight:500}
+.pp ul{list-style:none;padding:0;margin:24px 0 28px;flex:1}
+.pp li{padding:8px 0;font-size:15px;color:#334155}
+.pp li::before{content:"✓  ";color:var(--or);font-weight:700}
+.pp.hot{background:var(--navy);color:#fff;border-color:var(--navy);box-shadow:0 30px 60px -20px rgba(15,27,45,.5)}
+.pp.hot li{color:#C5CDD9}
+@media(min-width:992px){.pp.hot{transform:scale(1.04)}}
+/* faq */
+.accordion{--bs-accordion-border-color:var(--line);--bs-accordion-active-bg:#fff;--bs-accordion-active-color:var(--ink);--bs-accordion-btn-focus-box-shadow:none;--bs-accordion-border-radius:16px;--bs-accordion-inner-border-radius:16px}
+.accordion-item{border-radius:16px!important;margin-bottom:12px;border:1px solid var(--line)!important;overflow:hidden}
+.accordion-button{font-weight:600;font-size:17px;padding:22px 26px}
+.accordion-body{color:var(--mut);line-height:1.6;padding:0 26px 22px}
+/* cta */
+.cta{background:linear-gradient(120deg,#2A2320,#C2580F);border-radius:30px;padding:clamp(28px,5vw,64px);color:#fff}
+.cta h2{font-size:clamp(32px,3.6vw,46px);line-height:1.08;margin-bottom:16px}
+.cta p{color:#F5D9C6;font-size:18px;line-height:1.6}
+.tb{background:rgba(255,255,255,.1);border-radius:12px;padding:14px;font-size:14px;height:100%}
+.tb b{display:block;font-size:15px;margin-bottom:3px}
+.demo{background:#fff;border-radius:20px;padding:28px;color:var(--ink)}
+.lbl{font-size:12px;font-weight:600;color:#334155;margin:6px 0 8px}
+.chip-check{display:none}
+.chip{display:inline-block;font-size:12px;padding:7px 11px;border:1px solid var(--line);border-radius:99px;margin:0 6px 8px 0;color:#334155;cursor:pointer;user-select:none}
+.chip-check:checked+.chip{background:var(--orl);border-color:var(--or);color:var(--or);font-weight:600}
+footer{background:var(--navy);color:#9AA6B8;padding:70px 0 40px;margin-top:100px}
+footer h5{color:#fff;font-size:15px;margin-bottom:16px}
+footer ul{list-style:none;padding:0}footer li{padding:5px 0;font-size:14px}
+footer a{color:inherit;text-decoration:none}
+/* responsive */
+@media(max-width:991.98px){
+ .sec{padding:70px 0}
+ .hero{padding:50px 0 70px}
+ .float-card{display:none}
+ .flow{display:none}
+ .core{margin:20px auto}
+ .roil,.roir,.csl,.csr{padding:28px}
+ .quote{flex-direction:column;text-align:center;padding:28px}
+}
+@media(max-width:991.98px){.row.g-5{--bs-gutter-x:1.5rem;--bs-gutter-y:2rem}}
+@media(max-width:575.98px){
+ .oc{grid-template-columns:70px 1fr;}.oc .stt{grid-column:2;justify-self:start}
+ .stats b{font-size:28px}
+}
+</style>
+</head>
+<body>
+
+<div class="ann">🗽 Now onboarding 10 founding pilot restaurants in New York City — free setup on your own menu <a href="#audit">4 spots left →</a></div>
+
+<nav class="navbar navbar-expand-lg navbar-dark py-3">
+ <div class="container">
+  <a class="brand" href="#"><span class="lg">🍴</span>AI Restaurant <small>by Qubetech</small></a>
+  <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+  <div class="collapse navbar-collapse" id="nav">
+   <ul class="navbar-nav mx-auto">
+    <li class="nav-item"><a class="nav-link" href="#how">How it works</a></li>
+    <li class="nav-item"><a class="nav-link" href="#engine">Order Engine</a></li>
+    <li class="nav-item"><a class="nav-link" href="#ai">AI Receptionist</a></li>
+    <li class="nav-item"><a class="nav-link" href="#results">Results</a></li>
+    <li class="nav-item"><a class="nav-link" href="#roi">ROI</a></li>
+    <li class="nav-item"><a class="nav-link" href="#pricing">Pricing</a></li>
+   </ul>
+   <div class="d-flex align-items-center gap-3">
+    <a href="tel:+12025550148" class="text-decoration-none" style="color:#C5CDD9">📞 (202) 555-0148</a>
+    <a href="#audit" class="btn btn-or py-2 px-3">Get Free Audit</a>
+   </div>
+  </div>
+ </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+ <div class="container">
+  <div class="row g-5 align-items-start">
+   <div class="col-lg-6">
+    <span class="eyebrow dark">● The AI restaurant operating system</span>
+    <h1>Never miss a restaurant <span>order</span> again.</h1>
+    <p class="lead">Our AI answers every call, takes pickup orders, books tables, and sends phone, QR, website and staff orders straight to your kitchen — in one order inbox.</p>
+    <form class="leadform" action="#" method="post">
+     <div class="fw-bold" style="font-size:17px">Get a free Missed-Call Audit of your restaurant</div>
+     <p class="text-mut mb-3" style="font-size:13px">We call your restaurant like a real customer at peak hours and send you a report — free, in 48 hours.</p>
+     <div class="row g-2">
+      <div class="col-sm-6"><input class="form-control" name="restaurant" placeholder="Restaurant name" required></div>
+      <div class="col-sm-6"><input class="form-control" name="phone" type="tel" placeholder="Your phone" required></div>
+      <div class="col-sm-6"><input class="form-control" name="email" type="email" placeholder="Work email" required></div>
+      <div class="col-sm-6"><select class="form-select" name="locations"><option>Locations: 1</option><option>2–3</option><option>4–5</option><option>6+</option></select></div>
+      <div class="col-12"><button class="btn btn-or w-100" type="submit">Send My Free Audit →</button></div>
+     </div>
+     <div class="text-center text-mut mt-2" style="font-size:12px">No credit card · No POS change · Takes 30 seconds</div>
+    </form>
+    <div class="proof"><div class="dots"><i></i><i></i><i></i></div><span><b class="text-white">Built for independent restaurants</b> · 1–5 locations · 20–150 seats</span></div>
+   </div>
+   <div class="col-lg-6">
+    <div class="position-relative mt-lg-4">
+     <div class="float-card" style="right:-30px;top:-62px"><div class="ic" style="background:var(--orl);width:34px;height:34px;font-size:16px">💰</div><div><b>+$1,420</b> captured this week<br><span class="text-mut">from calls staff couldn't take</span></div></div>
+     <div class="inbox">
+      <div class="ibh"><div><b style="font-size:16px">One Order Inbox</b><div class="text-mut" style="font-size:12px">All channels · Live</div></div><span class="stt rdy">● 4 new orders</span></div>
+      <div class="flt"><span class="on">All</span><span>📞 Phone</span><span>📱 QR</span><span>🌐 Website</span><span>👨‍🍳 Staff</span><span>Pickup</span><span>Dine-in</span><span>Delivery</span></div>
+      <div class="oc"><span class="src s1">PHONE AI</span><div><b>#1042</b> · 2× Chicken Burger, 1× Coke<br><span class="text-mut">Pickup · ready in 10 min · Mike R.</span></div><span class="stt new">NEW</span></div>
+      <div class="oc"><span class="src s2">TABLE QR</span><div><b>#1043</b> · 2× Steak, 1× Caesar Salad<br><span class="text-mut">Dine-in · Table 18</span></div><span class="stt cook">COOKING</span></div>
+      <div class="oc"><span class="src s3">WEBSITE</span><div><b>#1044</b> · 3× Margherita Pizza<br><span class="text-mut">Pickup · 6:45 PM</span></div><span class="stt new">NEW</span></div>
+      <div class="oc"><span class="src s1">PHONE AI</span><div><b>#1045</b> · 1× Lobster Roll, 2× Fries<br><span class="text-mut">Delivery · Brooklyn</span></div><span class="stt rdy">READY</span></div>
+      <div class="oc border-0"><span class="src s5">WAITER</span><div><b>#1046</b> · 4× Dinner Special<br><span class="text-mut">Dine-in · Table 7</span></div><span class="stt cook">COOKING</span></div>
+     </div>
+     <div class="float-card" style="left:-50px;bottom:-78px"><div class="ic" style="background:#E8F7EE;width:34px;height:34px;font-size:16px">📞</div><div><b>AI answered call #47 tonight</b><br><span class="text-mut">Reservation · 4 guests · 8:00 PM</span></div></div>
+    </div>
+   </div>
+  </div>
+ </div>
+</section>
+
+<!-- STATS -->
+<section class="stats">
+ <div class="container">
+  <div class="row g-4 text-center">
+   <div class="col-6 col-lg-3"><b>24<em>/</em>7</b><p>Calls answered, even at 8 PM Friday rush</p></div>
+   <div class="col-6 col-lg-3"><b>4 <em>channels</em></b><p>Phone · QR · Website · Staff</p></div>
+   <div class="col-6 col-lg-3"><b>1 <em>inbox</em></b><p>Every order, one kitchen workflow</p></div>
+   <div class="col-6 col-lg-3"><b>10 <em>min</em></b><p>Demo built on your actual menu</p></div>
+  </div>
+ </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="sec" id="problem">
+ <div class="container">
+  <div class="sh"><span class="eyebrow red">The Problem</span><h2>A full dining room can still lose customers — because nobody answers the phone.</h2><p>Independent restaurants are fighting labor costs, rising prices and too many disconnected tools. The leaks are hard to see.</p></div>
+  <div class="row g-4">
+   <div class="col-md-6 col-lg-4"><div class="cardx pc"><div class="ic">📵</div><h3>Unanswered calls at rush</h3><p>When the host is seating guests, the phone rings out. That caller orders from the place down the block.</p><div class="cost">Every missed call is a missed ticket</div></div></div>
+   <div class="col-md-6 col-lg-4"><div class="cardx pc"><div class="ic">🧩</div><h3>Orders in 3 different places</h3><p>Phone notes, a QR app and a website plugin — each with its own screen, and none talk to the kitchen.</p><div class="cost">Lost tickets, double entry, delays</div></div></div>
+   <div class="col-md-6 col-lg-4"><div class="cardx pc"><div class="ic">✍️</div><h3>Wrong orders, wrong modifiers</h3><p>"No onion, extra cheese, thin crust" gets lost between the phone and the kitchen. Remakes and refunds follow.</p><div class="cost">Remakes eat your margin</div></div></div>
+   <div class="col-md-6 col-lg-4"><div class="cardx pc"><div class="ic">🦞</div><h3>Selling what you're out of</h3><p>Staff and apps keep taking orders for items the kitchen ran out of an hour ago. Then someone has to call back.</p><div class="cost">Awkward callbacks &amp; bad reviews</div></div></div>
+   <div class="col-md-6 col-lg-4"><div class="cardx pc"><div class="ic">📒</div><h3>Reservations in a notebook</h3><p>Double bookings, no-shows and no idea who your regulars are or how often they come back.</p><div class="cost">No customer history</div></div></div>
+   <div class="col-md-6 col-lg-4"><div class="cardx pc"><div class="ic">💸</div><h3>No idea what's working</h3><p>You can't see how many calls you missed, which channel brings revenue, or what your staff time is worth.</p><div class="cost">Decisions made on gut feel</div></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- ORDER ENGINE -->
+<section class="sec sol" id="engine">
+ <div class="container">
+  <div class="sh"><span class="eyebrow dark">Every Order. One Kitchen.</span><h2>Every customer channel flows into one Order Engine.</h2><p>No more separate systems. Phone, QR, website and waiter orders all become the same order — with the same status, in the same kitchen workflow.</p></div>
+  <div class="row g-3">
+   <div class="col-6 col-lg-3"><div class="ch"><div class="e">📞</div><b>Phone</b><small>AI Receptionist takes the order</small><br><code>PHONE_AI</code></div></div>
+   <div class="col-6 col-lg-3"><div class="ch"><div class="e">📱</div><b>QR Table</b><small>Guests order from their seat</small><br><code>QR_TABLE</code></div></div>
+   <div class="col-6 col-lg-3"><div class="ch"><div class="e">🌐</div><b>Website</b><small>Online pickup &amp; delivery</small><br><code>WEBSITE</code></div></div>
+   <div class="col-6 col-lg-3"><div class="ch"><div class="e">👨‍🍳</div><b>Staff</b><small>Waiter enters at the table</small><br><code>STAFF</code></div></div>
+  </div>
+  <div class="flow"><svg viewBox="0 0 1200 70" preserveAspectRatio="none" aria-hidden="true"><g stroke="#F26A1B" stroke-width="2" fill="none" stroke-dasharray="6 6"><path d="M150 0 C150 40 600 30 600 70"/><path d="M450 0 C450 40 600 30 600 70"/><path d="M750 0 C750 40 600 30 600 70"/><path d="M1050 0 C1050 40 600 30 600 70"/></g></svg></div>
+  <div class="core"><b>⚙️ ONE ORDER ENGINE</b><p>Every order gets the same structure, status and audit trail</p>
+   <div class="fl"><span>order_id</span><span>branch_id</span><span>source</span><span>customer</span><span>order_type</span><span>items + modifiers</span><span>table</span><span>payment_status</span><span>order_status</span></div></div>
+  <div class="flow"><svg viewBox="0 0 1200 70" preserveAspectRatio="none" aria-hidden="true"><g stroke="#F26A1B" stroke-width="2" fill="none" stroke-dasharray="6 6"><path d="M600 0 C600 40 150 30 150 70"/><path d="M600 0 C600 40 450 30 450 70"/><path d="M600 0 C600 40 750 30 750 70"/><path d="M600 0 C600 40 1050 30 1050 70"/></g></svg></div>
+  <div class="row g-3">
+   <div class="col-6 col-lg-3"><div class="out"><div class="ic" style="background:var(--orl)">🔥</div><div><b>Kitchen</b><small>KDS screen or printer</small></div></div></div>
+   <div class="col-6 col-lg-3"><div class="out"><div class="ic" style="background:#E8F1FF">🛎️</div><div><b>Front Desk</b><small>Staff dashboard &amp; tables</small></div></div></div>
+   <div class="col-6 col-lg-3"><div class="out"><div class="ic" style="background:#ECFDF3">👤</div><div><b>Customers</b><small>History &amp; reservations</small></div></div></div>
+   <div class="col-6 col-lg-3"><div class="out"><div class="ic" style="background:#F3E8FF">📊</div><div><b>Owner Dashboard</b><small>Analytics &amp; revenue</small></div></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- AI BRAIN -->
+<section class="sec" id="ai">
+ <div class="container">
+  <div class="row g-5 align-items-center dd mb-5 pb-4">
+   <div class="col-lg-6">
+    <span class="eyebrow">The AI Restaurant Brain</span>
+    <h2>An AI that knows your menu — down to the last modifier.</h2>
+    <p class="l">We don't just upload a PDF menu. Your AI works from structured data: items, sizes, modifiers, combos, hours, policies — and what's sold out right now.</p>
+    <ul class="ticks"><li>Sizes, crusts, add-ons &amp; "no onion" handled correctly</li><li>86'd items switch off in one tap — AI offers an alternative</li><li>Reads back the full order &amp; total before submitting</li><li>Never invents prices, items or reservation slots</li><li>Hands off to your team when it isn't sure</li></ul>
+   </div>
+   <div class="col-lg-6">
+    <div class="vis"><div class="row g-3">
+     <div class="col-sm-6"><div class="panel"><b style="font-size:14px">Menu · Live availability</b>
+      <div class="mrow"><div><b>Large Chicken Pizza</b> · $19.99<br><span class="tg">Thin</span><span class="tg">Stuffed</span><span class="tg">+ Extra cheese</span><span class="tg">No onion</span></div><span class="sw"></span></div>
+      <div class="mrow"><div><b>Lobster Pasta</b> · $32.00<br><span style="color:var(--red);font-size:11px;font-weight:600">Sold out today</span></div><span class="sw off"></span></div>
+      <div class="mrow"><div><b>Shrimp Pasta</b> · $26.00<br><span class="tg">Spicy</span><span class="tg">Gluten-free</span></div><span class="sw"></span></div>
+      <div class="mrow border-0"><div><b>Caesar Salad</b> · $12.50<br><span class="tg">+ Chicken $5</span></div><span class="sw"></span></div>
+     </div></div>
+     <div class="col-sm-6"><div class="panel"><div style="font-size:12px;color:var(--grn);font-weight:600">● AI Receptionist · live call</div>
+      <div class="bub cu">I'd like the lobster pasta.</div>
+      <div class="bub ai">Sorry, the lobster pasta is sold out today. Our shrimp pasta is very popular — would you like that instead?</div>
+      <div class="bub cu">Sure, plus a large chicken pizza, extra cheese, no onions.</div>
+      <div class="bub ai">To confirm: 1 shrimp pasta, 1 large chicken pizza with extra cheese and no onions. Pickup total $45.99 before tax. Correct?</div>
+      <div class="text-center fw-bold mt-2" style="font-size:11px;color:var(--grn)">✓ CONFIRMED → SENT TO KITCHEN #1047</div>
+     </div></div>
+    </div></div>
+   </div>
+  </div>
+
+  <div class="row g-4">
+   <div class="col-lg-4"><div class="cardx mini-card"><span class="eyebrow" style="font-size:11px">Reservations</span><h3>Real availability, never double-booked</h3><p>AI only confirms slots your system actually has, and offers the nearest times if a slot is full.</p>
+    <div class="mini"><b>Fri, Oct 9 · Party of 4</b><br><span class="slot x">7:00</span><span class="slot x">7:30</span><span class="slot on">7:45</span><span class="slot">8:00</span><span class="slot">8:30</span><div class="text-mut mt-2">Name, phone &amp; requests captured · SMS reminder sent</div></div></div></div>
+   <div class="col-lg-4"><div class="cardx mini-card"><span class="eyebrow" style="font-size:11px">Kitchen Routing</span><h3>Straight to the right station</h3><p>Tickets go to KDS screens or printers by station and location, with live status back to the front desk.</p>
+    <div class="mini"><div class="kt"><b>#1047 · PHONE AI · Pickup 7:10</b><br>1× Shrimp Pasta · 1× L Chicken Pizza<br><span style="color:var(--red)">Extra cheese · NO ONION</span></div><div class="kt" style="border-left-color:#1D4ED8"><b>#1043 · TABLE 18</b><br>2× Steak (MR, M) · 1× Caesar</div></div></div></div>
+   <div class="col-lg-4"><div class="cardx mini-card"><span class="eyebrow" style="font-size:11px">Staff Roles &amp; Audit Log</span><h3>The right access for every role</h3><p>Owners, managers, hosts, waiters and kitchen each see only what they need. Every change is logged.</p>
+    <div class="mini"><div class="role"><b>Permission</b><span>Owner · Mgr · Host · Kitchen</span></div><div class="role"><span>Refunds</span><span><span class="ck">✓</span> &nbsp;<span class="ck">✓</span> &nbsp;<span class="no">—</span> &nbsp;<span class="no">—</span></span></div><div class="role"><span>Edit menu / 86 items</span><span><span class="ck">✓</span> &nbsp;<span class="ck">✓</span> &nbsp;<span class="no">—</span> &nbsp;<span class="ck">✓</span></span></div><div class="role border-0"><span>Reservations</span><span><span class="ck">✓</span> &nbsp;<span class="ck">✓</span> &nbsp;<span class="ck">✓</span> &nbsp;<span class="no">—</span></span></div><div class="text-mut mt-2">🕑 6:42 PM · Sam (Manager) marked Lobster Pasta sold out</div></div></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- RESULTS DASHBOARD -->
+<section class="sec cs" id="results">
+ <div class="container">
+  <div class="sh"><span class="eyebrow">Sell the money, not the tech</span><h2>See exactly what the AI earns you — every month.</h2><p>Your owner dashboard shows calls handled, orders captured, revenue by channel and the missed calls the AI recovered.</p></div>
+  <div class="perf">
+   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4"><div><b style="font-size:20px">Restaurant AI Performance</b><div class="text-mut" style="font-size:14px">This month · All locations</div></div><div class="segs"><span>7D</span><span class="on">30D</span><span>90D</span></div></div>
+   <div class="row g-3">
+    <div class="col-6 col-lg-3"><div class="kpi"><small>📞 Calls received</small><b>1,284</b><em>▲ 12% vs last month</em></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi"><small>🤖 Calls handled by AI</small><b>1,173</b><em>91% of all calls</em></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi"><small>🍔 Orders captured by AI</small><b>287</b><em>▲ 18%</em></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi"><small>🍽 Reservations booked</small><b>164</b><em>▲ 9%</em></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi"><small>📱 QR table orders</small><b>421</b><em>▲ 22%</em></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi"><small>💰 Total order value</small><b>$18,742</b><em>▲ 15%</em></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi"><small>⏱ Staff interactions automated</small><b>932</b><em>≈ 78 staff hours</em></div></div>
+    <div class="col-6 col-lg-3"><div class="kpi"><small>⚠️ Escalated to staff</small><b>41</b><em class="text-mut">3.5% of calls</em></div></div>
+   </div>
+   <div class="row g-3 mt-1">
+    <div class="col-lg-7"><div class="box"><b>Revenue attribution</b><div class="d-flex flex-wrap gap-4 align-items-center mt-3"><div class="donut"></div><div class="leg flex-grow-1"><div><span><i style="background:var(--or)"></i>AI phone orders</span><b>$6,840</b></div><div><span><i style="background:#1D4ED8"></i>QR table orders</span><b>$7,210</b></div><div><span><i style="background:var(--grn)"></i>Website orders</span><b>$4,692</b></div></div></div></div></div>
+    <div class="col-lg-5"><div class="box"><b>Missed-call recovery</b><div class="text-mut" style="font-size:13px;margin:4px 0 8px">Calls staff couldn't take before go-live (baseline month)</div>
+     <div class="mc"><span class="ic" style="background:#FEECEC">📵</span><span class="flex-grow-1">Calls missed</span><b>18</b></div>
+     <div class="mc"><span class="ic" style="background:#FEF3C7">🔁</span><span class="flex-grow-1">Called back again</span><b>8</b></div>
+     <div class="mc"><span class="ic" style="background:#FEECEC">🏃</span><span class="flex-grow-1">Ordered elsewhere</span><b>5</b></div>
+     <div class="mt-3 fw-semibold" style="background:#ECFDF3;color:#166534;padding:12px;border-radius:10px;font-size:14px">Now: 0 missed · est. $1,420 order value recovered</div></div></div>
+   </div>
+  </div>
+  <p class="note text-center mt-3">Dashboard shown with sample data.</p>
+ </div>
+</section>
+
+<!-- MULTI-LOCATION -->
+<section class="sec">
+ <div class="container">
+  <div class="row g-5 align-items-center dd">
+   <div class="col-lg-6 order-2 order-lg-1"><div class="vis" style="background:linear-gradient(150deg,#EEF3F8,#DFE8F2)"><div class="map">
+    <div class="pin" style="left:60px;top:50px">Midtown · 3.9 km</div>
+    <div class="pin on" style="left:40%;top:170px">✓ Williamsburg · 1.2 km</div>
+    <div class="pin" style="right:30px;top:60px">Astoria · 7.4 km</div>
+    <div class="pin me" style="left:120px;bottom:40px">📍 Customer</div>
+    <svg width="100%" height="100%" style="position:absolute;inset:0" aria-hidden="true"><path d="M175 300 Q 220 250 300 200" stroke="#F26A1B" stroke-width="4" stroke-dasharray="8 6" fill="none"/></svg>
+   </div></div></div>
+   <div class="col-lg-6 order-1 order-lg-2"><span class="eyebrow">Multi-location + Customer history</span><h2>Run every location and know every guest.</h2><p class="l">Orders route to the nearest location automatically. Each guest gets a profile with order history, favorites and visit frequency — so regulars feel like regulars.</p>
+    <ul class="ticks"><li>Nearest-location routing for pickup &amp; delivery</li><li>Per-location menus, hours and availability</li><li>One owner view across all locations</li><li>Customer history, favorites &amp; lifetime value</li></ul></div>
+  </div>
+ </div>
+</section>
+
+<!-- INTEGRATIONS -->
+<section class="sec pt-0">
+ <div class="container">
+  <div class="sh"><span class="eyebrow">Keep your POS</span><h2>We automate around what you already use.</h2><p>No rip-and-replace. AI Restaurant handles calls, reservations, QR and online ordering — and your existing POS stays where it is.</p></div>
+  <div class="row g-3">
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">📞 Phone line<small class="lv">● Live</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">📱 QR ordering<small class="lv">● Live</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">🌐 Website ordering<small class="lv">● Live</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">🖨️ Kitchen printer / KDS<small class="lv">● Live</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">📅 Reservations<small class="lv">● Live</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">✉️ SMS alerts<small class="sn">● Rolling out</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">🧾 Square<small class="sn">● On roadmap</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">🍞 Toast<small class="sn">● On roadmap</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">⭐ Clover<small class="sn">● On roadmap</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">💳 Stripe payments<small class="sn">● On roadmap</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">🛵 Delivery partners<small class="sn">● On roadmap</small></div></div>
+   <div class="col-6 col-md-4 col-lg-2"><div class="integ">🎁 Loyalty<small class="sn">● On roadmap</small></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- ROI -->
+<section class="sec pt-0" id="roi">
+ <div class="container">
+  <div class="sh"><span class="eyebrow">ROI Calculator</span><h2>What are missed calls costing you?</h2><p>Move the sliders to match your restaurant. Most owners are surprised.</p></div>
+  <div class="roi row g-0">
+   <div class="col-lg-6 roil">
+    <label for="calls">Calls per day <b id="callsV">60</b></label><input type="range" class="form-range" id="calls" min="10" max="200" step="5" value="60">
+    <label for="missed">% of calls missed at peak <b id="missedV">20%</b></label><input type="range" class="form-range" id="missed" min="5" max="50" value="20">
+    <label for="aov">Average order value <b id="aovV">$38</b></label><input type="range" class="form-range" id="aov" min="10" max="120" value="38">
+    <label for="orderPct">% of calls that are orders <b id="orderPctV">40%</b></label><input type="range" class="form-range" id="orderPct" min="10" max="80" value="40">
+    <label for="hours">Hours staff spend on the phone / day <b id="hoursV">4 hrs</b></label><input type="range" class="form-range mb-0" id="hours" min="1" max="12" value="4">
+   </div>
+   <div class="col-lg-6"><div class="roir"><div style="color:#9AA6B8;font-size:15px">Estimated revenue at risk from missed calls</div>
+    <div class="big"><span id="risk">$5,472</span><span style="font-size:22px;color:#9AA6B8">/mo</span></div>
+    <div class="rr"><span>Missed order calls / month</span><b id="mcalls">144</b></div>
+    <div class="rr"><span>Staff phone hours freed / month</span><b id="hfree">120 hrs</b></div>
+    <div class="rr"><span>AI Restaurant Growth plan</span><b>$599/mo</b></div>
+    <div class="rr border-0"><span>Potential monthly upside</span><b style="color:var(--or2)" id="mult">≈ 9× the plan cost</b></div>
+    <a href="#demo" class="btn btn-or w-100 mt-3">Email Me This Report →</a>
+    <div class="text-center mt-2" style="font-size:12px;color:#7F8BA0">Estimate based on your inputs — not a guarantee.</div>
+   </div></div>
+  </div>
+ </div>
+</section>
+
+<!-- CASE STUDY -->
+<section class="sec cs" id="case">
+ <div class="container">
+  <div class="sh"><span class="eyebrow">Pilot Case Study</span><h2>How a 3-location restaurant stopped missing orders.</h2><p>One shared phone line, handwritten tickets and a paper reservation book — replaced in 7 days.</p></div>
+  <div class="csb row g-0">
+   <div class="col-lg-6"><div class="csl"><div class="tag">INDEPENDENT · 3 LOCATIONS · CASUAL DINING</div>
+    <h3>Royal Restaurant: every call answered, +38% phone revenue, zero new hires.</h3>
+    <p>During Friday and weekend rush, calls went unanswered, orders were written by hand and deliveries were sent from the wrong location. Reservations lived in a notebook.</p>
+    <p>They moved phone, QR and website ordering into one Order Engine with the AI Receptionist on the main line — while keeping their existing POS.</p>
+    <div class="row g-3 mt-2"><div class="col-4"><div class="meta">Locations<b>3</b></div></div><div class="col-4"><div class="meta">Go-live<b>7 days</b></div></div><div class="col-4"><div class="meta">Channels<b>Phone · QR · Web</b></div></div></div>
+   </div></div>
+   <div class="col-lg-6"><div class="csr">
+    <div class="row g-3">
+     <div class="col-6"><div class="res"><b>100%</b><span>Calls answered at peak</span></div></div>
+     <div class="col-6"><div class="res"><b>+38%</b><span>Revenue from phone orders</span></div></div>
+     <div class="col-6"><div class="res"><b>-62%</b><span>Order errors &amp; remakes</span></div></div>
+     <div class="col-6"><div class="res"><b>78 hrs</b><span>Staff phone time saved / mo</span></div></div>
+    </div>
+    <div class="res mt-3" style="height:auto"><b style="font-size:15px;color:var(--ink)">Before vs after · weekly</b>
+     <div class="bar"><label>Calls answered</label><div class="tr"><i style="width:64%;background:#C9CED6"></i></div><span style="width:40px">64%</span></div>
+     <div class="bar"><label></label><div class="tr"><i style="width:100%;background:var(--or)"></i></div><span style="width:40px">100%</span></div>
+     <div class="bar"><label>Repeat guests</label><div class="tr"><i style="width:22%;background:#C9CED6"></i></div><span style="width:40px">22%</span></div>
+     <div class="bar"><label></label><div class="tr"><i style="width:41%;background:var(--or)"></i></div><span style="width:40px">41%</span></div>
+     <div class="d-flex gap-3 text-mut mt-2" style="font-size:12px"><span>■ Before</span><span class="text-or">■ After AI Restaurant</span></div>
+    </div>
+   </div></div>
+  </div>
+  <div class="quote"><div class="av">R</div><div><p>"Friday nights used to mean ringing phones and angry customers. Now every order lands in one inbox and goes straight to the kitchen."</p><div class="mt-2 text-mut" style="font-size:14px"><b class="text-dark">Owner</b> · Royal Restaurant</div></div></div>
+  <!-- TODO: replace figures and quote with verified pilot results before publishing -->
+ </div>
+</section>
+
+<!-- FREE AUDIT -->
+<section class="sec" id="audit">
+ <div class="container">
+  <div class="row g-5 align-items-center">
+   <div class="col-lg-6"><span class="eyebrow">Free Missed-Call Audit</span><h2 style="font-size:clamp(32px,3.6vw,46px);line-height:1.08;margin:16px 0">We'll call your restaurant like a real customer — and show you what we find.</h2>
+    <p class="text-mut" style="font-size:18px;line-height:1.6">At your busiest hours we try to book a table, place a pickup order and ask a menu question. You get a scored report in 48 hours — and a demo of the AI handling the same calls, on your own menu.</p>
+    <div class="pilot"><b>🗽 NYC Founding Pilot Program</b> — free setup, founding price locked for 12 months, direct line to our product team.<div class="spots"><i></i><i></i><i></i><i></i><i></i><i></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></div><div class="text-mut mt-1" style="font-size:12px">6 of 10 pilot spots taken</div></div>
+    <a href="#demo" class="btn btn-or mt-4">Request My Free Audit →</a></div>
+   <div class="col-lg-6"><div class="report"><div class="d-flex align-items-center gap-3 pb-3" style="border-bottom:1px solid var(--line)"><div class="ring"></div><div><b style="font-size:18px">Phone Experience Score</b><div class="text-mut" style="font-size:14px">Sample audit · Fri 7:30 PM peak</div></div></div>
+    <div class="ai2"><span>Call 1 — Table for 4 tonight</span><span class="bad">Not answered</span></div>
+    <div class="ai2"><span>Call 2 — Pickup order</span><span class="mid">Answered after 6 rings</span></div>
+    <div class="ai2"><span>Call 3 — "What's in the chicken pasta?"</span><span class="mid">Put on hold 2 min</span></div>
+    <div class="ai2"><span>Online ordering available</span><span class="bad">No</span></div>
+    <div class="ai2"><span>Reservation booking online</span><span class="ok">Yes</span></div>
+    <div class="ai2 border-0"><span>Estimated orders at risk / month</span><b>~140</b></div>
+    <div class="mt-2" style="background:var(--navy);color:#fff;border-radius:12px;padding:14px;font-size:14px">💡 Recommendation: AI Receptionist on main line + QR ordering for 24 tables</div>
+   </div></div>
+  </div>
+ </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="sec pt-0" id="how">
+ <div class="container">
+  <div class="sh"><span class="eyebrow">How It Works</span><h2>From audit to live in 7 days.</h2></div>
+  <div class="row g-4">
+   <div class="col-md-6 col-lg-3"><div class="cardx st"><div class="n">1</div><h3>Free audit &amp; 10-min demo</h3><p>We mystery-call your restaurant, then show the AI taking the same calls on your menu.</p><div class="t">Day 1</div></div></div>
+   <div class="col-md-6 col-lg-3"><div class="cardx st"><div class="n">2</div><h3>Menu &amp; tables loaded</h3><p>We structure your menu, modifiers, combos, hours, tables and locations.</p><div class="t">Day 2–4</div></div></div>
+   <div class="col-md-6 col-lg-3"><div class="cardx st"><div class="n">3</div><h3>AI trained &amp; tested</h3><p>Your receptionist learns your FAQs and policies. You test-call it until you're happy.</p><div class="t">Day 5–6</div></div></div>
+   <div class="col-md-6 col-lg-3"><div class="cardx st"><div class="n">4</div><h3>Go live</h3><p>Forward your number, place QR codes, and watch orders land in one inbox.</p><div class="t">Day 7</div></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- PRICING -->
+<section class="sec pt-0" id="pricing">
+ <div class="container">
+  <div class="sh"><span class="eyebrow">Pricing</span><h2>Simple plans. Setup included.</h2><p>Every plan includes menu setup, AI training and the One Order Inbox. Cancel anytime.</p></div>
+  <div class="row g-4 align-items-stretch">
+   <div class="col-lg-4"><div class="cardx pp"><h3>Starter</h3><p class="text-mut mt-1 mb-0">1 location</p><div class="pz">$299<small>/mo</small></div><ul><li>AI Receptionist · 500 min</li><li>Phone + QR ordering</li><li>Reservations</li><li>One Order Inbox &amp; KDS</li><li>AI performance dashboard</li></ul><a href="#demo" class="btn btn-ghost w-100">Start with a Free Audit</a></div></div>
+   <div class="col-lg-4"><div class="cardx pp hot"><div class="d-flex justify-content-between align-items-center"><h3>Growth</h3><span class="eyebrow" style="background:var(--or);color:#fff;font-size:11px">Most popular</span></div><p class="mt-1 mb-0" style="color:#9AA6B8">Up to 5 locations</p><div class="pz">$599<small style="color:#9AA6B8">/mo</small></div><ul><li>AI Receptionist · 2,000 min</li><li>Phone, QR &amp; Website ordering</li><li>Multi-location routing</li><li>Revenue attribution &amp; missed-call recovery</li><li>Staff roles &amp; audit log</li></ul><a href="#demo" class="btn btn-or w-100">Book a 10-min Demo</a></div></div>
+   <div class="col-lg-4"><div class="cardx pp"><h3>Pilot</h3><p class="text-mut mt-1 mb-0">NYC founding restaurants</p><div class="pz">Free<small> setup</small></div><ul><li>Everything in Growth</li><li>Founding price locked 12 months</li><li>Weekly check-in with our team</li><li>Shape the product roadmap</li><li>4 spots remaining</li></ul><a href="#demo" class="btn btn-ghost w-100">Apply for Pilot</a></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- FAQ -->
+<section class="sec pt-0" id="faq">
+ <div class="container" style="max-width:900px">
+  <div class="sh"><span class="eyebrow">FAQ</span><h2>Straight answers to real objections.</h2></div>
+  <div class="accordion" id="faqAcc">
+   <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#f1">We already have a POS. Do we need to replace it?</button></h3><div id="f1" class="accordion-collapse collapse show" data-bs-parent="#faqAcc"><div class="accordion-body">No. AI Restaurant automates the parts around your POS — phone calls, reservations, QR and online ordering. Your POS stays where it is.</div></div></div>
+   <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#f2">Will customers know they're talking to AI?</button></h3><div id="f2" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body">Yes, if they ask — the receptionist is honest that it's an AI assistant and transfers to your team whenever a guest prefers a person or asks something it can't answer.</div></div></div>
+   <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#f3">What if an item is sold out?</button></h3><div id="f3" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body">Mark it unavailable in one tap. The AI, QR menu and website update instantly, and the AI suggests an available alternative.</div></div></div>
+   <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#f4">Can it handle modifiers like "no onion, extra cheese"?</button></h3><div id="f4" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body">Yes. Your menu is loaded as structured data — sizes, crusts, add-ons and removals — and the AI reads the full order back before sending it to the kitchen.</div></div></div>
+   <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#f5">Do I need to change my phone number?</button></h3><div id="f5" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body">No. You keep your number and forward calls to the AI — all calls, or only when your staff are busy or after hours.</div></div></div>
+   <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#f6">How long is the contract?</button></h3><div id="f6" class="accordion-collapse collapse" data-bs-parent="#faqAcc"><div class="accordion-body">Month-to-month. Cancel anytime. Pilot restaurants lock their founding price for 12 months.</div></div></div>
+  </div>
+ </div>
+</section>
+
+<!-- FINAL CTA -->
+<section id="demo">
+ <div class="container">
+  <div class="cta">
+   <div class="row g-5 align-items-start">
+    <div class="col-lg-6"><h2>Every customer channel. Every order. One restaurant operating system.</h2><p>Book a 10-minute demo built on your actual menu. We'll call the AI live, walk through your inbox and dashboard, and send your free Missed-Call Audit.</p>
+     <div class="row g-3 mt-2"><div class="col-6"><div class="tb"><b>✓ No POS change</b>Keep what you use today</div></div><div class="col-6"><div class="tb"><b>✓ Live in 7 days</b>We do the setup</div></div><div class="col-6"><div class="tb"><b>✓ Your menu, your voice</b>Not a generic bot</div></div><div class="col-6"><div class="tb"><b>✓ Cancel anytime</b>No long contracts</div></div></div></div>
+    <div class="col-lg-6">
+     <form class="demo" action="#" method="post">
+      <b style="font-size:20px">Book your 10-minute demo</b><p class="text-mut mb-3" style="font-size:13px">Includes your free Missed-Call Audit</p>
+      <div class="row g-2 mb-2">
+       <div class="col-sm-6"><input class="form-control" name="restaurant" placeholder="Restaurant name" required></div>
+       <div class="col-sm-6"><input class="form-control" name="name" placeholder="Your name" required></div>
+       <div class="col-sm-6"><input class="form-control" name="phone" type="tel" placeholder="Phone" required></div>
+       <div class="col-sm-6"><input class="form-control" name="email" type="email" placeholder="Work email" required></div>
+       <div class="col-sm-6"><input class="form-control" name="city" placeholder="City / ZIP"></div>
+       <div class="col-sm-6"><select class="form-select" name="pos"><option value="">Current POS</option><option>Square</option><option>Toast</option><option>Clover</option><option>Lightspeed</option><option>Other</option><option>None</option></select></div>
+      </div>
+      <div class="lbl">Number of locations</div>
+      <input class="chip-check" type="radio" name="loc" id="l1" value="1" checked><label class="chip" for="l1">1</label>
+      <input class="chip-check" type="radio" name="loc" id="l2" value="2-3"><label class="chip" for="l2">2–3</label>
+      <input class="chip-check" type="radio" name="loc" id="l3" value="4-5"><label class="chip" for="l3">4–5</label>
+      <input class="chip-check" type="radio" name="loc" id="l4" value="6+"><label class="chip" for="l4">6+</label>
+      <div class="lbl">What do you want to fix first?</div>
+      <input class="chip-check" type="checkbox" name="fix" id="x1" value="missed-calls" checked><label class="chip" for="x1">Missed calls</label>
+      <input class="chip-check" type="checkbox" name="fix" id="x2" value="phone-orders"><label class="chip" for="x2">Phone orders</label>
+      <input class="chip-check" type="checkbox" name="fix" id="x3" value="reservations" checked><label class="chip" for="x3">Reservations</label>
+      <input class="chip-check" type="checkbox" name="fix" id="x4" value="qr"><label class="chip" for="x4">QR ordering</label>
+      <input class="chip-check" type="checkbox" name="fix" id="x5" value="reporting"><label class="chip" for="x5">Reporting</label>
+      <div class="lbl">Best time for a call</div>
+      <input class="chip-check" type="radio" name="time" id="t1" value="morning"><label class="chip" for="t1">Morning</label>
+      <input class="chip-check" type="radio" name="time" id="t2" value="2-5pm" checked><label class="chip" for="t2">2–5 PM</label>
+      <input class="chip-check" type="radio" name="time" id="t3" value="after-close"><label class="chip" for="t3">After close</label>
+      <button class="btn btn-or w-100 mt-2" type="submit">Book My Demo →</button>
+      <div class="text-center text-mut mt-2" style="font-size:11.5px">We'll only contact you about your demo. No spam.</div>
+     </form>
+    </div>
+   </div>
+  </div>
+ </div>
+</section>
+
+<footer>
+ <div class="container">
+  <div class="row g-4">
+   <div class="col-lg-4"><a class="brand" href="#"><span class="lg">🍴</span>AI Restaurant</a><p class="mt-3" style="line-height:1.6;font-size:14px;max-width:300px">The AI restaurant operating system for independent restaurants. Built by Qubetech.</p></div>
+   <div class="col-6 col-lg-2 offset-lg-1"><h5>Product</h5><ul><li><a href="#engine">One Order Engine</a></li><li><a href="#ai">AI Receptionist</a></li><li><a href="#engine">QR Ordering</a></li><li><a href="#ai">Reservations</a></li><li><a href="#results">Owner Dashboard</a></li></ul></div>
+   <div class="col-6 col-lg-2"><h5>Resources</h5><ul><li><a href="#audit">Free Missed-Call Audit</a></li><li><a href="#roi">ROI Calculator</a></li><li><a href="#audit">Pilot Program</a></li><li><a href="#case">Case Studies</a></li></ul></div>
+   <div class="col-6 col-lg-3"><h5>Get in touch</h5><ul><li><a href="https://qubetech.us">qubetech.us</a></li><li>Washington, DC</li><li><a href="#demo">Book a demo</a></li></ul></div>
+  </div>
+  <div class="d-flex justify-content-between flex-wrap gap-2 mt-4 pt-4" style="border-top:1px solid var(--line2);font-size:13px"><span>© 2026 Qubetech. All rights reserved.</span><span><a href="#">Privacy</a> · <a href="#">Terms</a></span></div>
+ </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ROI calculator
+(function(){
+ const $=id=>document.getElementById(id);
+ const fmt=n=>'$'+Math.round(n).toLocaleString('en-US');
+ const PLAN=599;
+ function calc(){
+  const calls=+$('calls').value, missed=+$('missed').value/100, aov=+$('aov').value, op=+$('orderPct').value/100, hrs=+$('hours').value;
+  $('callsV').textContent=calls; $('missedV').textContent=Math.round(missed*100)+'%'; $('aovV').textContent='$'+aov; $('orderPctV').textContent=Math.round(op*100)+'%'; $('hoursV').textContent=hrs+' hrs';
+  const missedOrders=Math.round(calls*missed*30*op), risk=missedOrders*aov;
+  $('mcalls').textContent=missedOrders.toLocaleString('en-US'); $('risk').textContent=fmt(risk); $('hfree').textContent=(hrs*30)+' hrs';
+  $('mult').textContent='≈ '+Math.max(0,Math.round(risk/PLAN))+'× the plan cost';
+ }
+ ['calls','missed','aov','orderPct','hours'].forEach(id=>$(id).addEventListener('input',calc));
+ calc();
+})();
+// Forms: replace with your CRM / email endpoint
+document.querySelectorAll('form').forEach(f=>f.addEventListener('submit',e=>{e.preventDefault();const b=f.querySelector('button[type=submit]');b.textContent='Thanks! We\'ll be in touch within 24 hours ✓';b.disabled=true;}));
+</script>
+</body>
+</html>

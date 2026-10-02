@@ -37,26 +37,26 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
   if (isKitchen) {
     const path = location.pathname;
     const kitchenAllowed =
-      path === "/" ||
+      path === "/dashboard" ||
       path === "/settings" ||
       path === "/profile" ||
       path.startsWith("/orders") ||
       path.startsWith("/reports");
     if (!kitchenAllowed) {
-      return <Navigate to="/" replace />;
+      return <Navigate to="/dashboard" replace />;
     }
   }
 
-  // Receptionist is confined strictly to /, /reservations, /settings, /profile
-  if (isReceptionist && !["/", "/reservations", "/settings", "/profile"].includes(location.pathname)) {
-    return <Navigate to="/" replace />;
+  // Receptionist is confined strictly to /dashboard, /reservations, /settings, /profile
+  if (isReceptionist && !["/dashboard", "/reservations", "/settings", "/profile"].includes(location.pathname)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   // Staff: dashboard, orders, menu, deals, reports, settings
   if (isStaff) {
     const path = location.pathname;
     const staffAllowed =
-      path === "/" ||
+      path === "/dashboard" ||
       path === "/settings" ||
       path === "/profile" ||
       path === "/deals" ||
@@ -66,7 +66,7 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
       path.startsWith("/orders") ||
       path.startsWith("/reports");
     if (!staffAllowed) {
-      return <Navigate to="/" replace />;
+      return <Navigate to="/dashboard" replace />;
     }
   }
 

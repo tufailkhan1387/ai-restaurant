@@ -83,7 +83,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const navigationItems = useMemo(
     () => [
-      { icon: LayoutDashboard, label: t("sidebar:dashboard", "Dashboard"), href: "/" },
+      { icon: LayoutDashboard, label: t("sidebar:dashboard", "Dashboard"), href: "/dashboard" },
       ...(!isBranch
         ? [
           { icon: Tag, label: t("sidebar:dealsAndOffers", "Deals & Offers"), href: "/deals" },
@@ -404,7 +404,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {/* ── RECEPTIONIST: Dashboard, Reservations & Settings ────── */}
         {role === "staff" ? (
           <div className="space-y-0.5">
-            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/dashboard" />
             <NavItem icon={TableProperties} label={t("sidebar:tables", "Tables")} href="/tables" />
 
             {collapsed ? (
@@ -499,7 +499,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <NavItem
               icon={LayoutDashboard}
               label={t("sidebar:dashboard", "Dashboard")}
-              href="/"
+              href="/dashboard"
             />
             <NavItem
               icon={CalendarCheck}
@@ -518,7 +518,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ) : role === "kitchen" || role === "chef" ? (
           <div className="space-y-0.5">
             {/* 1. Dashboard */}
-            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/dashboard" />
 
             {/* 2. Orders */}
             {collapsed ? (
@@ -584,7 +584,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         ) : role === "super_admin" ? (
           <div className="space-y-0.5">
-            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/dashboard" />
             <NavItem icon={Store} label={t("sidebar:restaurants", "Restaurants")} href="/restaurants" />
             <NavItem icon={Wallet} label={t("sidebar:earnings", "Earnings")} href="/earnings" />
 
@@ -600,7 +600,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ) : (
           /* ── RESTAURANT USERS: full nav (customized for branch vs parent) ── */
           <div className="space-y-0.5">
-            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/" />
+            <NavItem icon={LayoutDashboard} label={t("sidebar:dashboard", "Dashboard")} href="/dashboard" />
 
             {collapsed ? (
               <NavItem
@@ -685,7 +685,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             )}
 
             {navigationItems
-              .filter((i) => i.href !== "/")
+              .filter((i) => i.href !== "/dashboard")
               .map((item) => (
                 <NavItem key={item.href} {...item} />
               ))}

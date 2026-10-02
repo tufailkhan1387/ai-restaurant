@@ -57,6 +57,7 @@ import TableReservations from "@/pages/TableReservations";
 import StaffTables from "@/pages/StaffTables";
 import Permissions from "@/pages/Permissions";
 import Kitchen from "@/pages/Kitchen";
+import Landing from "@/pages/Landing";
 
 const queryClient = new QueryClient();
 
@@ -82,15 +83,15 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route path="/" element={<Landing />} />
               <Route
-                path="/"
                 element={
                   <ProtectedRoute>
                     <DashboardLayout />
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Dashboard />} />
+                <Route path="dashboard" element={<Dashboard />} />
                 <Route path="calls" element={<Calls />} />
 
                 <Route path="customers" element={<Navigate to="/users/customers" replace />} />

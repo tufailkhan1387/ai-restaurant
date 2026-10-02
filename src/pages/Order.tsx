@@ -573,7 +573,7 @@ export default function Order() {
               <p className="text-xs text-muted-foreground">Staff order</p>
             </div>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/">Back to dashboard</Link>
+              <Link to="/dashboard">Back to dashboard</Link>
             </Button>
           </div>
         </header>
@@ -637,7 +637,7 @@ export default function Order() {
             )}
             <LanguageSwitcher />
             <Button variant="outline" size="sm" asChild>
-              <Link to="/">{t("ordering:adminLogin", "Admin")}</Link>
+              <Link to="/login">{t("ordering:adminLogin", "Admin")}</Link>
             </Button>
           </div>
         </div>

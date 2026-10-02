@@ -12,7 +12,7 @@ export type SidebarNavSearchItem = {
 };
 
 export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
-  { label: "Dashboard", href: "/", section: "Main", keywords: ["home", "overview"] },
+  { label: "Dashboard", href: "/dashboard", section: "Main", keywords: ["home", "overview"] },
   {
     label: "Team members",
     href: "/users/team-members",
@@ -123,18 +123,18 @@ export function filterSidebarNavItems(
   const base = SIDEBAR_NAV_SEARCH_ITEMS.filter((i) => {
     if (options.isKitchen) {
       return (
-        i.href === "/" ||
+        i.href === "/dashboard" ||
         i.href === "/settings" ||
         i.href.startsWith("/orders") ||
         i.href.startsWith("/reports")
       );
     }
     if (options.isReceptionist) {
-      return i.href === "/" || i.href === "/reservations" || i.href.startsWith("/reservations") || i.href === "/settings";
+      return i.href === "/dashboard" || i.href === "/reservations" || i.href.startsWith("/reservations") || i.href === "/settings";
     }
     if (options.isStaff) {
       return (
-        i.href === "/" ||
+        i.href === "/dashboard" ||
         i.href === "/settings" ||
         i.href === "/deals" ||
         i.href === "/tables" ||

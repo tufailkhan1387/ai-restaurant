@@ -1229,4 +1229,304 @@ router.get("/superadmin-dashboard", optionalAuth, requireAuth, async (req, res) 
   }
 });
 
+const PHONE_ORDER_SOURCES = ["phone", "call", "voice", "ai", "synthflow", "elevenlabs"];
+
+function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+/** This month's real call, order, and reservation totals, plus the missed-revenue estimate. */
+router.get("/ai-value", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const knex = getKnex();
+    const scope = await resolveReportRestaurantIds(knex, req.user, req.query.restaurant_id);
+    if (!scope.allowed) {
+      return res.status(403).json({ error: "You cannot view these stats." });
+    }
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const phoneList = PHONE_ORDER_SOURCES.map(() => "?").join(", ");
+    const phoneSql = `(LOWER(COALESCE(source, '')) IN (${phoneList}) OR call_id IS NOT NULL)`;
+
+    const scoped = (qb, column) => applyRestaurantScope(qb, knex, column, scope);
+
+    const [callStats, orderStats, reservationStats] = await Promise.all([
+      knex("calls")
+        .modify((qb) => scoped(qb, "restaurant_id"))
+        .where("created_at", ">=", monthStart)
+        .select(
+          knex.raw("COUNT(*)::int as calls"),
+          knex.raw("COUNT(*) FILTER (WHERE status = 'missed')::int as missed"),
+        )
+        .first(),
+      knex("orders")
+        .modify((qb) => scoped(qb, "restaurant_id"))
+        .where("created_at", ">=", monthStart)
+        .whereNot("status", "cancelled")
+        .select(
+          knex.raw("COUNT(*)::int as orders"),
+          knex.raw("COALESCE(SUM(total_amount), 0)::float as order_value"),
+          knex.raw(`COUNT(*) FILTER (WHERE ${phoneSql})::int as phone_orders`, PHONE_ORDER_SOURCES),
+          knex.raw(`COALESCE(SUM(total_amount) FILTER (WHERE ${phoneSql}), 0)::float as phone_revenue`, PHONE_ORDER_SOURCES),
+        )
+        .first(),
+      knex("table_reservations")
+        .modify((qb) => scoped(qb, "restaurant_id"))
+        .where("created_at", ">=", monthStart)
+        .whereNotIn("status", ["cancelled", "no_show"])
+        .select(
+          knex.raw("COUNT(*)::int as reservations"),
+          knex.raw(`COUNT(*) FILTER (WHERE ${phoneSql})::int as phone_reservations`, PHONE_ORDER_SOURCES),
+        )
+        .first(),
+    ]);
+
+    const calls = Number(callStats?.calls || 0);
+    const missed = Number(callStats?.missed || 0);
+    const answered = Math.max(0, calls - missed);
+    const orders = Number(orderStats?.orders || 0);
+    const orderValue = Number(orderStats?.order_value || 0);
+    const phoneOrders = Number(orderStats?.phone_orders || 0);
+    const phoneRevenue = Number(orderStats?.phone_revenue || 0);
+    const reservations = Number(reservationStats?.reservations || 0);
+    const phoneReservations = Number(reservationStats?.phone_reservations || 0);
+
+    const aov = phoneOrders > 0 ? phoneRevenue / phoneOrders : orders > 0 ? orderValue / orders : 0;
+    const conversion = answered > 0 ? Math.min(1, phoneOrders / answered) : 0;
+    const avoided = roundMoney(answered * conversion * aov);
+    const recovered = roundMoney(phoneRevenue);
+    const stillMissed = roundMoney(missed * conversion * aov);
+    const staffMinutes = answered * 4;
+
+    return res.json({
+      period: "month",
+      month_start: monthStart.toISOString(),
+      calls,
+      answered,
+      missed,
+      orders,
+      phone_orders: phoneOrders,
+      reservations,
+      phone_reservations: phoneReservations,
+      order_value: roundMoney(orderValue),
+      staff_minutes_saved: staffMinutes,
+      staff_hours_saved: roundMoney(staffMinutes / 60),
+      estimated_missed_revenue_avoided: avoided,
+      estimated_revenue_recovered: recovered,
+      estimated_revenue_still_missed: stillMissed,
+      note:
+        "Counts start at local midnight on the 1st of this month. Answered calls are total calls minus missed calls. Orders leave out cancelled orders. Phone orders are phone, call, voice, AI, Synthflow, or ElevenLabs, plus any order linked to a call. Reservations leave out cancelled and no-show. Staff time is 4 minutes saved per answered call. The average order uses phone orders when any exist, otherwise all orders. Conversion is phone orders divided by answered calls, capped at 100%. Missed revenue avoided is answered calls × conversion × that average. Recovered revenue is the actual phone-order total. Still missed applies the same rate to unanswered calls.",
+    });
+  } catch (e) {
+    console.error("AI VALUE STATS ERROR:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function applyOrderReportFilters(qb, knex, scope, query) {
+  const { from, to, days, period, search, branch_id, status, transferred } = query;
+  applyRestaurantScope(qb, knex, "orders.restaurant_id", scope);
+
+  if (from && String(from).trim()) {
+    qb.where("orders.created_at", ">=", `${String(from).trim()}T00:00:00.000Z`);
+  }
+  if (to && String(to).trim()) {
+    qb.where("orders.created_at", "<=", `${String(to).trim()}T23:59:59.999Z`);
+  }
+  if (!from && !to) {
+    if (period === "today" || days === "1") {
+      qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE"));
+    } else if (period === "yesterday") {
+      qb.where("orders.created_at", ">=", knex.raw("CURRENT_DATE - INTERVAL '1 day'")).where(
+        "orders.created_at",
+        "<",
+        knex.raw("CURRENT_DATE"),
+      );
+    } else if (period === "this_month") {
+      qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW())"));
+    } else if (period === "last_month") {
+      qb.where("orders.created_at", ">=", knex.raw("DATE_TRUNC('month', NOW() - INTERVAL '1 month')")).where(
+        "orders.created_at",
+        "<",
+        knex.raw("DATE_TRUNC('month', NOW())"),
+      );
+    } else if (days && Number(days) > 0) {
+      const numDays = Math.min(parseInt(days, 10), 3650);
+      qb.where("orders.created_at", ">=", knex.raw("NOW() - ?::interval", [`${numDays} days`]));
+    }
+  }
+
+  const branchId = String(branch_id || "").trim();
+  if (branchId && branchId !== "all") {
+    if (!scope.restaurantIds || scope.restaurantIds.includes(branchId)) {
+      qb.where((inner) => {
+        inner
+          .where("orders.restaurant_id", branchId)
+          .orWhere("orders.pending_transfer_to_restaurant_id", branchId)
+          .orWhere("orders.transferred_from_restaurant_id", branchId);
+      });
+    } else {
+      qb.whereRaw("1 = 0");
+    }
+  }
+
+  const statusFilter = String(status || "").trim().toLowerCase();
+  if (statusFilter && statusFilter !== "all") {
+    qb.where("orders.status", statusFilter);
+  }
+
+  const transferFilter = String(transferred || "all").trim().toLowerCase();
+  if (transferFilter === "transferred") qb.whereRaw(ORDER_TRANSFERRED_SQL);
+  else if (transferFilter === "not_transferred") qb.whereRaw(`NOT ${ORDER_TRANSFERRED_SQL}`);
+
+  const q = String(search || "").trim();
+  if (q) {
+    const like = `%${q.replace(/[%_]/g, "")}%`;
+    qb.where((inner) => {
+      inner
+        .whereILike("orders.order_number", like)
+        .orWhereILike("orders.customer_name", like)
+        .orWhereILike("orders.customer_phone", like);
+    });
+  }
+}
+
+const ORDER_TRANSFERRED_SQL = `(
+  COALESCE(orders.is_transferred, false) = true
+  OR orders.pending_transfer_to_restaurant_id IS NOT NULL
+  OR orders.transferred_from_restaurant_id IS NOT NULL
+  OR (orders.branch_assigned_at IS NOT NULL AND COALESCE(orders.auto_assigned, true) = false)
+)`;
+
+/** Orders by branch, including how many were transferred. */
+router.get("/order-report", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const knex = getKnex();
+    const scope = await resolveReportRestaurantIds(knex, req.user, req.query.restaurant_id);
+    if (!scope.allowed) {
+      return res.status(403).json({
+        error: scope.forbidden
+          ? "Access denied: Branch reports are private to the branch and parent owner."
+          : "Access denied for this restaurant.",
+      });
+    }
+
+    const familyIds = scope.restaurantIds;
+    const branches = familyIds?.length
+      ? await knex("restaurants")
+          .whereIn("id", familyIds)
+          .select("id", "name", "is_branch", "parent_restaurant_id")
+          .orderBy("name", "asc")
+      : [];
+
+    const filtered = () =>
+      knex("orders").modify((qb) => applyOrderReportFilters(qb, knex, scope, req.query));
+
+    const [summaryRow, byBranch, rows] = await Promise.all([
+      filtered()
+        .select(
+          knex.raw("COUNT(*)::int as total_orders"),
+          knex.raw(`COUNT(*) FILTER (WHERE ${ORDER_TRANSFERRED_SQL})::int as transferred_orders`),
+          knex.raw("COALESCE(SUM(total_amount), 0)::float as revenue"),
+        )
+        .first(),
+      filtered()
+        .join("restaurants", "orders.restaurant_id", "restaurants.id")
+        .select(
+          "restaurants.id as restaurant_id",
+          "restaurants.name as restaurant_name",
+          "restaurants.is_branch",
+          knex.raw("COUNT(*)::int as order_count"),
+          knex.raw(`COUNT(*) FILTER (WHERE ${ORDER_TRANSFERRED_SQL})::int as transferred_orders`),
+          knex.raw("COALESCE(SUM(orders.total_amount), 0)::float as revenue"),
+        )
+        .groupBy("restaurants.id", "restaurants.name", "restaurants.is_branch")
+        .orderBy("order_count", "desc"),
+      filtered()
+        .join("restaurants", "orders.restaurant_id", "restaurants.id")
+        .leftJoin("restaurants as transferred_from", "orders.transferred_from_restaurant_id", "transferred_from.id")
+        .leftJoin("restaurants as pending_branch", "orders.pending_transfer_to_restaurant_id", "pending_branch.id")
+        .select(
+          "orders.id",
+          "orders.order_number",
+          "orders.customer_name",
+          "orders.customer_phone",
+          "orders.status",
+          "orders.source",
+          "orders.fulfillment_type",
+          "orders.total_amount",
+          "orders.created_at",
+          "orders.restaurant_id",
+          "restaurants.name as branch_name",
+          "restaurants.is_branch",
+          "orders.is_transferred",
+          "orders.transfer_status",
+          "orders.transfer_reason",
+          "orders.auto_assigned",
+          "orders.branch_assigned_at",
+          "orders.transferred_from_restaurant_id",
+          "transferred_from.name as transferred_from_name",
+          "orders.pending_transfer_to_restaurant_id",
+          "pending_branch.name as pending_branch_name",
+        )
+        .orderBy("orders.created_at", "desc")
+        .limit(500),
+    ]);
+
+    const orders = rows.map((row) => {
+      const transferred = Boolean(
+        row.is_transferred ||
+          row.pending_transfer_to_restaurant_id ||
+          row.transferred_from_restaurant_id ||
+          (row.branch_assigned_at && row.auto_assigned === false),
+      );
+      return {
+        id: row.id,
+        order_number: row.order_number,
+        customer_name: row.customer_name,
+        customer_phone: row.customer_phone,
+        status: row.status,
+        source: row.source,
+        fulfillment_type: row.fulfillment_type,
+        total_amount: Number(row.total_amount || 0),
+        created_at: row.created_at,
+        restaurant_id: row.restaurant_id,
+        branch_name: row.branch_name,
+        is_branch: Boolean(row.is_branch),
+        transferred,
+        transfer_status: row.transfer_status || (row.pending_transfer_to_restaurant_id ? "pending" : null),
+        transfer_reason: row.transfer_reason || null,
+        transferred_from_name: row.transferred_from_name || null,
+        pending_branch_name: row.pending_branch_name || null,
+      };
+    });
+
+    return res.json({
+      branches: branches.map((b) => ({
+        id: b.id,
+        name: b.name,
+        is_branch: Boolean(b.is_branch),
+      })),
+      by_branch: byBranch.map((b) => ({
+        restaurant_id: b.restaurant_id,
+        restaurant_name: b.restaurant_name,
+        is_branch: Boolean(b.is_branch),
+        order_count: Number(b.order_count || 0),
+        transferred_orders: Number(b.transferred_orders || 0),
+        revenue: Number(b.revenue || 0),
+      })),
+      summary: {
+        total_orders: Number(summaryRow?.total_orders || 0),
+        transferred_orders: Number(summaryRow?.transferred_orders || 0),
+        revenue: Number(summaryRow?.revenue || 0),
+      },
+      orders,
+    });
+  } catch (e) {
+    console.error("ORDER REPORT ERROR:", e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

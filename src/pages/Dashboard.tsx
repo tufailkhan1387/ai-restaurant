@@ -10,10 +10,6 @@ import {
   ArrowUpRight,
   DollarSign,
   Filter,
-  Building2,
-  Globe,
-  Package,
-  Smartphone,
   Ticket,
   Users,
   Settings,
@@ -26,6 +22,7 @@ import {
 import { format, subDays, startOfDay, eachDayOfInterval, isSameDay, parseISO } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { StatsCard } from "@/components/dashboard/StatsCard";
+import { AiValuePanel } from "@/components/dashboard/AiValuePanel";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { ReceptionistDashboard } from "@/components/dashboard/ReceptionistDashboard";
@@ -57,14 +54,6 @@ import {
 } from "recharts";
 
 /* ─── Types ─────────────────────────────────────────────────── */
-type GlobalStats = {
-  totalRestaurants: number;
-  totalMenuItems: number;
-  totalDeals: number;
-  totalDrivers: number;
-  totalVehicles: number;
-};
-
 type SuperAdminDashboardData = {
   summary: {
     total_restaurants: number;
@@ -940,18 +929,6 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
   });
 
   const earningsSummary = earningsData?.summary;
-  const earningsRestaurants = earningsData?.restaurants || [];
-
-  const { data: globalStats, isPending: statsLoading } = useQuery({
-    queryKey: ["global-stats"],
-    queryFn: async () => {
-      const resp = await fetch(`${getApiBase()}/api/stats/global`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      if (!resp.ok) return null;
-      return (await resp.json()) as GlobalStats;
-    },
-  });
 
   const { data: recentOrders, isPending: ordersLoading } = useQuery({
     queryKey: ["dashboard-recent-orders", familyBranchIds.join(",")],
@@ -981,37 +958,6 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
       return data;
     },
   });
-
-  const sourceBreakdown = useMemo(() => {
-    const orders = recentOrders || [];
-    const sources = {
-      in_house: { label: t("orders:dineIn", "In house"), icon: Building2, tone: "bg-rose-50 text-rose-600" },
-      online: { label: t("orders:delivery", "Online"), icon: Globe, tone: "bg-slate-100 text-slate-700" },
-      takeaway: { label: t("orders:pickup", "Take away"), icon: Package, tone: "bg-orange-50 text-orange-700" },
-      app: { label: "App", icon: Smartphone, tone: "bg-emerald-50 text-emerald-700" },
-    };
-    const counts = { in_house: 0, online: 0, takeaway: 0, app: 0 };
-    for (const o of orders) {
-      const s = (o.source || "").toLowerCase();
-      if (s.includes("app")) counts.app += 1;
-      else if (s.includes("take") || s.includes("pickup")) counts.takeaway += 1;
-      else if (s.includes("online") || s.includes("web")) counts.online += 1;
-      else counts.in_house += 1;
-    }
-    const hasAny = Object.values(counts).some((n) => n > 0);
-    if (!hasAny && globalStats) {
-      return [
-        { ...sources.in_house, value: globalStats.totalRestaurants, label: t("sidebar:restaurants", "Restaurants") },
-        { ...sources.online, value: globalStats.totalMenuItems, label: t("sidebar:items", "Menu items") },
-        { ...sources.takeaway, value: globalStats.totalDeals, label: t("dashboard:popularCategories", "Active offers") },
-        { ...sources.app, value: recentOrders?.length ?? 0, label: t("dashboard:recentActivity", "Recent orders") },
-      ];
-    }
-    return (Object.keys(counts) as (keyof typeof counts)[]).map((key) => ({
-      ...sources[key],
-      value: counts[key],
-    }));
-  }, [recentOrders, globalStats, t]);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 animate-fade-in pb-4">
@@ -1065,7 +1011,7 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
                 {t("dashboard:revenueOverview", "Sales & Revenue Overview")}
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {t("dashboard:salesAndRevenueDesc", "Key sales metrics and order channels breakdown")}
+                {t("dashboard:salesAndRevenueDesc", "Key sales metrics")}
               </p>
             </div>
           </CardHeader>
@@ -1129,27 +1075,8 @@ function RestaurantDashboard({ firstName }: { firstName: string }) {
               </div>
             </div>
 
-            {/* Order Channels Breakdown */}
             <div className="pt-3 border-t border-border/60">
-              <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
-                {t("dashboard:orderChannels", "Order Channels")}
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {sourceBreakdown.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <div key={item.label} className="flex items-center gap-3 rounded-xl border border-border/70 bg-gradient-to-br from-muted/30 to-card p-3.5 transition-colors hover:border-primary/25">
-                      <div className={cn("rounded-lg p-2", item.tone)}>
-                        <Icon className="h-4 w-4" aria-hidden />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p>
-                        <p className="text-lg font-extrabold tabular-nums tracking-tight text-foreground">{formatNumber(Number(item.value))}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <AiValuePanel restaurantId={restaurantId} embedded />
             </div>
           </CardContent>
         </Card>

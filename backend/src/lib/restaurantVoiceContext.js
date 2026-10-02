@@ -1,3 +1,34 @@
+import { branchOrderingSection } from "./branchLocation.js";
+
+export { branchOrderingSection };
+
+/** Active child branches the phone agent may offer. */
+export async function loadActiveChildBranches(knex, restaurantId) {
+  const restaurant = await knex("restaurants").where({ id: restaurantId }).select("id", "parent_restaurant_id").first();
+  const parentId = restaurant?.parent_restaurant_id || restaurantId;
+  if (!parentId) return [];
+  return knex("restaurants")
+    .where({ parent_restaurant_id: parentId, is_branch: true, is_active: true, is_accepting_orders: true })
+    .orderBy("name", "asc")
+    .select("id", "name", "address", "city", "area");
+}
+
+/** Replace or insert the branch list so a saved custom prompt stays current. */
+export function applyBranchOrdering(prompt, branches) {
+  const block = branchOrderingSection(branches);
+  const text = String(prompt || "");
+  const start = text.indexOf("## Branch ordering");
+  if (start !== -1) {
+    const rest = text.slice(start + "## Branch ordering".length);
+    const next = rest.search(/\n## /);
+    const end = next === -1 ? text.length : start + "## Branch ordering".length + next;
+    return `${text.slice(0, start)}${block}${text.slice(end)}`;
+  }
+  const menuAt = text.indexOf("\n## Menu");
+  if (menuAt !== -1) return `${text.slice(0, menuAt)}\n\n${block}${text.slice(menuAt)}`;
+  return `${text.trim()}\n\n${block}`;
+}
+
 /**
  * Build menu, sizes, flavors, addons, and coupons knowledge text embedded into Synthflow & ElevenLabs agent prompts.
  */
@@ -11,6 +42,7 @@ export function buildRestaurantVoiceKnowledge({
   variants = [],
   addons = [],
   itemAddons = [],
+  branches = [],
 }) {
   const lines = [];
   lines.push(`# ${restaurantName} — Menu, Flavors, Sizes, Add-ons, and Ordering Guide`);
@@ -173,6 +205,8 @@ export function buildRestaurantVoiceKnowledge({
   }
 
   lines.push("");
+  lines.push(branchOrderingSection(branches));
+  lines.push("");
   lines.push("## Fast Ordering Protocol");
   lines.push("1. Greet calmly and ask what the caller would like to order.");
   lines.push("2. Capture ordered items, sizes, and flavors concisely, and state each item's price as it is ordered.");
@@ -217,20 +251,27 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - Collect details in strict single-turn questions (ask 1 question, then STOP and wait for response):
      1. Items, Size & Flavor -> state exact price -> ask: "Would you like anything else, or may I take your delivery details?" -> WAIT.
      2. Name -> ask: "May I have your full name please?" -> Record whatever name the caller speaks (e.g. Tufail Khan, Zain, Bilal, etc.). Acknowledge: "Thank you, [Name]!" -> WAIT.
-     3. Address -> ask: "What is your complete delivery address?" -> ACCEPT and record the ENTIRE address/sector/street/area/colony/landmark/city the caller states on the VERY FIRST try without truncating or asking again (e.g., "Got your address: [Complete Address]"). -> WAIT.
+     3. If they want delivery, ask: "What is your complete delivery address?" Accept the address on the first try. If they want pickup, do not ask for a street address. Follow the Branch ordering section instead. -> WAIT.
      4. Email -> ask: "May I have your email for the receipt?" -> If given, note it; if declined/skipped, say "No problem!" and proceed without any fake email. -> WAIT.
      5. Phone -> ask: "And what is your contact phone number?" -> If caller provides a number, record it. If caller says "same number", skips, or caller ID is available, say "Got it, using your calling number!" and proceed directly. NEVER interrogate or block order for phone number! -> WAIT.
    - Payment is standard Cash on Delivery (COD) — do NOT ask caller how they will pay.
 
-5. CONFIRM THE ORDER, THEN SAY THE ORDER NUMBER:
-   - Give ONE short summary: items, name, address or pickup, phone, and total. Then STOP and ask: "Shall I place this order?"
-   - Only after they say yes, call the place_order action ONCE with the collected details.
+5. PICKUP AND TABLE RESERVATIONS — CITY AND AREA:
+   - Follow the Branch ordering section exactly.
+   - Pickup order or table reservation: if branches are in more than one city, ask the city, stop and wait, then ask the area in that city. If every branch is in the same city, ask the area only and do not ask the city.
+   - Pass the matching branch_name to place_order for pickup, and to reserve_table for a booking.
+   - Delivery orders do not use this question. Collect the delivery address and pass branch_name as none.
+   - Do not ask this when they only want to track an order.
+
+6. CONFIRM THE ORDER, THEN SAY THE ORDER NUMBER:
+   - Give ONE short summary: items, branch, name, address or pickup, phone, and total. Then STOP and ask: "Shall I place this order?"
+   - Only after they say yes, call the place_order action ONCE with the collected details, including branch_name.
    - Wait for place_order to finish. Read the returned order_number out loud, digit by digit if needed.
    - Say: "Your order number is [order_number]. Please save it. Call us back with this number to track your order."
    - NEVER invent an order number. NEVER say the order is confirmed until place_order returns an order_number.
    - If place_order fails, apologize once and do not make up a number.
 
-6. DEALS, PROMOTIONS & OFFERS (ACCURATE DESCRIPTION & CHOICES):
+7. DEALS, PROMOTIONS & OFFERS (ACCURATE DESCRIPTION & CHOICES):
    - ONLY quote deals or discount codes if they are explicitly listed in the "Active Deals and Promotions" or "Coupon Codes" section below.
    - When explaining any deal to the customer, state its name, exact price, and faithfully explain its description (including what items are included, any special discounts like student off, or choices offered).
    - If the deal description offers a choice (for example: "Choice of 1 Zinger Burger OR 1 Zinger Shawarma"):
@@ -240,12 +281,13 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - If no deals or coupons are active, or if caller asks for deals when none are listed, state: "Currently we do not have any special combo deals or discount codes, but you can order any item from our regular menu."
    - NEVER invent or hallucinate fake deals, combos, or discounts!
 
-7. TABLE RESERVATIONS:
+8. TABLE RESERVATIONS:
    - A table reservation is NOT food, NOT a menu item, and has NO price.
    - NEVER add "Table Reservation" to the order, NEVER quote a price for it, and NEVER call place_order for a booking.
    - NEVER say "order", "save your order", "bill", or "order number" while booking a table.
    - While the reserve_table tool runs, the caller should hear: "One moment while I reserve your table."
    - If the caller asks to reserve a table or book a seat:
+     0. Follow the Branch ordering section before you book. Several cities: ask the city, then the area. Same city: ask the area only. Pass that branch_name to reserve_table.
      1. Ask for their full name.
      2. Ask how many guests will be dining (party size).
      3. Ask for the preferred date ("today", "tomorrow", or a specific date — convert to YYYY-MM-DD).
@@ -264,7 +306,7 @@ CRITICAL RULES (FOLLOW STRICTLY):
    - If reserve_table says that slot is full, ask for a different time ONCE, then call reserve_table again with only the new time.
    - NEVER promise a table without successfully calling the reserve_table action.
 
-8. TRACK AN EXISTING ORDER:
+9. TRACK AN EXISTING ORDER:
    - If the caller wants to check, track, or follow an order they already placed:
      1. Ask: "What is your order number?" (for example ORD-260929-01). Then STOP and WAIT.
      2. Call get_order_status with that order_number. If the tool only has a tracking_code field, put the order number in tracking_code.
@@ -300,5 +342,6 @@ export async function loadRestaurantVoiceCatalog(knex, restaurantId) {
     knex("menu_addons").where({ restaurant_id: restaurantId, is_active: true }).orderBy("sort_order", "asc"),
     knex("menu_item_addons").whereIn("menu_item_id", knex("menu_items").select("id").where({ restaurant_id: restaurantId })),
   ]);
-  return { settings, categories, items, deals, discounts, variants, addons, itemAddons };
+  const branches = await loadActiveChildBranches(knex, restaurantId);
+  return { settings, categories, items, deals, discounts, variants, addons, itemAddons, branches };
 }

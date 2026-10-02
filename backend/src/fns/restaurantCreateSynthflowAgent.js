@@ -4,6 +4,7 @@ import {
   updateAgent,
   createInformationExtractor,
   createCustomAction,
+  updateCustomAction,
   attachActions,
   toSynthflowLanguage,
   postCallWebhookUrl,
@@ -15,6 +16,7 @@ import {
   defaultSynthflowGreeting,
   defaultSynthflowPrompt,
   loadRestaurantVoiceCatalog,
+  applyBranchOrdering,
 } from "../lib/restaurantVoiceContext.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
 
@@ -155,7 +157,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "place_order",
         description:
-          "FOOD ORDERS ONLY. Save the caller's food order and return the real order number. Never call this when the caller is reserving a table. Call this once after the caller confirms a food order. Then read order_number out loud.",
+          "FOOD ORDERS ONLY. Save the caller's food order and return the real order number. Never call this when the caller is reserving a table. Call this once after the caller confirms a food order and names a branch. Pass branch_name as the exact branch they chose. Then read order_number out loud.",
         speech_while_using_the_tool: "One moment while I save your order.",
         failure_timeout: 20,
         headers: [{ key: "Content-Type", value: "application/json" }],
@@ -167,6 +169,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           duringCallVar("fulfillment_type", "delivery or pickup", "delivery"),
           duringCallVar("customer_email", "Email or none", "none"),
           duringCallVar("coupon_code", "Coupon code or none", "none"),
+          duringCallVar("branch_name", "Exact branch name the caller chose, or none", "DHA Phase 5"),
         ],
         json_body_stringified: JSON.stringify({
           ...lookup,
@@ -177,6 +180,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           fulfillment_type: "<fulfillment_type>",
           customer_email: "<customer_email>",
           coupon_code: "<coupon_code>",
+          branch_name: "<branch_name>",
           payment_method: "cash",
           source: "phone",
         }),
@@ -211,7 +215,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "reserve_table",
         description:
-          "TABLE RESERVATIONS ONLY. Book a restaurant table. Use this when the caller wants to reserve or book a table. Never use place_order for a table. Never say order, bill, or order number.",
+          "TABLE RESERVATIONS ONLY. Book a restaurant table at the branch the caller chose. Never use place_order for a table. Never say order, bill, or order number. Pass branch_name as the exact branch for the city and area they chose.",
         speech_while_using_the_tool: "One moment while I reserve your table.",
         failure_timeout: 20,
         headers: [{ key: "Content-Type", value: "application/json" }],
@@ -222,6 +226,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           duringCallVar("reservation_date", "Date as YYYY-MM-DD", "2026-09-29"),
           duringCallVar("reservation_time", "Latest booking time as HH:MM 24-hour", "19:00"),
           duringCallVar("slot_duration_hours", "Always 1", "1"),
+          duringCallVar("branch_name", "Exact branch name for the city and area the caller chose, or none", "Royal Restaurant Iqbal Town Branch"),
         ],
         json_body_stringified: JSON.stringify({
           ...lookup,
@@ -231,6 +236,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           reservation_date: "<reservation_date>",
           reservation_time: "<reservation_time>",
           slot_duration_hours: "<slot_duration_hours>",
+          branch_name: "<branch_name>",
           source: "phone",
         }),
       },
@@ -240,7 +246,37 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
   for (const spec of specs) {
     if (!spec.action.url) continue;
     const marker = `tool:${spec.key}:v2`;
-    if ([...already].some((id) => id === marker)) continue;
+    const markerIndex = ids.findIndex((id) => String(id).startsWith(`tool:${spec.key}:`));
+    const existingActionId =
+      markerIndex > 0 && !String(ids[markerIndex - 1]).startsWith("tool:") ? ids[markerIndex - 1] : null;
+
+    if ((spec.key === "place_order" || spec.key === "reserve_table") && existingActionId) {
+      try {
+        await updateCustomAction(existingActionId, spec.action);
+        ids[markerIndex] = marker;
+        if (identity.modelId) {
+          await attachActions(identity.modelId, [], [
+            {
+              action_id: existingActionId,
+              attachment_type: "during",
+              trigger_condition: spec.action.description,
+              input_variables_mapping: (spec.action.variables_during_the_call || []).map((v) => ({
+                variable_name: v.name,
+                source: "llm",
+                llm_config: { description: v.description, example: v.example },
+              })),
+            },
+          ]);
+        }
+        continue;
+      } catch (updateErr) {
+        errors.push(`${spec.key} update: ${updateErr.message}`);
+        ids.splice(markerIndex - 1, 2);
+      }
+    } else if (markerIndex !== -1) {
+      continue;
+    }
+
     try {
       const created = await createCustomAction(spec.action);
       if (created.action_id) {
@@ -323,6 +359,18 @@ async function resolveAttachablePhone(preferredE164) {
   };
 }
 
+/** Keep the live place_order tool able to receive branch_name. */
+export async function refreshSynthflowPlaceOrderTool(restaurant) {
+  if (!restaurant?.synthflow_agent_id) return null;
+  const ids = normalizeActionIds(restaurant.synthflow_action_ids);
+  const live = await ensureLiveOrderActions(restaurant.id, ids, {
+    modelId: restaurant.synthflow_agent_id,
+    synthflowAgentId: restaurant.synthflow_agent_id,
+    phone: restaurant.telnyx_phone_number || restaurant.twilio_phone_number || null,
+  });
+  return live.ids;
+}
+
 export async function restaurantCreateSynthflowAgent(req, res) {
   res.set("Access-Control-Allow-Origin", "*");
   try {
@@ -360,10 +408,10 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       customPrompt && !looksLikeLegacyEl && !missingOrderNumber
         ? customPrompt
         : defaultSynthflowPrompt(r.name, knowledge);
-    const fullPrompt =
-      prompt.includes("## Menu") || prompt.includes("# ")
-        ? prompt
-        : `${prompt}\n\n${knowledge}`;
+    const fullPrompt = applyBranchOrdering(
+      prompt.includes("## Menu") || prompt.includes("# ") ? prompt : `${prompt}\n\n${knowledge}`,
+      catalog.branches,
+    );
 
     const voiceId = body.voice_id || r.agent_voice_id || undefined;
     const agentName = body.name || `${r.name} Order Agent`;

@@ -35,6 +35,20 @@ export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
   { label: "Coupon Code", href: "/coupons", section: "Marketing", keywords: ["coupons", "discounts", "promo code"], hideForBranch: true },
   { label: "Cuisines", href: "/cuisines", section: "Marketing", keywords: ["cuisine", "food type", "restaurant cuisine"], hideForBranch: true },
   {
+    label: "Permissions",
+    href: "/permissions",
+    section: "Management",
+    keywords: ["permissions", "roles", "admin", "kitchen", "staff", "receptionist"],
+    hideForSuperAdmin: true,
+  },
+  {
+    label: "Kitchen",
+    href: "/kitchen",
+    section: "Management",
+    keywords: ["kitchen", "orders", "preparing"],
+    hideForSuperAdmin: true,
+  },
+  {
     label: "My Restaurant",
     href: "/restaurant-settings",
     section: "Management",
@@ -77,6 +91,12 @@ export const SIDEBAR_NAV_SEARCH_ITEMS: SidebarNavSearchItem[] = [
     href: "/reports/restaurant",
     section: "Reports",
     keywords: ["reports", "restaurant report", "commission", "sales", "performance", "earnings"],
+  },
+  {
+    label: "Order report",
+    href: "/reports/orders",
+    section: "Reports",
+    keywords: ["reports", "order report", "branch", "transfer", "transferred orders"],
   },
   {
     label: "Item report",

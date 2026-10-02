@@ -175,8 +175,8 @@ router.post("/create-team-member", optionalAuth, requireAuth, async (req, res) =
     }
 
     let memberRole = (role || "manager").toLowerCase();
-    // Only 1 Admin allowed per restaurant. Staff members are Manager, Kitchen, or Cashier.
-    if (memberRole === "admin" || memberRole === "owner") {
+    const allowedMemberRoles = new Set(["admin", "manager", "kitchen", "chef", "cashier", "receptionist", "staff"]);
+    if (memberRole === "owner" || !allowedMemberRoles.has(memberRole)) {
       memberRole = "manager";
     }
 
@@ -304,6 +304,85 @@ router.delete("/delete-team-member/:id", optionalAuth, requireAuth, async (req, 
   }
 });
 
+const EDITABLE_MEMBER_ROLES = new Set(["admin", "manager", "kitchen", "chef", "cashier", "receptionist", "staff"]);
+
+function canManageTeam(req) {
+  const isSuperAdmin =
+    req.user?.roles?.includes("super_admin") ||
+    req.user?.role === "super_admin";
+  const isRestaurantAdmin =
+    isSuperAdmin ||
+    req.user?.roles?.includes("admin") ||
+    req.user?.role === "admin" ||
+    req.user?.memberships?.some((m) => m.member_role === "admin" || m.member_role === "owner");
+  return { isSuperAdmin, isRestaurantAdmin };
+}
+
+/** Update a team member's name, email, password, and role. */
+router.put("/update-team-member", optionalAuth, requireAuth, async (req, res) => {
+  try {
+    const { id, full_name, email, password, member_role } = req.body || {};
+    if (!id) return res.status(400).json({ error: "id is required" });
+
+    const em = typeof email === "string" ? email.trim().toLowerCase() : "";
+    if (!em) return res.status(400).json({ error: "Email is required" });
+    if (password && String(password).length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    const { isSuperAdmin, isRestaurantAdmin } = canManageTeam(req);
+    if (!isRestaurantAdmin) {
+      return res.status(403).json({ error: "Only restaurant admins can edit team members" });
+    }
+
+    const knex = getKnex();
+    const membership = await knex("restaurant_members").where({ id }).first();
+    const userId = membership?.user_id || (isSuperAdmin ? id : null);
+    if (!userId) return res.status(404).json({ error: "Member not found" });
+
+    if (membership && !isSuperAdmin) {
+      const canManage =
+        req.user?.restaurantIds?.includes(membership.restaurant_id) ||
+        req.user?.ownedParentIds?.includes(membership.restaurant_id);
+      if (!canManage) {
+        return res.status(403).json({ error: "You are not authorized to edit members for this restaurant" });
+      }
+    }
+
+    const emailTaken = await knex("profiles")
+      .whereRaw("lower(email) = lower(?)", [em])
+      .whereNot({ id: userId })
+      .first();
+    if (emailTaken) return res.status(400).json({ error: "That email is already used by another account" });
+
+    const profileUpdates = {
+      email: em,
+      full_name: typeof full_name === "string" && full_name.trim() ? full_name.trim() : null,
+      updated_at: new Date(),
+    };
+    if (password) {
+      profileUpdates.password_hash = await bcrypt.hash(String(password), 10);
+    }
+    await knex("profiles").where({ id: userId }).update(profileUpdates);
+
+    const currentRole = String(membership?.member_role || "").toLowerCase();
+    const nextRole = typeof member_role === "string" ? member_role.toLowerCase() : "";
+    if (membership && currentRole !== "owner" && nextRole && nextRole !== currentRole) {
+      if (!EDITABLE_MEMBER_ROLES.has(nextRole)) {
+        return res.status(400).json({ error: "Choose Admin, Manager, Kitchen Staff, Receptionist, or Staff." });
+      }
+      await knex("restaurant_members").where({ id: membership.id }).update({ member_role: nextRole });
+      await knex("user_roles").where({ user_id: userId }).del();
+      await knex("user_roles").insert({ user_id: userId, role: nextRole });
+    }
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("update-team-member error:", e);
+    return res.status(500).json({ error: e.message || "Failed to update team member" });
+  }
+});
+
 /** Update team member role */
 router.put("/update-team-member-role", optionalAuth, requireAuth, async (req, res) => {
   try {
@@ -328,9 +407,10 @@ router.put("/update-team-member-role", optionalAuth, requireAuth, async (req, re
     }
 
     let roleToSet = member_role.toLowerCase();
-    if (roleToSet === "admin" || roleToSet === "owner") {
+    const allowedMemberRoles = new Set(["admin", "manager", "kitchen", "chef", "cashier", "receptionist", "staff"]);
+    if (roleToSet === "owner" || !allowedMemberRoles.has(roleToSet)) {
       return res.status(400).json({
-        error: "This restaurant already has an Admin. You can assign Manager, Kitchen Staff, Receptionist, or Staff.",
+        error: "Choose Admin, Manager, Kitchen Staff, Receptionist, or Staff.",
       });
     }
 

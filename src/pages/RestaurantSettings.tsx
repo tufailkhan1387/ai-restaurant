@@ -153,6 +153,8 @@ export default function RestaurantSettings() {
   const [telnyxProvisionBusy, setTelnyxProvisionBusy] = useState(false);
   const [synthflowBusy, setSynthflowBusy] = useState(false);
   const [synthflowSyncBusy, setSynthflowSyncBusy] = useState(false);
+  const [testCallPhone, setTestCallPhone] = useState("");
+  const [testCallBusy, setTestCallBusy] = useState(false);
   const [telnyxCandidates, setTelnyxCandidates] = useState<{ phone_number: string; locality?: string }[]>([]);
   const [telnyxAreaCode, setTelnyxAreaCode] = useState("");
   const [selectedTelnyxNumber, setSelectedTelnyxNumber] = useState("");
@@ -522,6 +524,40 @@ export default function RestaurantSettings() {
       });
     } finally {
       setSynthflowSyncBusy(false);
+    }
+  };
+
+  const placeTestCall = async () => {
+    if (!r?.id) return;
+    const phone = testCallPhone.trim();
+    if (phone.replace(/\D/g, "").length < 10) {
+      toast({
+        variant: "destructive",
+        title: "Phone number needed",
+        description: "Enter the number the agent should call, with country code. Example: +923001234567",
+      });
+      return;
+    }
+    setTestCallBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("synthflow-test-call", {
+        body: { restaurant_id: r.id, phone, name: "Test call" },
+      });
+      if (error) throw new Error(error.message);
+      const d = data as { success?: boolean; error?: string; message?: string; phone?: string };
+      if (!d?.success) throw new Error(d?.error || "Test call failed");
+      toast({
+        title: "Test call started",
+        description: d.message || `The agent is calling ${d.phone || phone}. Answer to test the order flow.`,
+      });
+    } catch (e: unknown) {
+      toast({
+        variant: "destructive",
+        title: "Test call failed",
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setTestCallBusy(false);
     }
   };
 
@@ -1235,6 +1271,35 @@ export default function RestaurantSettings() {
               <RefreshCw className={`h-4 w-4 mr-2 ${synthflowSyncBusy ? "animate-spin" : ""}`} />
               {synthflowSyncBusy ? t("restaurantSettings:syncing", "Syncing…") : t("restaurantSettings:syncMenuCoupons", "Sync Menu & Coupons")}
             </Button>
+          </div>
+
+          <div className="space-y-3 rounded-lg border p-4">
+            <p className="text-sm font-medium">{t("restaurantSettings:testCallTitle", "Test call")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "restaurantSettings:testCallDesc",
+                "The Synthflow agent calls this number so you can try the menu, branch question, and order flow.",
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                value={testCallPhone}
+                onChange={(e) => setTestCallPhone(e.target.value)}
+                placeholder="+923001234567"
+                className="max-w-xs font-mono"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={testCallBusy || !r.synthflow_agent_id}
+                onClick={() => void placeTestCall()}
+              >
+                <Phone className="h-4 w-4 mr-2" />
+                {testCallBusy
+                  ? t("restaurantSettings:testCallBusy", "Calling…")
+                  : t("restaurantSettings:testCallButton", "Place test call")}
+              </Button>
+            </div>
           </div>
 
           {r.synthflow_agent_id ? (

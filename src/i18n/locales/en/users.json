@@ -61,6 +61,7 @@
   "roleCashier": "Cashier",
   "roleReceptionist": "Receptionist",
   "roleStaff": "Staff",
+  "roleOptionAdmin": "Admin (All modules)",
   "roleOptionManager": "Manager (Operations, Menu, Orders & Inventory)",
   "roleOptionKitchen": "Kitchen Staff (Order Fulfillment)",
   "roleOptionCashier": "Cashier (Orders & Receipts)",

@@ -53,7 +53,7 @@ export async function aiPlaceOrder(req, res) {
       callId = c?.id ?? null;
     }
 
-    const { order, reservation, reservationError, unmatched, coupon, totals, targetRestaurantId, assignmentStatus } = await createPhoneOrder(knex, {
+    const { order, reservation, reservationError, unmatched, coupon, totals, assignedBranchName, assignmentStatus } = await createPhoneOrder(knex, {
       restaurantId,
       customer_name: body.customer_name,
       customer_phone: body.customer_phone,
@@ -64,6 +64,7 @@ export async function aiPlaceOrder(req, res) {
       coupon_code: body.coupon_code || body.discount_code || null,
       payment_method: body.payment_method ?? "cash",
       fulfillment_type: body.fulfillment_type || "delivery",
+      branch_name: body.branch_name || body.branch || null,
       delivery_latitude: body.delivery_latitude ?? body.latitude ?? null,
       delivery_longitude: body.delivery_longitude ?? body.longitude ?? null,
       call_id: callId,
@@ -104,15 +105,17 @@ export async function aiPlaceOrder(req, res) {
         : coupon?.error
           ? ` Coupon not applied (${coupon.error}).`
           : "";
+    const branchNote = assignedBranchName ? ` This order is for the ${assignedBranchName} branch.` : "";
 
     return res.json({
       success: true,
       order_number: order.order_number,
       tracking_code: order.tracking_code,
       total: totals.total,
+      branch_name: assignedBranchName,
       discount_amount: coupon.amount,
       speak: `Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order.`,
-      message: `Tell the caller this exact sentence: Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order. Total ${totals.total.toFixed(2)}.${couponNote}`,
+      message: `Tell the caller this exact sentence: Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order.${branchNote} Total ${totals.total.toFixed(2)}.${couponNote}`,
     });
   } catch (e) {
     console.error("❌ Order Error:", e);

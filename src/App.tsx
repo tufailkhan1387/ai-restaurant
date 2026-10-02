@@ -49,11 +49,14 @@ import ItemReportPage from "@/pages/reports/ItemReportPage";
 import BestSellersReportPage from "@/pages/reports/BestSellersReportPage";
 import InventoryReportPage from "@/pages/reports/InventoryReportPage";
 import CustomerAnalyticsPage from "@/pages/reports/CustomerAnalyticsPage";
+import OrderReportPage from "@/pages/reports/OrderReportPage";
 import RestaurantOwnersPage from "@/pages/users/RestaurantOwnersPage";
 import TeamMembersPage from "@/pages/users/TeamMembersPage";
 import BranchPortal from "@/pages/BranchPortal";
 import TableReservations from "@/pages/TableReservations";
 import StaffTables from "@/pages/StaffTables";
+import Permissions from "@/pages/Permissions";
+import Kitchen from "@/pages/Kitchen";
 
 const queryClient = new QueryClient();
 
@@ -127,6 +130,7 @@ const App = () => (
                 <Route path="earnings" element={<Earnings />} />
                 <Route path="reports" element={<Navigate to="/reports/restaurant" replace />} />
                 <Route path="reports/restaurant" element={<RestaurantReportPage />} />
+                <Route path="reports/orders" element={<OrderReportPage />} />
                 <Route path="reports/items" element={<ItemReportPage />} />
                 <Route path="reports/best-sellers" element={<BestSellersReportPage />} />
                 <Route path="reports/inventory" element={<InventoryReportPage />} />
@@ -134,6 +138,8 @@ const App = () => (
                 <Route path="coupons" element={<Coupons />} />
                 <Route path="cuisines" element={<Cuisines />} />
                 <Route path="reservations" element={<TableReservations />} />
+                <Route path="permissions" element={<Permissions />} />
+                <Route path="kitchen" element={<Kitchen />} />
                 <Route path="tables" element={<StaffTables />} />
                 <Route path="profile" element={<Profile />} />
               </Route>

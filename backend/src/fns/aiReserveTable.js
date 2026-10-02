@@ -1,4 +1,5 @@
 import { getKnex } from "../db.js";
+import { resolveSpokenBranchId } from "../lib/branchLocation.js";
 import { normalizeElevenLabsToolBody, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
 import { findAvailableTable, createReservation, parseReservationDate, parseReservationTime, lastSpokenReservationTime } from "../lib/tableReservationService.js";
 
@@ -41,6 +42,11 @@ export async function aiReserveTable(req, res) {
     if (!restaurantId) {
       return res.status(200).json({ success: false, message: resolved.error || "Could not identify the restaurant." });
     }
+    const branchRestaurantId = await resolveSpokenBranchId(
+      knex,
+      restaurantId,
+      body.branch_name || body.branch || body.area || null,
+    );
 
     const pSize = Math.max(1, parseInt(party_size, 10) || 1);
     const duration = Number(slot_duration_hours) || 1;
@@ -60,7 +66,7 @@ export async function aiReserveTable(req, res) {
     console.log(`👤 Customer: ${customer_name} | Party: ${pSize} | Date: ${isoDate} | Time: ${isoTime} (raw=${reservation_time}) | Duration: ${duration}h`);
 
     const availableTable = await findAvailableTable(knex, {
-      restaurantId,
+      restaurantId: branchRestaurantId,
       partySize: pSize,
       reservationDate: isoDate,
       startTime: isoTime,
@@ -91,7 +97,7 @@ export async function aiReserveTable(req, res) {
       null;
 
     const reservation = await createReservation(knex, {
-      restaurantId,
+      restaurantId: branchRestaurantId,
       tableId: availableTable.id,
       customerName: customer_name,
       customerPhone: customer_phone,

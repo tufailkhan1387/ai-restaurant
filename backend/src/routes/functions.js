@@ -24,6 +24,7 @@ import { restaurantCreateSynthflowAgent } from "../fns/restaurantCreateSynthflow
 import { syncRestaurantMenuToSynthflow } from "../fns/syncRestaurantMenuToSynthflow.js";
 import { synthflowPostCallWebhook } from "../fns/synthflowPostCallWebhook.js";
 import { synthflowSyncCalls } from "../fns/synthflowSyncCalls.js";
+import { synthflowTestCall } from "../fns/synthflowTestCall.js";
 
 const router = Router();
 
@@ -56,6 +57,7 @@ const AUTH_HANDLERS = {
   "restaurant-provision-telnyx-number": restaurantProvisionTelnyxNumber,
   "restaurant-create-synthflow-agent": restaurantCreateSynthflowAgent,
   "sync-restaurant-menu-to-synthflow": syncRestaurantMenuToSynthflow,
+  "synthflow-test-call": synthflowTestCall,
 };
 
 router.post("/:name", optionalAuth, async (req, res) => {

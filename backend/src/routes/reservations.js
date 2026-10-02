@@ -94,10 +94,12 @@ router.get("/restaurants/:id/reservations", optionalAuth, requireAuth, async (re
   try {
     const knex = getKnex();
     const { date, status } = req.query;
+    const children = await knex("restaurants").where({ parent_restaurant_id: req.params.id }).select("id");
+    const restaurantIds = [req.params.id, ...children.map((row) => row.id)];
     let q = knex("table_reservations")
       .leftJoin("restaurant_tables", "table_reservations.table_id", "restaurant_tables.id")
       .leftJoin("calls", "table_reservations.call_id", "calls.id")
-      .where("table_reservations.restaurant_id", req.params.id)
+      .whereIn("table_reservations.restaurant_id", restaurantIds)
       .select(
         "table_reservations.*",
         "restaurant_tables.table_number",

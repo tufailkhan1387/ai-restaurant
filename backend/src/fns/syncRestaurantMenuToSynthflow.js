@@ -5,6 +5,7 @@ import {
   defaultSynthflowGreeting,
   defaultSynthflowPrompt,
   loadRestaurantVoiceCatalog,
+  applyBranchOrdering,
 } from "../lib/restaurantVoiceContext.js";
 
 /**
@@ -33,7 +34,7 @@ export async function syncRestaurantMenuToSynthflow(req, res) {
     });
     const greeting =
       (r.agent_first_message || "").trim() || defaultSynthflowGreeting(r.name);
-    const prompt = defaultSynthflowPrompt(r.name, knowledge);
+    const prompt = applyBranchOrdering(defaultSynthflowPrompt(r.name, knowledge), catalog.branches);
     const webhookUrl = postCallWebhookUrl();
 
     await updateAgent(r.synthflow_agent_id, {

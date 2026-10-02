@@ -33,6 +33,8 @@ import {
 import { formatCurrency } from "@/lib/restaurant";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { getToken } from "@/lib/authStorage";
 import { AIChatTest } from "@/components/agents/AIChatTest";
 import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
 
@@ -95,6 +97,8 @@ type CartLine = {
 export default function Order() {
   const { t } = useTranslation(["ordering", "common", "deals", "menu", "orders"]);
   const navigate = useNavigate();
+  const { role, user } = useAuth();
+  const isOrderStaff = role === "staff" || role === "admin" || role === "manager";
   const { restaurantSlug, branchId } = useParams<{ restaurantSlug?: string; branchId?: string }>();
   const [searchParams] = useSearchParams();
   const rawTableParam = searchParams.get("table");
@@ -118,6 +122,10 @@ export default function Order() {
   const [submitting, setSubmitting] = useState(false);
   const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup" | "dine_in">("delivery");
   const [tableInfo, setTableInfo] = useState<{ id?: string; table_number?: string } | null>(null);
+  const [staffTables, setStaffTables] = useState<Array<{ id: string; table_number: string; occupied?: boolean }>>([]);
+  const [staffChoice, setStaffChoice] = useState<"pending" | "table" | "online">(
+    tableParam || tableIdParam ? "table" : "pending",
+  );
   const [checkInNotice, setCheckInNotice] = useState<string | null>(null);
   const [form, setForm] = useState({
     customer_name: searchParams.get("name") || searchParams.get("customer_name") || "",
@@ -216,6 +224,45 @@ export default function Order() {
       }
     })();
   }, [restaurantSlug, branchId, tableParam, tableIdParam]);
+
+  useEffect(() => {
+    if (!isOrderStaff || !restaurant?.id || !user) return;
+    const token = getToken();
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`${getApiBase()}/api/restaurants/${restaurant.id}/floor-tables`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok || cancelled) return;
+      const data = await res.json();
+      const rows = Array.isArray(data?.tables) ? data.tables : [];
+      setStaffTables(
+        rows
+          .filter((table: { is_active?: boolean }) => table.is_active !== false)
+          .map((table: { id: string; table_number: string; occupied?: boolean }) => ({
+            id: table.id,
+            table_number: table.table_number,
+            occupied: table.occupied,
+          })),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOrderStaff, restaurant?.id, user]);
+
+  const chooseStaffTable = (table: { id: string; table_number: string }) => {
+    setTableInfo({ id: table.id, table_number: table.table_number });
+    setFulfillmentType("dine_in");
+    setStaffChoice("table");
+  };
+
+  const chooseStaffOnline = () => {
+    setTableInfo(null);
+    setFulfillmentType(settings?.allows_delivery === false ? "pickup" : "delivery");
+    setStaffChoice("online");
+  };
 
   const addItem = (line: Omit<CartLine, "quantity">) => {
     setCart((prev) => {
@@ -514,6 +561,53 @@ export default function Order() {
     return basePrice + flavorExtra + addonsTotal;
   }, [customizingItem, chosenSize, chosenFlavor, chosenAddonIds, addons]);
 
+  const waitingForTableChoice = isOrderStaff && staffChoice === "pending" && !tableParam && !tableIdParam;
+
+  if (waitingForTableChoice) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <header className="border-b bg-card">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-bold text-foreground">{settings?.name || "Restaurant"}</h1>
+              <p className="text-xs text-muted-foreground">Staff order</p>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/">Back to dashboard</Link>
+            </Button>
+          </div>
+        </header>
+        <main className="max-w-3xl mx-auto w-full px-4 py-10 space-y-6">
+          <div>
+            <h2 className="text-2xl font-black tracking-tight">Where is this order?</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Pick a table first. If the guest is not sitting at a table, place a normal online order.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {staffTables.map((table) => (
+              <button
+                key={table.id}
+                type="button"
+                onClick={() => chooseStaffTable(table)}
+                className="rounded-2xl border bg-card p-4 text-left hover:border-primary hover:bg-primary/5"
+              >
+                <p className="text-lg font-black">Table {table.table_number}</p>
+                <p className="text-xs text-muted-foreground">{table.occupied ? "Guests seated" : "Available"}</p>
+              </button>
+            ))}
+          </div>
+          {staffTables.length === 0 && (
+            <p className="text-sm text-muted-foreground">No tables are set up yet. You can still place an online order.</p>
+          )}
+          <Button className="w-full sm:w-auto" size="lg" onClick={chooseStaffOnline}>
+            No table — place an online order
+          </Button>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b bg-card sticky top-0 z-20">
@@ -534,6 +628,13 @@ export default function Order() {
             <p className="text-xs text-muted-foreground">{settings?.address || ""}</p>
           </div>
           <div className="flex items-center gap-2">
+            {isOrderStaff && !tableParam && !tableIdParam && (
+              <Button variant="outline" size="sm" onClick={() => setStaffChoice("pending")}>
+                {staffChoice === "table"
+                  ? `Table ${tableInfo?.table_number || ""}`
+                  : "Online order"}
+              </Button>
+            )}
             <LanguageSwitcher />
             <Button variant="outline" size="sm" asChild>
               <Link to="/">{t("ordering:adminLogin", "Admin")}</Link>

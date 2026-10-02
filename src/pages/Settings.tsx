@@ -8,8 +8,8 @@ import { UserManagement } from "@/components/settings/UserManagement";
 
 export default function Settings() {
   const { t } = useTranslation(["settings", "sidebar", "common"]);
-  const { isManagement, isKitchen, isReceptionist, isStaff } = useAuth();
-  const showUserManagement = isManagement && !isKitchen && !isReceptionist && !isStaff;
+  const { role, isManagement, isKitchen, isReceptionist, isStaff } = useAuth();
+  const showUserManagement = role === "super_admin" && !isKitchen && !isReceptionist && !isStaff;
   const showSecurity = isManagement || isKitchen || isReceptionist || isStaff;
 
   return (

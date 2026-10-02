@@ -1,3 +1,4 @@
+import { matchBranchChoice } from "./branchLocation.js";
 import { normalizeE164 } from "./voiceWebhookUtils.js";
 import { geocodeAddress, haversineDistanceKm } from "./geocoding.js";
 import { nextOrderNumber } from "./orderNumbers.js";
@@ -418,6 +419,10 @@ export async function applyCoupon(knex, { restaurantId, code, subtotal }) {
   return { code: discount.code, amount, discount_id: discount.id };
 }
 
+function pickNamedBranch(branches, branchName) {
+  return matchBranchChoice(branches, branchName);
+}
+
 /**
  * Create a phone/AI order with menu matching + optional coupon.
  * @param {import("knex").Knex} knex
@@ -440,6 +445,7 @@ export async function createPhoneOrder(knex, input) {
     ai_extracted_data,
     delivery_latitude,
     delivery_longitude,
+    branch_name,
   } = input;
 
   if (!restaurantId) throw new Error("restaurantId is required");
@@ -502,12 +508,21 @@ export async function createPhoneOrder(knex, input) {
   let assignedBranchDistanceKm = null;
   let branchAssignedAt = null;
   let assignmentStatus = "assigned";
+  let assignedBranchName = null;
+  const chosenBranch = pickNamedBranch(branches, branch_name);
 
-  if (branches.length > 0 && !isPickup) {
+  if (chosenBranch) {
+    targetRestaurantId = chosenBranch.id;
+    assignedBranchName = chosenBranch.name;
+    branchAssignedAt = new Date();
+    autoAssigned = true;
+    assignmentStatus = "assigned";
+  } else if (branches.length > 0 && !isPickup) {
     if (lat != null && lng != null) {
       const nearest = await findNearestBranch(knex, restaurantId, lat, lng);
       if (nearest) {
         targetRestaurantId = nearest.branch.id;
+        assignedBranchName = nearest.branch.name;
         assignedBranchDistanceKm = nearest.distance;
         branchAssignedAt = new Date();
         autoAssigned = true;
@@ -625,6 +640,8 @@ export async function createPhoneOrder(knex, input) {
           coupon_error: coupon.error || null,
           target_branch_id: targetRestaurantId !== restaurantId ? targetRestaurantId : null,
           parent_restaurant_id: targetRestaurantId !== restaurantId ? restaurantId : null,
+          requested_branch: branch_name || null,
+          assigned_branch_name: assignedBranchName,
           ...(ai_extracted_data && typeof ai_extracted_data === "object" ? ai_extracted_data : {}),
         },
       })
@@ -662,6 +679,7 @@ export async function createPhoneOrder(knex, input) {
     unmatched,
     coupon,
     targetRestaurantId,
+    assignedBranchName,
     assignmentStatus,
     totals: { subtotal, tax, deliveryFee, discount: coupon.amount, total },
   };

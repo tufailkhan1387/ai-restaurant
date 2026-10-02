@@ -49,6 +49,8 @@ import { getToken } from "@/lib/authStorage";
 
 interface BranchItem extends RestaurantInfo {
   phone?: string | null;
+  city?: string | null;
+  area?: string | null;
   created_at?: string;
   parent_name?: string;
   total_orders?: number;
@@ -92,6 +94,8 @@ export default function BranchPortal() {
   const [addForm, setAddForm] = useState({
     name: "",
     address: "",
+    city: "",
+    area: "",
     phone: "",
     latitude: "",
     longitude: "",
@@ -110,6 +114,8 @@ export default function BranchPortal() {
   const [editForm, setEditForm] = useState({
     name: "",
     address: "",
+    city: "",
+    area: "",
     phone: "",
     service_radius_km: "8",
     latitude: "",
@@ -303,6 +309,8 @@ export default function BranchPortal() {
         body: JSON.stringify({
           name: addForm.name.trim(),
           address: addForm.address.trim() || null,
+          city: addForm.city.trim() || null,
+          area: addForm.area.trim() || null,
           phone: addForm.phone.trim() || null,
           latitude: addForm.latitude ? parseFloat(addForm.latitude) : null,
           longitude: addForm.longitude ? parseFloat(addForm.longitude) : null,
@@ -324,6 +332,8 @@ export default function BranchPortal() {
       setAddForm({
         name: "",
         address: "",
+        city: "",
+        area: "",
         phone: "",
         latitude: "",
         longitude: "",
@@ -378,6 +388,8 @@ export default function BranchPortal() {
     setEditForm({
       name: branch.name || "",
       address: branch.address || "",
+      city: branch.city || "",
+      area: branch.area || "",
       phone: branch.phone || "",
       service_radius_km: String(branch.service_radius_km || 8),
       latitude: branch.latitude != null ? String(branch.latitude) : "",
@@ -404,6 +416,8 @@ export default function BranchPortal() {
       const payload: any = {
         name: editForm.name,
         address: editForm.address,
+        city: editForm.city,
+        area: editForm.area,
         phone: editForm.phone,
         service_radius_km: parseFloat(editForm.service_radius_km) || 8.0,
         latitude: editForm.latitude ? parseFloat(editForm.latitude) : null,
@@ -816,6 +830,29 @@ export default function BranchPortal() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
+                <Label htmlFor="branch_city" className="text-xs font-bold">City</Label>
+                <Input
+                  id="branch_city"
+                  placeholder="e.g. Lahore"
+                  value={addForm.city}
+                  onChange={(e) => setAddForm({ ...addForm, city: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="branch_area" className="text-xs font-bold">Area</Label>
+                <Input
+                  id="branch_area"
+                  placeholder="e.g. Iqbal Town"
+                  value={addForm.area}
+                  onChange={(e) => setAddForm({ ...addForm, area: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
                 <Label htmlFor="branch_lat" className="text-xs font-bold">
                   Latitude
                 </Label>
@@ -975,6 +1012,27 @@ export default function BranchPortal() {
                 className="h-9 text-xs"
                 placeholder="e.g. Phase 5 DHA, Lahore"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">City</Label>
+                <Input
+                  value={editForm.city}
+                  onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                  className="h-9 text-xs"
+                  placeholder="e.g. Lahore"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">Area</Label>
+                <Input
+                  value={editForm.area}
+                  onChange={(e) => setEditForm({ ...editForm, area: e.target.value })}
+                  className="h-9 text-xs"
+                  placeholder="e.g. Johar Town"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

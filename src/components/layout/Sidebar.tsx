@@ -25,6 +25,7 @@ import {
   Ticket,
   FileBarChart,
   Package,
+  ShoppingBag,
   Users,
   Award,
   BarChart3,
@@ -34,6 +35,7 @@ import {
   CalendarCheck,
   UserCog,
   TableProperties,
+  Shield,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -106,6 +108,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const reportsChildren = useMemo(
     () => [
+      { icon: ShoppingBag, label: t("sidebar:orderReport", "Order report"), href: "/reports/orders" },
       { icon: Package, label: t("sidebar:itemReport", "Item report"), href: "/reports/items" },
       { icon: BarChart3, label: t("sidebar:customerAnalytics", "Customer analytics"), href: "/reports/customers" },
     ],
@@ -121,17 +124,18 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const managementItems = useMemo(
     () => [
+      { icon: Shield, label: t("sidebar:permissions", "Permissions"), href: "/permissions" },
+      { icon: TableProperties, label: t("sidebar:tables", "Tables"), href: "/reservations?tab=tables" },
+      { icon: ChefHat, label: t("sidebar:kitchen", "Kitchen"), href: "/kitchen" },
+      { icon: CalendarCheck, label: t("sidebar:reservations", "Reservations"), href: "/reservations" },
       {
         icon: Store,
         label: isBranch ? t("sidebar:myBranch", "My Branch") : t("sidebar:myRestaurant", "My Restaurant"),
         href: "/restaurant-settings",
       },
-      { icon: CalendarCheck, label: t("sidebar:reservations", "Reservations"), href: "/reservations" },
-      { icon: TableProperties, label: t("sidebar:tablesAndFloor", "Tables & Floor"), href: "/reservations?tab=tables" },
       ...(!isBranch
         ? [{ icon: Building2, label: t("sidebar:branches", "Branches"), href: "/branches" }]
         : []),
-
       { icon: Settings, label: t("sidebar:settings", "Settings"), href: "/settings" },
     ],
     [t, isBranch]

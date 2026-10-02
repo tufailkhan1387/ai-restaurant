@@ -5,6 +5,14 @@ import { getKnex } from "../db.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { geocodeAddress } from "../lib/geocoding.js";
 import { createNotification } from "./notifications.js";
+import { pushBranchListToAgent } from "../lib/syncAgentBranches.js";
+
+function refreshAgentBranches(knex, parentRestaurantId) {
+  if (!parentRestaurantId) return;
+  pushBranchListToAgent(knex, parentRestaurantId).catch((err) => {
+    console.warn("Branch list sync to phone agent failed:", err.message);
+  });
+}
 
 const router = Router();
 
@@ -82,6 +90,8 @@ router.post("/restaurants/:parentId/branches", optionalAuth, requireAuth, async 
       owner_password,
       owner_full_name,
       phone,
+      city,
+      area,
     } = req.body || {};
 
     if (!name || !String(name).trim()) {
@@ -117,6 +127,8 @@ router.post("/restaurants/:parentId/branches", optionalAuth, requireAuth, async 
           name: String(name).trim(),
           slug,
           address: address ? String(address).trim() : null,
+          city: city ? String(city).trim() : null,
+          area: area ? String(area).trim() : null,
           phone: phone ? String(phone).trim() : parent.phone,
           parent_restaurant_id: parentId,
           is_branch: true,
@@ -236,6 +248,8 @@ router.post("/restaurants/:parentId/branches", optionalAuth, requireAuth, async 
 
       return { branch, managerUserId };
     });
+
+    refreshAgentBranches(knex, parentId);
 
     return res.status(201).json({
       success: true,
@@ -473,6 +487,8 @@ router.patch("/branches/:branchId", optionalAuth, requireAuth, async (req, res) 
       manager_email,
       manager_password,
       manager_full_name,
+      city,
+      area,
     } = req.body || {};
 
     const targetEmail = manager_email !== undefined ? manager_email : owner_email;
@@ -489,6 +505,8 @@ router.patch("/branches/:branchId", optionalAuth, requireAuth, async (req, res) 
     let newLat = latitude !== undefined ? (latitude != null && latitude !== "" ? Number(latitude) : null) : undefined;
     let newLng = longitude !== undefined ? (longitude != null && longitude !== "" ? Number(longitude) : null) : undefined;
 
+    if (city !== undefined) updates.city = city ? String(city).trim() : null;
+    if (area !== undefined) updates.area = area ? String(area).trim() : null;
     if (address !== undefined) {
       updates.address = address ? String(address).trim() : null;
       if (newLat === undefined && newLng === undefined && updates.address) {
@@ -583,6 +601,7 @@ router.patch("/branches/:branchId", optionalAuth, requireAuth, async (req, res) 
     }
 
     const updated = await knex("restaurants").where({ id: branchId }).first();
+    refreshAgentBranches(knex, updated?.parent_restaurant_id || branch.parent_restaurant_id);
     return res.json({ success: true, branch: updated });
   } catch (e) {
     console.error("Update branch error:", e);
@@ -604,11 +623,14 @@ router.delete("/branches/:branchId", optionalAuth, requireAuth, async (req, res)
       return res.status(403).json({ error: "Unauthorized to deactivate this branch" });
     }
 
+    const branch = await knex("restaurants").where({ id: branchId }).first();
     await knex("restaurants").where({ id: branchId }).update({
       is_active: false,
       is_accepting_orders: false,
       updated_at: new Date(),
     });
+
+    refreshAgentBranches(knex, branch?.parent_restaurant_id);
 
     return res.json({ success: true, message: "Branch deactivated successfully" });
   } catch (e) {

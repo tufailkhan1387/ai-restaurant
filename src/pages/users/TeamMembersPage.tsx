@@ -7,6 +7,7 @@ import {
   Store,
   Mail,
   Trash2,
+  Pencil,
   ShieldCheck,
   Shield,
   ChefHat,
@@ -91,6 +92,12 @@ export default function TeamMembersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("manager");
+  const [editing, setEditing] = useState<TeamMemberRow | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editRole, setEditRole] = useState("staff");
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -270,6 +277,63 @@ export default function TeamMembersPage() {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const openEdit = (row: TeamMemberRow) => {
+    setEditing(row);
+    setEditName(row.full_name || "");
+    setEditEmail(row.email || "");
+    setEditPassword("");
+    setEditRole(row.member_role || "staff");
+  };
+
+  const handleEditMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing) return;
+    if (!editEmail.trim()) {
+      toast({
+        variant: "destructive",
+        title: t("common:validationError", "Validation Error"),
+        description: "Email is required.",
+      });
+      return;
+    }
+    if (editPassword && editPassword.length < 6) {
+      toast({
+        variant: "destructive",
+        title: t("common:validationError", "Validation Error"),
+        description: "Password must be at least 6 characters.",
+      });
+      return;
+    }
+
+    setEditSubmitting(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`${getApiBase()}/api/auth/update-team-member`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          id: editing.id,
+          full_name: editName.trim(),
+          email: editEmail.trim(),
+          password: editPassword.trim() || undefined,
+          member_role: editing.member_role === "owner" ? undefined : editRole,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update team member");
+      toast({ title: "Team member updated" });
+      setEditing(null);
+      loadData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: t("common:failed", "Failed"), description: err.message });
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -492,6 +556,7 @@ export default function TeamMembersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="admin">{t("users:roleOptionAdmin", "Admin (All modules)")}</SelectItem>
                     <SelectItem value="manager">{t("users:roleOptionManager", "Manager (Operations, Menu, Orders & Inventory)")}</SelectItem>
                     <SelectItem value="kitchen">{t("users:roleOptionKitchen", "Kitchen Staff (Order Fulfillment)")}</SelectItem>
                     <SelectItem value="receptionist">{t("users:roleOptionReceptionist", "Receptionist (Table Reservations & Guest Check-in)")}</SelectItem>
@@ -620,7 +685,7 @@ export default function TeamMembersPage() {
                       <TableCell className="py-4 px-4">
                         <div className="flex items-center gap-2">
                           {getRoleBadge(row.member_role)}
-                          {isRestaurantAdmin && row.member_role !== "owner" && row.member_role !== "admin" && (
+                          {isRestaurantAdmin && row.member_role !== "owner" && (
                             <Select
                               defaultValue={row.member_role}
                               onValueChange={(v) => handleUpdateRole(row.id, v)}
@@ -629,6 +694,7 @@ export default function TeamMembersPage() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="admin">{t("users:roleAdmin", "Admin")}</SelectItem>
                                 <SelectItem value="manager">{t("users:roleManager", "Manager")}</SelectItem>
                                 <SelectItem value="kitchen">{t("users:roleKitchen", "Kitchen")}</SelectItem>
                                 <SelectItem value="receptionist">{t("users:roleReceptionist", "Receptionist")}</SelectItem>
@@ -647,15 +713,26 @@ export default function TeamMembersPage() {
                       {/* Actions (Only Restaurant Admin can delete roles/members) */}
                       {isRestaurantAdmin && (
                         <TableCell className="py-4 px-6 text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg"
-                            title="Remove Team Member"
-                            onClick={() => handleDeleteMember(row.id, row.full_name || row.email)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="inline-flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-lg"
+                              title="Edit team member"
+                              onClick={() => openEdit(row)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-lg"
+                              title="Remove Team Member"
+                              onClick={() => handleDeleteMember(row.id, row.full_name || row.email)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
@@ -666,6 +743,81 @@ export default function TeamMembersPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Pencil className="h-5 w-5 text-primary" />
+              Edit team member
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Update the name, email, password, or role. Leave the password blank to keep the current one.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditMember} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-name" className="text-xs font-semibold">Name</Label>
+              <Input
+                id="edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="rounded-xl text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-email" className="text-xs font-semibold">
+                Email <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="edit-email"
+                type="email"
+                required
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+                className="rounded-xl text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-pass" className="text-xs font-semibold">New password</Label>
+              <Input
+                id="edit-pass"
+                type="password"
+                placeholder="Leave blank to keep the current password"
+                value={editPassword}
+                onChange={(e) => setEditPassword(e.target.value)}
+                className="rounded-xl text-xs"
+              />
+            </div>
+            {editing?.member_role !== "owner" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Role</Label>
+                <Select value={editRole} onValueChange={setEditRole}>
+                  <SelectTrigger className="rounded-xl text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin (All modules)</SelectItem>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="kitchen">Kitchen Staff</SelectItem>
+                    <SelectItem value="receptionist">Receptionist</SelectItem>
+                    <SelectItem value="staff">Staff</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <DialogFooter className="gap-2 pt-3">
+              <Button variant="outline" type="button" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={editSubmitting} className="gradient-primary text-primary-foreground gap-2">
+                {editSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

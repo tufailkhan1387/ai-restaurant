@@ -174,6 +174,27 @@ export async function createInboundAgent(payload) {
   });
 }
 
+/**
+ * Place an outbound call from a Synthflow agent to a phone number.
+ * Used for the dashboard test call.
+ */
+export async function startOutboundCall({ modelId, phone, name }) {
+  const json = await synthflowRequest("/calls", {
+    method: "POST",
+    body: {
+      model_id: modelId,
+      phone,
+      name: name || "Test call",
+    },
+  });
+  const callId =
+    json?.response?.call_id ||
+    json?.call_id ||
+    json?.response?.id ||
+    null;
+  return { raw: json, call_id: callId };
+}
+
 export async function updateAgent(modelId, payload) {
   return synthflowRequest(`/assistants/${encodeURIComponent(modelId)}`, {
     method: "PUT",
@@ -225,6 +246,14 @@ export async function findAssistantByPhone(phoneE164) {
     if (assistants.length < 50) break;
   }
   return null;
+}
+
+export async function updateCustomAction(actionId, customAction) {
+  const json = await synthflowRequest(`/actions/${actionId}`, {
+    method: "PUT",
+    body: { CUSTOM_ACTION: customAction },
+  });
+  return { raw: json, action_id: actionId };
 }
 
 export async function createCustomAction(customAction) {

@@ -15,6 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { OrderReceipt } from "@/components/orders/OrderReceipt";
+import { orderTakerLabel } from "@/lib/orderTaker";
 import {
   Select,
   SelectContent,
@@ -35,7 +36,6 @@ import {
   Printer,
   Receipt,
   ShoppingBag,
-  Store,
   Truck,
   User,
   Info,
@@ -838,6 +838,8 @@ export default function OrderDetail() {
   const isCash = !order.payment_method || order.payment_method.toLowerCase().includes("cash");
   const isPaid = order.payment_status?.toLowerCase() === "paid";
 
+  const takerLabel = orderTakerLabel(order.source, order.call_id);
+
   let placedAgo = "just now";
   try {
     placedAgo = formatDistanceToNow(new Date(order.created_at), { addSuffix: true });
@@ -927,14 +929,16 @@ export default function OrderDetail() {
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md border border-border/40">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Placed {placedAgo}
                 </span>
-                {restaurantName && (
+                {takerLabel && (
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md border border-border/40">
-                    <Store className="h-3.5 w-3.5 text-muted-foreground" /> {restaurantName}
+                    {takerLabel === "Agent" ? (
+                      <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                    ) : (
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                    {takerLabel === "Agent" ? "Taken by agent" : "Taken by staff"}
                   </span>
                 )}
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md border border-border/40 capitalize">
-                  {order.source || "Manual"}
-                </span>
                 <span
                   className={cn(
                     "inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-md border",
@@ -960,7 +964,9 @@ export default function OrderDetail() {
                       Dine-In Table Order — {formatTableDisplayName(order.table_number)}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {order.source === "staff"
+                      {takerLabel === "Agent"
+                        ? "Agent took this dine-in order"
+                        : takerLabel === "Staff"
                         ? "Staff took this dine-in order at the table"
                         : "Customer scanned table QR code & placed dine-in order"}
                       {isSittingBill

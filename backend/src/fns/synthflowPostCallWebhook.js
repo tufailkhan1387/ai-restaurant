@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getKnex } from "../db.js";
+import { resolveSpokenBranchId } from "../lib/branchLocation.js";
 import { createPhoneOrder, parseOrderItemsText } from "../lib/phoneOrderService.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
 import { parseTranscriptIntoTurns } from "./synthflowSyncCalls.js";
@@ -87,6 +88,14 @@ export function extractSynthflowFields(payload) {
       if (!action || typeof action !== "object") continue;
       const name = String(action.name || "").toLowerCase();
       const hardId = String(action.parameters_hard_coded?.identifier || "").toLowerCase();
+      for (const bag of [action.parameters, action.variables, action.inputs, action.parameters_from_llm]) {
+        if (!bag || typeof bag !== "object" || Array.isArray(bag)) continue;
+        for (const [key, val] of Object.entries(bag)) {
+          if (fields[key] != null) continue;
+          const text = val && typeof val === "object" && "value" in val ? val.value : val;
+          if (text != null && typeof text !== "object") fields[key] = String(text);
+        }
+      }
       const ret = action.return_value;
       let value = null;
       if (ret != null && typeof ret === "object") {
@@ -115,6 +124,7 @@ export function extractSynthflowFields(payload) {
     coupon_code: ["coupon_code", "promo_code", "discount_code", "coupon"],
     special_notes: ["special_notes", "notes", "delivery_notes", "instructions"],
     fulfillment_type: ["fulfillment_type", "order_type", "delivery_or_pickup"],
+    branch_name: ["branch_name", "branch", "restaurant_branch", "selected_branch"],
     payment_method: ["payment_method", "payment"],
     order_placed: ["order_placed", "placed_order", "order_confirmed"],
     party_size: ["party_size", "party", "guests", "number_of_guests", "people", "guest_count", "persons"],
@@ -563,6 +573,11 @@ export async function synthflowPostCallWebhook(req, res) {
       /reserv(e|ation)|table\s+for\s+\d|book(ing)?\s+(a\s+)?table/i.test(`${transcript || ""} ${callNotes || ""}`);
 
     if (hasReservationIntent && restaurant?.id) {
+      const reservationRestaurantId = await resolveSpokenBranchId(
+        knex,
+        restaurant.id,
+        fields.branch_name || fields.area || null,
+      );
       const partySize = Math.max(1, parseInt(fields.party_size, 10) || 2);
       const resDate = parseReservationDate(fields.reservation_date);
       const resTime =
@@ -584,8 +599,11 @@ export async function synthflowPostCallWebhook(req, res) {
       if (!existingReservation && custPhone && custPhone !== "Unknown") {
         const since = new Date(Date.now() - 20 * 60 * 1000).toISOString();
         const phoneTail = String(custPhone).replace(/\D/g, "").slice(-10);
+        const familyRows = await knex("restaurants").where({ parent_restaurant_id: restaurant.id }).select("id");
+        const familyIds = [restaurant.id, reservationRestaurantId, ...familyRows.map((row) => row.id)];
         let recentQuery = knex("table_reservations")
-          .where({ restaurant_id: restaurant.id, reservation_date: resDate })
+          .whereIn("restaurant_id", familyIds)
+          .where({ reservation_date: resDate })
           .whereIn("status", ["pending", "confirmed", "seated"])
           .andWhere("created_at", ">=", since)
           .orderBy("created_at", "desc");
@@ -617,7 +635,7 @@ export async function synthflowPostCallWebhook(req, res) {
         };
         if (resTime && existingTime !== resTime) {
           const availableTable = await findAvailableTable(knex, {
-            restaurantId: restaurant.id,
+            restaurantId: reservationRestaurantId,
             partySize: existingReservation.party_size || partySize,
             reservationDate: resDate,
             startTime: resTime,
@@ -641,7 +659,7 @@ export async function synthflowPostCallWebhook(req, res) {
         console.log("⏭ Synthflow reservation skipped: no booking time in call");
       } else {
         const availableTable = await findAvailableTable(knex, {
-          restaurantId: restaurant.id,
+          restaurantId: reservationRestaurantId,
           partySize,
           reservationDate: resDate,
           startTime: resTime,
@@ -649,7 +667,7 @@ export async function synthflowPostCallWebhook(req, res) {
         });
 
         const createdRes = await createReservation(knex, {
-          restaurantId: restaurant.id,
+          restaurantId: reservationRestaurantId,
           tableId: availableTable ? availableTable.id : null,
           customerName: custName,
           customerPhone: custPhone,
@@ -787,6 +805,7 @@ export async function synthflowPostCallWebhook(req, res) {
       coupon_code: couponRaw,
       payment_method: emptyish(fields.payment_method) ? "cash" : fields.payment_method,
       fulfillment_type: fields.fulfillment_type || "delivery",
+      branch_name: fields.branch_name || null,
       call_id: callRow?.id,
       source: "phone",
       ai_extracted_data: {

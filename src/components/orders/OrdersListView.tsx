@@ -61,6 +61,7 @@ import {
 import { getOrderStatusLabel, formatDate, formatTime } from "@/i18n/formatters";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
+import { orderTakerLabel } from "@/lib/orderTaker";
 
 interface Order {
   id: string;
@@ -828,20 +829,6 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
           </Button>
           <Button
             size="sm"
-            variant={transferFilter === "transferred" ? "default" : "outline"}
-            className={cn(
-              "h-8 text-xs font-semibold rounded-lg gap-1.5 transition-colors",
-              transferFilter === "transferred"
-                ? "bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs border-amber-600"
-                : "text-amber-700 dark:text-amber-400 border-amber-500/40 hover:bg-amber-500/10"
-            )}
-            onClick={() => setTransferFilter("transferred")}
-          >
-            <ArrowRightLeft className="h-3.5 w-3.5" />
-            {t("orders:transferredOrders", "Transferred Orders")} ({transferCounts.transferred})
-          </Button>
-          <Button
-            size="sm"
             variant={transferFilter === "direct" ? "default" : "outline"}
             className={cn(
               "h-8 text-xs font-semibold rounded-lg",
@@ -1189,12 +1176,20 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           {o.order_number}
                         </span>
 
-                        {o.restaurant_id && restaurantsMap[o.restaurant_id] && (
-                          <Badge variant="outline" className="bg-primary/10 text-primary border-primary/25 text-xs font-semibold flex items-center gap-1">
-                            <Building2 className="h-3 w-3 text-primary" />
-                            <span>{restaurantsMap[o.restaurant_id]}</span>
-                          </Badge>
-                        )}
+                        {(() => {
+                          const taker = orderTakerLabel(o.source, o.call_id);
+                          if (!taker) return null;
+                          return (
+                            <Badge variant="outline" className="bg-primary/10 text-primary border-primary/25 text-xs font-semibold flex items-center gap-1">
+                              {taker === "Agent" ? (
+                                <Phone className="h-3 w-3 text-primary" />
+                              ) : (
+                                <User className="h-3 w-3 text-primary" />
+                              )}
+                              <span>{taker}</span>
+                            </Badge>
+                          );
+                        })()}
 
                         {isTransferPendingForAdmin && (
                           <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/40 text-xs font-bold flex items-center gap-1">
@@ -1207,11 +1202,6 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                           <Badge variant="outline" className="bg-primary/15 text-primary border-primary/30 text-xs font-bold flex items-center gap-1">
                             <ArrowRightLeft className="h-3 w-3" />
                             <span>{t("orders:transferred", "Transferred")}</span>
-                            {o.transferred_from_restaurant_id && restaurantsMap[o.transferred_from_restaurant_id] && (
-                              <span className="text-[10px] font-normal opacity-85">
-                                ({t("orders:from", "from")} {restaurantsMap[o.transferred_from_restaurant_id]})
-                              </span>
-                            )}
                           </Badge>
                         )}
 

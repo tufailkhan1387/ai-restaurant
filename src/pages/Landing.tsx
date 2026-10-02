@@ -30,6 +30,19 @@ const FAQS = [
   },
 ];
 
+function BrandMark() {
+  return (
+    <span className="lg" aria-hidden="true">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8" />
+        <path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7" />
+        <path d="m2.1 21.8 6.4-6.3" />
+        <path d="m19 5-7 7" />
+      </svg>
+    </span>
+  );
+}
+
 const NAV = [
   { href: "#how", label: "How it works" },
   { href: "#engine", label: "Order Engine" },
@@ -257,7 +270,11 @@ export default function Landing() {
       <nav className="navwrap">
         <div className="container navrow">
           <a className="brand" href="#top">
-            <span className="lg">🍴</span>AI Restaurant <small>by Qubetech</small>
+            <BrandMark />
+            <span className="brand-name">
+              AI Restaurant
+              <small>by Qubetech</small>
+            </span>
           </a>
           <button className="nav-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navOpen} onClick={() => setNavOpen((v) => !v)}>
             ☰
@@ -295,7 +312,7 @@ export default function Landing() {
 
       <section className="hero">
         <div className="container">
-          <div className="row g-5 align-items-start">
+          <div className="row g-5 align-items-center">
             <div className="col-lg-6">
               <span className="eyebrow dark">● The AI restaurant operating system</span>
               <h1>
@@ -1257,7 +1274,8 @@ export default function Landing() {
           <div className="row g-4">
             <div className="col-lg-4">
               <a className="brand" href="#top">
-                <span className="lg">🍴</span>AI Restaurant
+                <BrandMark />
+                <span className="brand-name">AI Restaurant</span>
               </a>
               <p className="mt-3" style={{ lineHeight: 1.6, fontSize: 14, maxWidth: 300 }}>
                 The AI restaurant operating system for independent restaurants. Built by Qubetech.

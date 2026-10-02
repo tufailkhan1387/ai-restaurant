@@ -1,3 +1,20 @@
+/**
+ * Spoken or typed order numbers become ORD-YYMMDD-NN.
+ * "ORD 261002 4", "ORD-261002-04", and "26100204" all become ORD-261002-04.
+ */
+export function canonicalOrderNumber(raw) {
+  const compact = String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/^ORDER/, "")
+    .replace(/[^A-Z0-9]/g, "");
+  const match = compact.match(/^ORD(\d{6})(\d{1,4})$/) || compact.match(/^(\d{6})(\d{1,4})$/);
+  if (!match) return null;
+  const seq = parseInt(match[2], 10);
+  if (!Number.isFinite(seq) || seq < 1) return null;
+  return `ORD-${match[1]}-${String(seq).padStart(2, "0")}`;
+}
+
 /** YYMMDD for the current day. The daily sequence resets when this changes. */
 export function orderDateStamp(d = new Date()) {
   const yy = String(d.getFullYear()).slice(-2);

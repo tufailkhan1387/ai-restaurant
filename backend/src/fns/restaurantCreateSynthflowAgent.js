@@ -194,7 +194,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "get_order_status",
         description:
-          "Look up an existing order by order number and return its current status. Use this when the caller wants to track an order.",
+          "Look up an existing food order and return its status. Pass order_number exactly as ORD-YYMMDD-NN, including the dash and the leading zero, for example ORD-261002-04. Also works if the caller drops the dash or says 4 instead of 04.",
         speech_while_using_the_tool: "Let me check that order.",
         failure_timeout: 15,
         headers: [{ key: "Content-Type", value: "application/json" }],
@@ -250,7 +250,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
     const existingActionId =
       markerIndex > 0 && !String(ids[markerIndex - 1]).startsWith("tool:") ? ids[markerIndex - 1] : null;
 
-    if ((spec.key === "place_order" || spec.key === "reserve_table") && existingActionId) {
+    if ((spec.key === "place_order" || spec.key === "reserve_table" || spec.key === "get_order_status") && existingActionId) {
       try {
         await updateCustomAction(existingActionId, spec.action);
         ids[markerIndex] = marker;

@@ -11,7 +11,7 @@ import {
   findOpenSessionsForTable,
   resolveRestaurantFamilyIds,
 } from "../lib/tableSessions.js";
-import { nextOrderNumber } from "../lib/orderNumbers.js";
+import { canonicalOrderNumber, nextOrderNumber } from "../lib/orderNumbers.js";
 import { withAbsoluteMedia } from "../lib/mediaUrl.js";
 import { notifyNewOrderLater, orderTrackUrl } from "../lib/orderAlerts.js";
 
@@ -216,21 +216,13 @@ router.get("/track/:code", async (req, res) => {
     const code = (req.params.code || "").trim().toUpperCase();
     if (!code) return res.status(400).json({ error: "Missing code" });
     const knex = getKnex();
+    const canonical = canonicalOrderNumber(code);
     let order = await knex("orders").whereRaw("UPPER(tracking_code) = ?", [code]).first();
     if (!order) {
       order = await knex("orders").whereRaw("UPPER(order_number) = ?", [code]).first();
     }
-    if (!order) {
-      const digits = code.replace(/\D/g, "");
-      if (digits) {
-        order = await knex("orders")
-          .whereRaw(
-            "NULLIF(regexp_replace(coalesce(order_number, ''), '[^0-9]', '', 'g'), '')::bigint = ?",
-            [Number(digits)],
-          )
-          .orderBy("created_at", "desc")
-          .first();
-      }
+    if (!order && canonical && canonical !== code) {
+      order = await knex("orders").where({ order_number: canonical }).orderBy("created_at", "desc").first();
     }
     if (!order) return res.status(404).json({ error: "Order not found" });
     const [items, history, settings, restRow] = await Promise.all([

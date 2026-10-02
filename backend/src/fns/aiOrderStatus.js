@@ -1,4 +1,6 @@
 import { getKnex } from "../db.js";
+import { canonicalOrderNumber } from "../lib/orderNumbers.js";
+import { resolveRestaurantFamilyIds } from "../lib/tableSessions.js";
 import { normalizeElevenLabsToolBody, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
 
 function statusLabel(status, fulfillmentType) {
@@ -24,51 +26,29 @@ function normalizeLookup(raw) {
     .replace(/\s+/g, "");
 }
 
+const ORDER_LOOKUP_COLUMNS = [
+  "order_number",
+  "tracking_code",
+  "status",
+  "total_amount",
+  "estimated_delivery_at",
+  "customer_name",
+  "restaurant_id",
+  "fulfillment_type",
+  "table_number",
+];
+
 async function findOrder(knex, { code, restaurantId }) {
   if (!code) return null;
+  const canonical = canonicalOrderNumber(code);
+  const familyIds = restaurantId ? await resolveRestaurantFamilyIds(knex, restaurantId) : [];
 
   let q = knex("orders").where((builder) => {
     builder.whereRaw("UPPER(tracking_code) = ?", [code]).orWhereRaw("UPPER(order_number) = ?", [code]);
+    if (canonical && canonical !== code) builder.orWhere({ order_number: canonical });
   });
-  if (restaurantId) q = q.andWhere({ restaurant_id: restaurantId });
-  let order = await q
-    .select(
-      "order_number",
-      "tracking_code",
-      "status",
-      "total_amount",
-      "estimated_delivery_at",
-      "customer_name",
-      "restaurant_id",
-      "fulfillment_type",
-      "table_number",
-    )
-    .orderBy("created_at", "desc")
-    .first();
-  if (order) return order;
-
-  const digits = code.replace(/\D/g, "");
-  if (!digits) return null;
-
-  let q2 = knex("orders").whereRaw(
-    "NULLIF(regexp_replace(coalesce(order_number, ''), '[^0-9]', '', 'g'), '')::bigint = ?",
-    [Number(digits)],
-  );
-  if (restaurantId) q2 = q2.andWhere({ restaurant_id: restaurantId });
-  return q2
-    .select(
-      "order_number",
-      "tracking_code",
-      "status",
-      "total_amount",
-      "estimated_delivery_at",
-      "customer_name",
-      "restaurant_id",
-      "fulfillment_type",
-      "table_number",
-    )
-    .orderBy("created_at", "desc")
-    .first();
+  if (familyIds.length) q = q.whereIn("restaurant_id", familyIds);
+  return q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").first();
 }
 
 export async function aiOrderStatus(req, res) {
@@ -81,7 +61,12 @@ export async function aiOrderStatus(req, res) {
     const body = normalizeElevenLabsToolBody(rawBody);
 
     const code = normalizeLookup(
-      body.order_number || body.tracking_code || body.order_num || body.code || body.orderNumber,
+      body.order_number ||
+        body.tracking_code ||
+        body.order_num ||
+        body.code ||
+        body.orderNumber ||
+        body.order_no,
     );
     console.log("📍 Query:", code || "No order number provided");
     console.log("-".repeat(40) + "\n");

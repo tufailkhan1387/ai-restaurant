@@ -30,6 +30,23 @@ function slugify(text) {
     .replace(/^-+|-+$/g, "");
 }
 
+async function columnsOf(db, table) {
+  const result = await db.raw(
+    `select column_name from information_schema.columns
+     where table_name = ? and table_schema = any (current_schemas(false))`,
+    [table],
+  );
+  return new Set((result.rows || []).map((row) => row.column_name));
+}
+
+function withExistingColumns(values, columns) {
+  const out = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (columns.has(key)) out[key] = value;
+  }
+  return out;
+}
+
 /** Check if user can manage the given restaurant (parent or branch) */
 async function canManageRestaurant(knex, user, restaurantId) {
   if (!user?.id || !isValidUUID(restaurantId)) return false;
@@ -120,53 +137,62 @@ router.post("/restaurants/:parentId/branches", optionalAuth, requireAuth, async 
     const radius = Number(service_radius_km) > 0 ? Number(service_radius_km) : 5.0;
 
     const result = await knex.transaction(async (trx) => {
+      const restaurantColumns = await columnsOf(trx, "restaurants");
+      const settingsColumns = await columnsOf(trx, "restaurant_settings");
+      const categoryColumns = await columnsOf(trx, "menu_categories");
+      const itemColumns = await columnsOf(trx, "menu_items");
+
       // 1. Insert branch into restaurants
       const [branch] = await trx("restaurants")
-        .insert({
-          id: randomUUID(),
-          name: String(name).trim(),
-          slug,
-          address: address ? String(address).trim() : null,
-          city: city ? String(city).trim() : null,
-          area: area ? String(area).trim() : null,
-          phone: phone ? String(phone).trim() : parent.phone,
-          parent_restaurant_id: parentId,
-          is_branch: true,
-          is_active: true,
-          is_accepting_orders: true,
-          latitude: Number.isFinite(lat) ? lat : null,
-          longitude: Number.isFinite(lng) ? lng : null,
-          service_radius_km: radius,
-          allows_delivery: parent.allows_delivery ?? true,
-          allows_pickup: parent.allows_pickup ?? true,
-          commission_rate: parent.commission_rate ?? 0,
-          logo_url: parent.logo_url || null,
-          cover_image_url: parent.cover_image_url || null,
-        })
+        .insert(
+          withExistingColumns(
+            {
+              id: randomUUID(),
+              name: String(name).trim(),
+              slug,
+              address: address ? String(address).trim() : null,
+              city: city ? String(city).trim() : null,
+              area: area ? String(area).trim() : null,
+              phone: phone ? String(phone).trim() : parent.phone,
+              parent_restaurant_id: parentId,
+              is_branch: true,
+              is_active: true,
+              is_accepting_orders: true,
+              latitude: Number.isFinite(lat) ? lat : null,
+              longitude: Number.isFinite(lng) ? lng : null,
+              service_radius_km: radius,
+              allows_delivery: parent.allows_delivery ?? true,
+              allows_pickup: parent.allows_pickup ?? true,
+              commission_rate: parent.commission_rate ?? 0,
+              logo_url: parent.logo_url || null,
+              cover_image_url: parent.cover_image_url || null,
+            },
+            restaurantColumns,
+          ),
+        )
         .returning("*");
 
       // 2. Clone parent settings for branch defaults
       const parentSettings = await trx("restaurant_settings").where({ restaurant_id: parentId }).first();
-      await trx("restaurant_settings").insert({
-        id: randomUUID(),
-        restaurant_id: branch.id,
-        name: branch.name,
-        email: owner_email || parentSettings?.email || null,
-        phone: branch.phone || parentSettings?.phone || null,
-        address: branch.address || parentSettings?.address || null,
-        currency: parentSettings?.currency || "USD",
-        tax_rate: parentSettings?.tax_rate ?? 0,
-        delivery_fee: parentSettings?.delivery_fee ?? 0,
-        min_order_amount: parentSettings?.min_order_amount ?? 0,
-        is_open: true,
-        logo_url: parentSettings?.logo_url || null,
-        notification_email: parentSettings?.notification_email ?? true,
-        notification_desktop: parentSettings?.notification_desktop ?? true,
-        notification_missed_calls: parentSettings?.notification_missed_calls ?? true,
-        notification_ringtone: parentSettings?.notification_ringtone || "default",
-        notification_volume: parentSettings?.notification_volume ?? 80,
-        notification_enabled: parentSettings?.notification_enabled ?? true,
-      });
+      await trx("restaurant_settings").insert(
+        withExistingColumns(
+          {
+            id: randomUUID(),
+            restaurant_id: branch.id,
+            name: branch.name,
+            email: owner_email || parentSettings?.email || null,
+            phone: branch.phone || parentSettings?.phone || null,
+            address: branch.address || parentSettings?.address || null,
+            currency: parentSettings?.currency || "USD",
+            tax_rate: parentSettings?.tax_rate ?? 0,
+            delivery_fee: parentSettings?.delivery_fee ?? 0,
+            min_order_amount: parentSettings?.min_order_amount ?? 0,
+            is_open: true,
+            logo_url: parentSettings?.logo_url || null,
+          },
+          settingsColumns,
+        ),
+      );
 
       // 3. Provision manager/owner user if email provided
       let managerUserId = null;
@@ -213,36 +239,46 @@ router.post("/restaurants/:parentId/branches", optionalAuth, requireAuth, async 
         for (const pc of parentCats) {
           const newCatId = randomUUID();
           catMap.set(pc.id, newCatId);
-          await trx("menu_categories").insert({
-            id: newCatId,
-            restaurant_id: branch.id,
-            name: pc.name,
-            sort_order: pc.sort_order ?? 0,
-            is_active: pc.is_active ?? true,
-            description: pc.description || null,
-            image_url: pc.image_url || null,
-          });
+          await trx("menu_categories").insert(
+            withExistingColumns(
+              {
+                id: newCatId,
+                restaurant_id: branch.id,
+                name: pc.name,
+                sort_order: pc.sort_order ?? 0,
+                is_active: pc.is_active ?? true,
+                description: pc.description || null,
+                image_url: pc.image_url || null,
+              },
+              categoryColumns,
+            ),
+          );
         }
 
         const parentItems = await trx("menu_items").where({ restaurant_id: parentId });
         for (const pi of parentItems) {
-          await trx("menu_items").insert({
-            id: randomUUID(),
-            restaurant_id: branch.id,
-            category_id: pi.category_id ? catMap.get(pi.category_id) || null : null,
-            name: pi.name,
-            description: pi.description || null,
-            price: Number(pi.price || 0),
-            image_url: pi.image_url || null,
-            is_available: pi.is_available ?? true,
-            prep_time_minutes: pi.prep_time_minutes != null ? Number(pi.prep_time_minutes) : 15,
-            dietary_tags: Array.isArray(pi.dietary_tags) ? pi.dietary_tags : [],
-            spice_level: pi.spice_level != null ? Number(pi.spice_level) : 0,
-            sort_order: Number(pi.sort_order || 0),
-            track_inventory: Boolean(pi.track_inventory),
-            stock_quantity: pi.stock_quantity != null ? Number(pi.stock_quantity) : null,
-            max_order_quantity: pi.max_order_quantity != null ? Number(pi.max_order_quantity) : null,
-          });
+          await trx("menu_items").insert(
+            withExistingColumns(
+              {
+                id: randomUUID(),
+                restaurant_id: branch.id,
+                category_id: pi.category_id ? catMap.get(pi.category_id) || null : null,
+                name: pi.name,
+                description: pi.description || null,
+                price: Number(pi.price || 0),
+                image_url: pi.image_url || null,
+                is_available: pi.is_available ?? true,
+                prep_time_minutes: pi.prep_time_minutes != null ? Number(pi.prep_time_minutes) : 15,
+                dietary_tags: Array.isArray(pi.dietary_tags) ? pi.dietary_tags : [],
+                spice_level: pi.spice_level != null ? Number(pi.spice_level) : 0,
+                sort_order: Number(pi.sort_order || 0),
+                track_inventory: Boolean(pi.track_inventory),
+                stock_quantity: pi.stock_quantity != null ? Number(pi.stock_quantity) : null,
+                max_order_quantity: pi.max_order_quantity != null ? Number(pi.max_order_quantity) : null,
+              },
+              itemColumns,
+            ),
+          );
         }
       }
 

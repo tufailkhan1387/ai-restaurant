@@ -108,6 +108,8 @@ export function toSynthflowLanguage(code) {
     pt: "pt-BR",
     ar: "ar-SA",
     hi: "hi-IN",
+    ur: "multi",
+    pa: "multi",
     ja: "ja-JP",
     ko: "ko-KR",
     zh: "zh-CN",

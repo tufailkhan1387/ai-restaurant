@@ -1,6 +1,7 @@
 import { getKnex } from "../db.js";
 import { resolveSpokenBranchId } from "../lib/branchLocation.js";
-import { normalizeElevenLabsToolBody, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
+import { resolveRestaurantFamilyIds } from "../lib/tableSessions.js";
+import { normalizeElevenLabsToolBody, phoneMatchVariants, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
 import { findAvailableTable, createReservation, parseReservationDate, parseReservationTime, lastSpokenReservationTime } from "../lib/tableReservationService.js";
 
 export async function aiReserveTable(req, res) {
@@ -71,30 +72,25 @@ export async function aiReserveTable(req, res) {
     }
     if (phoneToUse === "<user_phone_number>") phoneToUse = null;
 
-    if (phoneToUse) {
-      const phoneDigits = String(phoneToUse).replace(/\D/g, "");
-      if (phoneDigits) {
-        const existing = await knex("table_reservations")
-          .where({ restaurant_id: branchRestaurantId })
-          .andWhere(function() {
-            this.where("customer_phone", phoneToUse)
-                .orWhere("customer_phone", `+${phoneDigits}`)
-                .orWhere("customer_phone", phoneDigits);
-            if (phoneDigits.length === 10) this.orWhere("customer_phone", `+1${phoneDigits}`);
-            if (phoneDigits.length === 12 && phoneDigits.startsWith("92")) this.orWhere("customer_phone", `0${phoneDigits.slice(2)}`);
-          })
-          .whereIn("status", ["pending", "confirmed"])
-          .where("reservation_date", ">=", knex.raw("CURRENT_DATE"))
-          .orderBy("reservation_date", "asc")
-          .first();
+    const phoneVariants = phoneMatchVariants(phoneToUse);
+    if (phoneVariants.length) {
+      const familyIds = await resolveRestaurantFamilyIds(knex, restaurantId);
+      const existing = await knex("table_reservations")
+        .whereIn("restaurant_id", familyIds.length ? familyIds : [branchRestaurantId])
+        .andWhere(function () {
+          for (const v of phoneVariants) this.orWhere("customer_phone", v);
+        })
+        .whereIn("status", ["pending", "confirmed"])
+        .where("reservation_date", ">=", knex.raw("CURRENT_DATE"))
+        .orderBy("reservation_date", "asc")
+        .first();
 
-        if (existing) {
-          return res.status(200).json({
-            success: false,
-            available: false,
-            message: `Translate and tell the caller in their language: You already have an active table reservation for ${existing.reservation_date} at ${String(existing.start_time).slice(0, 5)}. Your previous booking must be completed before you can reserve a new table.`,
-          });
-        }
+      if (existing) {
+        return res.status(200).json({
+          success: false,
+          available: false,
+          message: `Translate and tell the caller in their language: You already have an active table reservation for ${existing.reservation_date} at ${String(existing.start_time).slice(0, 5)}. Your previous booking must be completed before you can reserve a new table.`,
+        });
       }
     }
 

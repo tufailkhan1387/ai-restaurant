@@ -133,6 +133,15 @@ export async function aiPlaceOrder(req, res) {
         message: `Translate and tell the caller in their language: I am sorry, but ${itemsList} is currently out of order and unavailable. Would you like to order another item from our menu instead?`,
       });
     }
+    if (e.isBranchError) {
+      const areas = (e.availableAreas || []).filter(Boolean);
+      const areaList = areas.length ? areas.join(" or ") : "one of our branches";
+      return res.status(200).json({
+        success: false,
+        branch_required: true,
+        message: `Translate and tell the caller in their language: I need to confirm which area for your order. Which area would you like: ${areaList}? Then I will place the order. Do NOT invent an order number.`,
+      });
+    }
     return res.status(500).json({ error: e.message || "failed" });
   }
 }

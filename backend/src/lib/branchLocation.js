@@ -121,9 +121,9 @@ export function branchOrderingSection(branches) {
 
   lines.push("Ask this before the street address on a delivery order. After they choose the area, ask for the complete delivery address and accept it on the first try.");
   lines.push("For a pickup order, do not ask for a street address.");
-  lines.push("Pass the matching exact branch_name to place_order and reserve_table.");
+  lines.push("Ask the area question in the caller's locked language, but pass the matching exact English branch_name (quoted above) to place_order and reserve_table.");
   lines.push("Use only a city and area from this list.");
-  lines.push("Never invent a city, area, or branch.");
+  lines.push("Never invent a city, area, or branch. Never pass none after they choose an area.");
   return lines.join("\n");
 }
 
@@ -137,24 +137,45 @@ export async function resolveSpokenBranchId(knex, restaurantId, spoken) {
   return chosen?.id || restaurantId;
 }
 
+/** Normalize area/branch labels for fuzzy spoken matching. */
+function normalizeBranchLabel(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/[’'`]/g, "")
+    .replace(/\b(branch|restaurant|royal|the)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Match a spoken branch, area, or "city area" to one open branch. */
 export function matchBranchChoice(branches, spoken) {
-  const raw = clean(spoken).toLowerCase();
+  const raw = normalizeBranchLabel(spoken);
   if (!raw || ["none", "null", "n/a", "na", "any", "no", "no preference"].includes(raw)) return null;
   const open = (branches || []).filter((branch) => branch && branch.is_accepting_orders !== false && branch.is_active !== false);
+  const spokenTokens = raw.split(" ").filter((t) => t.length > 1);
+
   const scored = open
     .map((branch) => {
-      const labels = [clean(branch.name), branchArea(branch), branchCity(branch)]
-        .filter(Boolean)
-        .map((label) => label.toLowerCase());
-      const city = branchCity(branch).toLowerCase();
-      const area = branchArea(branch).toLowerCase();
+      const city = normalizeBranchLabel(branchCity(branch));
+      const area = normalizeBranchLabel(branchArea(branch));
+      const name = normalizeBranchLabel(branch.name);
+      const labels = [name, area, city, clean(branch.name).toLowerCase(), branchArea(branch).toLowerCase()]
+        .filter(Boolean);
       if (city && area) labels.push(`${city} ${area}`, `${area} ${city}`);
+
       let score = 0;
       for (const label of labels) {
-        if (!label) continue;
-        if (label === raw) score = Math.max(score, 4);
-        else if (raw.includes(label) || label.includes(raw)) score = Math.max(score, label.length > 3 ? 2 : 0);
+        const norm = normalizeBranchLabel(label);
+        if (!norm) continue;
+        if (norm === raw) score = Math.max(score, 5);
+        else if (raw.includes(norm) || norm.includes(raw)) score = Math.max(score, norm.length > 3 ? 3 : 0);
+        else if (spokenTokens.length) {
+          const labelTokens = new Set(norm.split(" ").filter((t) => t.length > 1));
+          const overlap = spokenTokens.filter((t) => labelTokens.has(t)).length;
+          if (overlap >= 2 || (overlap === 1 && spokenTokens.some((t) => t.length >= 5 && labelTokens.has(t)))) {
+            score = Math.max(score, overlap >= 2 ? 3 : 2);
+          }
+        }
       }
       return { branch, score };
     })

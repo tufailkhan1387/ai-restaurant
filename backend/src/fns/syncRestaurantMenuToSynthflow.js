@@ -1,5 +1,5 @@
 import { getKnex } from "../db.js";
-import { updateAgent, postCallWebhookUrl } from "../lib/synthflowClient.js";
+import { updateAgent, postCallWebhookUrl, toSynthflowLanguage } from "../lib/synthflowClient.js";
 import {
   buildRestaurantVoiceKnowledge,
   defaultSynthflowGreeting,
@@ -32,8 +32,17 @@ export async function syncRestaurantMenuToSynthflow(req, res) {
       restaurantName: r.name,
       ...catalog,
     });
+    // Prefer multilingual auto-detect so STT/TTS follow the caller's language after the English greeting.
+    const agentLanguage = r.agent_language && r.agent_language !== "en" ? r.agent_language : "multi";
+    const lang = toSynthflowLanguage(agentLanguage);
+    const savedGreeting = (r.agent_first_message || "").trim();
+    // Refresh auto-generated greetings; keep only a truly custom first message.
     const greeting =
-      (r.agent_first_message || "").trim() || defaultSynthflowGreeting(r.name);
+      !savedGreeting ||
+      /^Hi, thanks for calling/i.test(savedGreeting) ||
+      /^Hi, I am calling from /i.test(savedGreeting)
+        ? defaultSynthflowGreeting(r.name)
+        : savedGreeting;
     const prompt = applyBranchOrdering(defaultSynthflowPrompt(r.name, knowledge), catalog.branches);
     const webhookUrl = postCallWebhookUrl();
 
@@ -44,6 +53,7 @@ export async function syncRestaurantMenuToSynthflow(req, res) {
       agent: {
         prompt,
         greeting_message: greeting,
+        language: lang,
         voice_speed: 0.85,
         min_words_to_interrupt: 1,
         interruption_fade_out: 1,
@@ -54,6 +64,7 @@ export async function syncRestaurantMenuToSynthflow(req, res) {
     await knex("restaurants").where({ id: restaurant_id }).update({
       agent_system_prompt: prompt,
       agent_first_message: greeting,
+      agent_language: agentLanguage,
       synthflow_synced_at: knex.fn.now(),
       agent_menu_synced_at: knex.fn.now(),
       updated_at: knex.fn.now(),

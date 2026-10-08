@@ -1,4 +1,4 @@
-import { matchBranchChoice } from "./branchLocation.js";
+import { branchArea, matchBranchChoice } from "./branchLocation.js";
 import { normalizeE164 } from "./voiceWebhookUtils.js";
 import { geocodeAddress, haversineDistanceKm } from "./geocoding.js";
 import { nextOrderNumber } from "./orderNumbers.js";
@@ -509,6 +509,9 @@ export async function createPhoneOrder(knex, input) {
   let branchAssignedAt = null;
   let assignmentStatus = "assigned";
   let assignedBranchName = null;
+  const rawBranch = String(branch_name || "").trim();
+  const branchRequested =
+    !!rawBranch && !["none", "null", "n/a", "na", "any", "no", "no preference"].includes(rawBranch.toLowerCase());
   const chosenBranch = pickNamedBranch(branches, branch_name);
 
   if (chosenBranch) {
@@ -517,6 +520,17 @@ export async function createPhoneOrder(knex, input) {
     branchAssignedAt = new Date();
     autoAssigned = true;
     assignmentStatus = "assigned";
+  } else if (branches.length > 0 && (isPickup || branchRequested)) {
+    // Pickup always needs a named branch. If the agent named an area that did not match, do not
+    // silently park the order on the parent HQ — ask the caller to confirm the area again.
+    const areas = [...new Set(branches.map((b) => branchArea(b)).filter(Boolean))];
+    const err = new Error(
+      `Could not match branch "${rawBranch || "(missing)"}". Ask the caller which area: ${areas.join(" or ")}.`,
+    );
+    err.isBranchError = true;
+    err.availableAreas = areas;
+    err.requestedBranch = rawBranch || null;
+    throw err;
   } else if (branches.length > 0 && !isPickup) {
     if (lat != null && lng != null) {
       const nearest = await findNearestBranch(knex, restaurantId, lat, lng);

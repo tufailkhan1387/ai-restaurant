@@ -158,7 +158,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "place_order",
         description:
-          "FOOD ORDERS ONLY. Save the caller's food order and return the real order number. Never call this when the caller is reserving a table. Call this once after the caller confirms a food order and names a branch. Pass branch_name as the exact branch they chose. Then read order_number out loud.",
+          "FOOD ORDERS ONLY. Save the caller's food order and return the real order number. Never call this when the caller is reserving a table. Call this once after the caller confirms a food order. ALWAYS pass branch_name as the exact branch name from the Branch ordering section (not a translated label). Pickup orders fail without a valid branch_name. Then read order_number out loud in the caller's language.",
         speech_while_using_the_tool: "",
         failure_timeout: 20,
         headers: [{ key: "Content-Type", value: "application/json" }],
@@ -170,7 +170,11 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           duringCallVar("fulfillment_type", "delivery or pickup", "delivery"),
           duringCallVar("customer_email", "Email or none", "none"),
           duringCallVar("coupon_code", "Coupon code or none", "none"),
-          duringCallVar("branch_name", "Exact branch name the caller chose, or none", "DHA Phase 5"),
+          duringCallVar(
+            "branch_name",
+            "REQUIRED exact branch name from the Branch ordering list (e.g. Royal Restaurant Johar Town Branch). Never invent. Never leave empty for pickup.",
+            "Royal Restaurant Johar Town Branch",
+          ),
         ],
         json_body_stringified: JSON.stringify({
           ...lookup,
@@ -196,16 +200,22 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "get_order_status",
         description:
-          "Look up an existing food order and return its status. Pass order_number exactly as ORD-YYMMDD-NN, including the dash and the leading zero, for example ORD-261002-04. Also works if the caller drops the dash or says 4 instead of 04.",
+          "Look up an existing food order and return its status. Pass the best ORD-YYMMDD-NN you heard (dashes optional). Accept spoken digits. Also pass caller phone so we can fall back to their latest order. Call once, then at most one retry. Tell the result in the caller's locked language (Roman Hindi/Urdu when that is locked).",
         speech_while_using_the_tool: "",
         failure_timeout: 15,
         headers: [{ key: "Content-Type", value: "application/json" }],
         variables_during_the_call: [
-          duringCallVar("order_number", "Order number such as ORD-260929-01", "ORD-260929-01"),
+          duringCallVar(
+            "order_number",
+            "Best ORD-YYMMDD-NN from what the caller said, e.g. ORD-261008-02",
+            "ORD-261008-02",
+          ),
         ],
         json_body_stringified: JSON.stringify({
           ...lookup,
           order_number: "<order_number>",
+          customer_phone: "<user_phone_number>",
+          caller_phone: "<user_phone_number>",
         }),
       },
     },
@@ -252,7 +262,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "check_previous_order",
         description:
-          "Check if the caller has a previous order. Call this silently at the very beginning when a caller wants to order food, to see if they want to repeat their last order.",
+          "Returning-caller lookup. Call silently when the caller wants food or a table. Checks for an active table reservation and the latest previous food order on this phone number. If a reservation exists, tell them to complete it before booking another table. If a previous order exists, ask whether to repeat those items. Speak the result only in the caller's locked language.",
         speech_while_using_the_tool: "",
         failure_timeout: 10,
         headers: [{ key: "Content-Type", value: "application/json" }],
@@ -260,6 +270,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         json_body_stringified: JSON.stringify({
           ...lookup,
           customer_phone: "<user_phone_number>",
+          caller_phone: "<user_phone_number>",
         }),
       },
     },
@@ -272,7 +283,13 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
     const existingActionId =
       markerIndex > 0 && !String(ids[markerIndex - 1]).startsWith("tool:") ? ids[markerIndex - 1] : null;
 
-    if ((spec.key === "place_order" || spec.key === "reserve_table" || spec.key === "get_order_status") && existingActionId) {
+    if (
+      (spec.key === "place_order" ||
+        spec.key === "reserve_table" ||
+        spec.key === "get_order_status" ||
+        spec.key === "check_previous_order") &&
+      existingActionId
+    ) {
       try {
         await updateCustomAction(existingActionId, spec.action);
         ids[markerIndex] = marker;
@@ -418,16 +435,25 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       ...catalog,
     });
 
-    const lang = toSynthflowLanguage(body.language || r.agent_language || "en");
+    const lang = toSynthflowLanguage(body.language || r.agent_language || "multi");
+    const savedGreeting = (body.first_message ?? r.agent_first_message)?.trim() || "";
     const greeting =
-      (body.first_message ?? r.agent_first_message)?.trim() || defaultSynthflowGreeting(r.name);
-    // Prefer our ordering prompt + knowledge over legacy ElevenLabs tool prompts
-    const customPrompt = (body.system_prompt ?? "").trim();
+      !savedGreeting ||
+      /^Hi, thanks for calling/i.test(savedGreeting) ||
+      /^Hi, I am calling from /i.test(savedGreeting)
+        ? defaultSynthflowGreeting(r.name)
+        : savedGreeting;
+    // Auto-generated prompts (our template) are always rebuilt from code so language/track
+    // fixes ship on Update/Sync. Only a truly custom prompt without our markers is kept.
+    const customPrompt = (body.system_prompt ?? r.agent_system_prompt ?? "").trim();
+    const looksLikeOurTemplate =
+      /PRIMARY MISSION|CRITICAL RULES|LANGUAGE MATCHING|## Branch ordering|# .+ — Menu/i.test(
+        customPrompt,
+      );
     const looksLikeLegacyEl =
       /place_order tool|get_order_status tool|knowledge base/i.test(customPrompt);
-    const missingOrderNumber = !/your order number is/i.test(customPrompt);
     const prompt =
-      customPrompt && !looksLikeLegacyEl && !missingOrderNumber
+      customPrompt && !looksLikeOurTemplate && !looksLikeLegacyEl
         ? customPrompt
         : defaultSynthflowPrompt(r.name, knowledge);
     const fullPrompt = applyBranchOrdering(
@@ -545,7 +571,7 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       synthflow_agent_id: modelId,
       // pg + knex can mis-bind JS arrays as PG arrays; store explicit JSON text for jsonb
       synthflow_action_ids: knex.raw("?::jsonb", [JSON.stringify(actionIds || [])]),
-      agent_language: body.language || r.agent_language || "en",
+      agent_language: body.language || r.agent_language || "multi",
       agent_voice_id: voiceId || r.agent_voice_id,
       agent_first_message: greeting,
       agent_system_prompt: fullPrompt,

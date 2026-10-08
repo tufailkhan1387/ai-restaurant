@@ -1,7 +1,15 @@
 import { getKnex } from "../db.js";
-import { canonicalOrderNumber } from "../lib/orderNumbers.js";
+import {
+  canonicalOrderNumber,
+  expandOrderNumberCandidates,
+  orderNumberDigits,
+} from "../lib/orderNumbers.js";
 import { resolveRestaurantFamilyIds } from "../lib/tableSessions.js";
-import { normalizeElevenLabsToolBody, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
+import {
+  normalizeElevenLabsToolBody,
+  phoneMatchVariants,
+  resolveRestaurantIdForVoiceTools,
+} from "../lib/voiceWebhookUtils.js";
 
 function statusLabel(status, fulfillmentType) {
   const dineIn = String(fulfillmentType || "").toLowerCase() === "dine_in";
@@ -23,7 +31,7 @@ function normalizeLookup(raw) {
     .trim()
     .toUpperCase()
     .replace(/^ORDER\s+/, "")
-    .replace(/\s+/g, "");
+    .replace(/\s+/g, " ");
 }
 
 const ORDER_LOOKUP_COLUMNS = [
@@ -36,19 +44,67 @@ const ORDER_LOOKUP_COLUMNS = [
   "restaurant_id",
   "fulfillment_type",
   "table_number",
+  "customer_phone",
+  "created_at",
 ];
 
-async function findOrder(knex, { code, restaurantId }) {
-  if (!code) return null;
-  const canonical = canonicalOrderNumber(code);
+async function findOrder(knex, { code, restaurantId, phone }) {
   const familyIds = restaurantId ? await resolveRestaurantFamilyIds(knex, restaurantId) : [];
+  const scope = (q) => (familyIds.length ? q.whereIn("restaurant_id", familyIds) : q);
 
-  let q = knex("orders").where((builder) => {
-    builder.whereRaw("UPPER(tracking_code) = ?", [code]).orWhereRaw("UPPER(order_number) = ?", [code]);
-    if (canonical && canonical !== code) builder.orWhere({ order_number: canonical });
-  });
-  if (familyIds.length) q = q.whereIn("restaurant_id", familyIds);
-  return q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").first();
+  const candidates = expandOrderNumberCandidates(code);
+  const compact = normalizeLookup(code).replace(/\s+/g, "");
+  const canonical = canonicalOrderNumber(code);
+  const digitKey = orderNumberDigits(code);
+
+  // 1) Exact / canonical candidates
+  const lookupValues = [...new Set([compact, canonical, ...candidates].filter(Boolean))];
+  if (lookupValues.length) {
+    let q = knex("orders").where((builder) => {
+      for (const value of lookupValues) {
+        builder.orWhereRaw("UPPER(order_number) = ?", [String(value).toUpperCase()]);
+        builder.orWhereRaw("UPPER(REPLACE(order_number, '-', '')) = ?", [
+          String(value).toUpperCase().replace(/-/g, ""),
+        ]);
+        builder.orWhereRaw("UPPER(tracking_code) = ?", [String(value).toUpperCase()]);
+      }
+    });
+    q = scope(q);
+    const exact = await q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").first();
+    if (exact) return exact;
+  }
+
+  // 2) Digit fingerprint match (handles ORD-26108-02 vs ORD-261008-02 spoken drops)
+  if (digitKey && digitKey.length >= 6) {
+    let q = knex("orders").whereRaw(
+      "REGEXP_REPLACE(UPPER(order_number), '[^0-9]', '', 'g') LIKE ?",
+      [`%${digitKey.slice(-8)}%`],
+    );
+    q = scope(q);
+    const fuzzy = await q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").limit(5);
+    if (fuzzy.length === 1) return fuzzy[0];
+    if (fuzzy.length > 1) {
+      const best = fuzzy.find((row) => {
+        const rowDigits = String(row.order_number || "").replace(/\D/g, "");
+        return rowDigits.endsWith(digitKey.slice(-4)) || digitKey.endsWith(rowDigits.slice(-4));
+      });
+      if (best) return best;
+    }
+  }
+
+  // 3) Fallback: latest non-cancelled order on this caller phone
+  const phoneVariants = phoneMatchVariants(phone);
+  if (phoneVariants.length) {
+    let q = knex("orders")
+      .whereNotIn("status", ["cancelled"])
+      .andWhere(function () {
+        for (const v of phoneVariants) this.orWhere("customer_phone", v);
+      });
+    q = scope(q);
+    return q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").first();
+  }
+
+  return null;
 }
 
 export async function aiOrderStatus(req, res) {
@@ -60,21 +116,27 @@ export async function aiOrderStatus(req, res) {
     const rawBody = { ...(req.query || {}), ...(req.body || {}) };
     const body = normalizeElevenLabsToolBody(rawBody);
 
-    const code = normalizeLookup(
+    const rawCode =
       body.order_number ||
-        body.tracking_code ||
-        body.order_num ||
-        body.code ||
-        body.orderNumber ||
-        body.order_no,
-    );
-    console.log("📍 Query:", code || "No order number provided");
+      body.tracking_code ||
+      body.order_num ||
+      body.code ||
+      body.orderNumber ||
+      body.order_no ||
+      "";
+    const code = normalizeLookup(rawCode);
+    const phone =
+      body.customer_phone || body.caller_phone || body.twilio_from || body.from || "";
+
+    console.log("📍 Query:", code || "(empty)", "| phone:", phone || "n/a");
+    console.log("📍 Candidates:", expandOrderNumberCandidates(code).join(", ") || "none");
     console.log("-".repeat(40) + "\n");
 
-    if (!code) {
+    if (!code && !phoneMatchVariants(phone).length) {
       return res.json({
         found: false,
-        message: "Translate and tell the caller in their language: I need your order number, for example ORD-260929-01, to look that up.",
+        message:
+          "Translate and tell the caller in their language (Roman Hindi/Urdu if that is locked): I need your order number, for example ORD-261008-02. Please say the digits slowly.",
       });
     }
 
@@ -85,12 +147,16 @@ export async function aiOrderStatus(req, res) {
       restaurantId = resolved.id;
     }
 
-    const order = await findOrder(knex, { code, restaurantId });
+    const order = await findOrder(knex, { code, restaurantId, phone });
 
     if (!order) {
       return res.json({
         found: false,
-        message: `Translate and tell the caller in their language: I couldn't find an order with number ${code}. Could you double-check the order number?`,
+        tried: expandOrderNumberCandidates(code),
+        message:
+          `Translate and tell the caller in their language (Roman script for Hindi/Urdu): I could not find that order number. ` +
+          `Please say the full number slowly once more, like O R D, then the date digits, then the last two digits. ` +
+          `Ask only ONE more time. Do not keep looping.`,
       });
     }
 
@@ -99,7 +165,7 @@ export async function aiOrderStatus(req, res) {
       : null;
 
     const tableBit = order.table_number ? ` for table ${order.table_number}` : "";
-    const message = `Translate and tell the caller in their language: Order ${order.order_number} for ${order.customer_name}${tableBit} is ${statusLabel(order.status, order.fulfillment_type)}.${
+    const message = `Translate and tell the caller in their language (Roman Hindi/Urdu if that is locked): Order ${order.order_number} for ${order.customer_name}${tableBit} is ${statusLabel(order.status, order.fulfillment_type)}.${
       eta ? ` Estimated time around ${eta}.` : ""
     } Total ${Number(order.total_amount).toFixed(2)}.`;
 

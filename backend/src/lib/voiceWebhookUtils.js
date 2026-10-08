@@ -9,10 +9,61 @@ export function normalizeE164(phone) {
   const s = String(phone).trim();
   if (s.startsWith("+")) return `+${s.slice(1).replace(/\D/g, "")}`;
   const digits = s.replace(/\D/g, "");
+  // Pakistan local mobile: 03XXXXXXXXX → +92XXXXXXXXXX
+  if (digits.length === 11 && digits.startsWith("0") && digits[1] === "3") {
+    return `+92${digits.slice(1)}`;
+  }
+  // Pakistan mobile without leading 0: 3XXXXXXXXX
+  if (digits.length === 10 && digits.startsWith("3")) {
+    return `+92${digits}`;
+  }
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length >= 11 && digits.startsWith("1")) return `+${digits}`;
   if (digits.length > 0) return `+${digits}`;
   return s;
+}
+
+/**
+ * Build phone string variants for DB lookups (caller ID, +92 / 03xx, US +1, etc.).
+ * @param {unknown} phone
+ * @returns {string[]}
+ */
+export function phoneMatchVariants(phone) {
+  const raw = String(phone || "").trim();
+  if (!raw || raw === "<user_phone_number>" || /same|this|my\s*number/i.test(raw)) return [];
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return [raw];
+
+  const variants = new Set([raw, digits, `+${digits}`]);
+
+  if (digits.length === 10) {
+    variants.add(`+1${digits}`);
+    variants.add(`0${digits}`);
+    if (digits.startsWith("3")) {
+      variants.add(`+92${digits}`);
+      variants.add(`92${digits}`);
+      variants.add(`0${digits}`);
+    }
+  }
+  if (digits.length === 11 && digits.startsWith("0")) {
+    variants.add(`+92${digits.slice(1)}`);
+    variants.add(`92${digits.slice(1)}`);
+    variants.add(digits.slice(1));
+  }
+  if (digits.length === 12 && digits.startsWith("92")) {
+    variants.add(`0${digits.slice(2)}`);
+    variants.add(digits.slice(2));
+    variants.add(`+${digits}`);
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    variants.add(`+${digits}`);
+    variants.add(digits.slice(1));
+  }
+
+  const e164 = normalizeE164(raw);
+  if (e164) variants.add(e164);
+
+  return [...variants].filter(Boolean);
 }
 
 /**

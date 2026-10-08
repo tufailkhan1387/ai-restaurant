@@ -109,6 +109,8 @@ const AGENT_LANGUAGES = [
   { code: "ru", label: "Russian (Русский)" },
   { code: "ar", label: "Arabic (العربية)" },
   { code: "hi", label: "Hindi (हिन्दी)" },
+  { code: "ur", label: "Urdu (اردو)" },
+  { code: "pa", label: "Punjabi (ਪੰਜਾਬੀ)" },
   { code: "ja", label: "Japanese (日本語)" },
   { code: "ko", label: "Korean (한국어)" },
   { code: "zh", label: "Chinese (中文)" },
@@ -346,7 +348,7 @@ export default function RestaurantSettings() {
       .update({
         twilio_phone_number: r.twilio_phone_number?.trim() || null,
         elevenlabs_agent_id: r.elevenlabs_agent_id?.trim() || null,
-        agent_language: r.agent_language || "en",
+        agent_language: r.agent_language || "multi",
         agent_voice_id: r.agent_voice_id?.trim() || null,
         agent_first_message: r.agent_first_message?.trim() || null,
         agent_system_prompt: r.agent_system_prompt?.trim() || null,
@@ -467,7 +469,7 @@ export default function RestaurantSettings() {
       await supabase
         .from("restaurants")
         .update({
-          agent_language: r.agent_language || "en",
+          agent_language: r.agent_language || "multi",
           agent_voice_id: r.agent_voice_id?.trim() || null,
           agent_first_message: r.agent_first_message?.trim() || null,
           agent_system_prompt: r.agent_system_prompt?.trim() || null,
@@ -478,7 +480,7 @@ export default function RestaurantSettings() {
         body: {
           restaurant_id: r.id,
           synthflow_agent_id: r.synthflow_agent_id || undefined,
-          language: r.agent_language || "en",
+          language: r.agent_language || "multi",
           voice_id: r.agent_voice_id?.trim() || undefined,
           first_message: r.agent_first_message?.trim() || undefined,
           system_prompt: r.agent_system_prompt?.trim() || undefined,
@@ -569,7 +571,7 @@ export default function RestaurantSettings() {
       await supabase
         .from("restaurants")
         .update({
-          agent_language: r.agent_language || "en",
+          agent_language: r.agent_language || "multi",
           agent_voice_id: r.agent_voice_id?.trim() || null,
           agent_first_message: r.agent_first_message?.trim() || null,
           agent_system_prompt: r.agent_system_prompt?.trim() || null,
@@ -1211,7 +1213,7 @@ export default function RestaurantSettings() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>{t("restaurantSettings:language", "Agent Language")}</Label>
-              <Select value={r.agent_language || "en"} onValueChange={(v) => setR({ ...r, agent_language: v })}>
+              <Select value={r.agent_language || "multi"} onValueChange={(v) => setR({ ...r, agent_language: v })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

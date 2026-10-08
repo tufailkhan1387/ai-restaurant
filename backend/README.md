@@ -158,3 +158,5 @@ npm test --prefix backend
 <!-- Transcript Fix 10/08/2026 12:11:32 -->
 
 <!-- Reservation Transcript Fix 10/08/2026 12:21:06 -->
+
+<!-- Trigger deploy after webhook revert 10/08/2026 12:34:24 -->

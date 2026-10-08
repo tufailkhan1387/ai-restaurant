@@ -172,8 +172,8 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           duringCallVar("coupon_code", "Coupon code or none", "none"),
           duringCallVar(
             "branch_name",
-            "REQUIRED exact branch name from the Branch ordering list (e.g. Royal Restaurant Johar Town Branch). Never invent. Never leave empty for pickup.",
-            "Royal Restaurant Johar Town Branch",
+            "REQUIRED. Pass the area or exact branch from Branch ordering, e.g. Johar Town or Royal Restaurant Johar Town Branch. Kashmir Road / Iqbal Town / Johar Town all work. Never leave empty for pickup.",
+            "Johar Town",
           ),
         ],
         json_body_stringified: JSON.stringify({
@@ -262,7 +262,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         run_action_before_call_start: false,
         name: "check_previous_order",
         description:
-          "Returning-caller lookup. Call silently when the caller wants food or a table. Checks for an active table reservation and the latest previous food order on this phone number. If a reservation exists, tell them to complete it before booking another table. If a previous order exists, ask whether to repeat those items. Speak the result only in the caller's locked language.",
+          "Returning-caller lookup. Call silently when the caller wants food or a table. Returns previous items plus saved name, phone, branch, and fulfillment. If they want to repeat: tell them those details and ask what to change — do not re-collect everything. Speak only in the caller's locked language.",
         speech_while_using_the_tool: "",
         failure_timeout: 10,
         headers: [{ key: "Content-Type", value: "application/json" }],

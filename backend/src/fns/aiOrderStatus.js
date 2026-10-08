@@ -75,24 +75,38 @@ async function findOrder(knex, { code, restaurantId, phone }) {
   }
 
   // 2) Digit fingerprint match (handles ORD-26108-02 vs ORD-261008-02 spoken drops)
-  if (digitKey && digitKey.length >= 6) {
-    let q = knex("orders").whereRaw(
-      "REGEXP_REPLACE(UPPER(order_number), '[^0-9]', '', 'g') LIKE ?",
-      [`%${digitKey.slice(-8)}%`],
-    );
-    q = scope(q);
-    const fuzzy = await q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").limit(5);
-    if (fuzzy.length === 1) return fuzzy[0];
-    if (fuzzy.length > 1) {
-      const best = fuzzy.find((row) => {
-        const rowDigits = String(row.order_number || "").replace(/\D/g, "");
-        return rowDigits.endsWith(digitKey.slice(-4)) || digitKey.endsWith(rowDigits.slice(-4));
-      });
-      if (best) return best;
+  if (digitKey && digitKey.length >= 4) {
+    const patterns = [
+      digitKey.length >= 8 ? digitKey.slice(-8) : null,
+      digitKey.length >= 6 ? digitKey.slice(-6) : null,
+      digitKey.slice(-4),
+    ].filter(Boolean);
+
+    for (const pattern of patterns) {
+      let q = knex("orders").whereRaw(
+        "REGEXP_REPLACE(UPPER(COALESCE(order_number, '')), '[^0-9]', '', 'g') LIKE ?",
+        [`%${pattern}%`],
+      );
+      q = scope(q);
+      const fuzzy = await q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").limit(8);
+      if (fuzzy.length === 1) return fuzzy[0];
+      if (fuzzy.length > 1) {
+        const best = fuzzy.find((row) => {
+          const rowDigits = String(row.order_number || "").replace(/\D/g, "");
+          return (
+            rowDigits === digitKey ||
+            rowDigits.endsWith(digitKey.slice(-4)) ||
+            digitKey.endsWith(rowDigits.slice(-4)) ||
+            candidates.some((c) => String(c).replace(/\D/g, "") === rowDigits)
+          );
+        });
+        if (best) return best;
+      }
     }
   }
 
   // 3) Fallback: latest non-cancelled order on this caller phone
+  //    Prefer a phone match whose digits overlap the spoken number when available.
   const phoneVariants = phoneMatchVariants(phone);
   if (phoneVariants.length) {
     let q = knex("orders")
@@ -101,7 +115,13 @@ async function findOrder(knex, { code, restaurantId, phone }) {
         for (const v of phoneVariants) this.orWhere("customer_phone", v);
       });
     q = scope(q);
-    return q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").first();
+    const recent = await q.select(ORDER_LOOKUP_COLUMNS).orderBy("created_at", "desc").limit(5);
+    if (digitKey && digitKey.length >= 2 && recent.length) {
+      const seq = digitKey.slice(-2);
+      const bySeq = recent.find((row) => String(row.order_number || "").replace(/\D/g, "").endsWith(seq));
+      if (bySeq) return bySeq;
+    }
+    if (recent[0]) return recent[0];
   }
 
   return null;
@@ -136,7 +156,7 @@ export async function aiOrderStatus(req, res) {
       return res.json({
         found: false,
         message:
-          "Translate and tell the caller in their language (Roman Hindi/Urdu if that is locked): I need your order number, for example ORD-261008-02. Please say the digits slowly.",
+          "Respond ONLY in the caller's LOCKED language: I need your order number, for example ORD-261008-14. Please say the digits slowly.",
       });
     }
 
@@ -154,7 +174,7 @@ export async function aiOrderStatus(req, res) {
         found: false,
         tried: expandOrderNumberCandidates(code),
         message:
-          `Translate and tell the caller in their language (Roman script for Hindi/Urdu): I could not find that order number. ` +
+          `Respond ONLY in the caller's LOCKED language: I could not find that order number. ` +
           `Please say the full number slowly once more, like O R D, then the date digits, then the last two digits. ` +
           `Ask only ONE more time. Do not keep looping.`,
       });
@@ -165,7 +185,7 @@ export async function aiOrderStatus(req, res) {
       : null;
 
     const tableBit = order.table_number ? ` for table ${order.table_number}` : "";
-    const message = `Translate and tell the caller in their language (Roman Hindi/Urdu if that is locked): Order ${order.order_number} for ${order.customer_name}${tableBit} is ${statusLabel(order.status, order.fulfillment_type)}.${
+    const message = `Respond ONLY in the caller's LOCKED language: Order ${order.order_number} for ${order.customer_name}${tableBit} is ${statusLabel(order.status, order.fulfillment_type)}.${
       eta ? ` Estimated time around ${eta}.` : ""
     } Total ${Number(order.total_amount).toFixed(2)}.`;
 

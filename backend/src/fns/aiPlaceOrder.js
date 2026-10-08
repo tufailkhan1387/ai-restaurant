@@ -31,8 +31,11 @@ export async function aiPlaceOrder(req, res) {
     const resolved = await resolveRestaurantIdForVoiceTools(knex, body);
     const restaurantId = resolved.id;
 
+    const spokenBranch =
+      body.branch_name || body.branch || body.area || body.branch_area || body.city || null;
     console.log("👤 Customer:", body.customer_name);
     console.log("📦 Items:", JSON.stringify(body.items));
+    console.log("🏬 Branch spoken:", spokenBranch || "(none)", "| fulfillment:", body.fulfillment_type || "delivery");
     console.log(
       restaurantId
         ? `🏪 Restaurant resolved: ${restaurantId}`
@@ -70,7 +73,9 @@ export async function aiPlaceOrder(req, res) {
       coupon_code: body.coupon_code || body.discount_code || null,
       payment_method: body.payment_method ?? "cash",
       fulfillment_type: body.fulfillment_type || "delivery",
-      branch_name: body.branch_name || body.branch || null,
+      branch_name: spokenBranch,
+      area: body.area || body.branch_area || null,
+      branch: body.branch || null,
       delivery_latitude: body.delivery_latitude ?? body.latitude ?? null,
       delivery_longitude: body.delivery_longitude ?? body.longitude ?? null,
       call_id: callId,
@@ -136,10 +141,13 @@ export async function aiPlaceOrder(req, res) {
     if (e.isBranchError) {
       const areas = (e.availableAreas || []).filter(Boolean);
       const areaList = areas.length ? areas.join(" or ") : "one of our branches";
+      console.warn("⚠️ Branch not matched. Requested:", e.requestedBranch, "| areas:", areaList);
       return res.status(200).json({
         success: false,
         branch_required: true,
-        message: `Translate and tell the caller in their language: I need to confirm which area for your order. Which area would you like: ${areaList}? Then I will place the order. Do NOT invent an order number.`,
+        requested_branch: e.requestedBranch || null,
+        available_areas: areas,
+        message: `Respond ONLY in the caller's LOCKED language: I need to confirm which area for your order. Which area would you like: ${areaList}? After they answer, call place_order again with branch_name set to that area name (for example Johar Town). Do NOT invent an order number.`,
       });
     }
     return res.status(500).json({ error: e.message || "failed" });

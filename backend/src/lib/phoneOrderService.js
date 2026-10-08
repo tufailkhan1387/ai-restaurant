@@ -499,9 +499,14 @@ export async function createPhoneOrder(knex, input) {
     }
   }
 
-  // Branch auto-assignment logic
+  // Always resolve branches under the PARENT so orders land on the correct child branch.
+  const restaurantRow = await knex("restaurants")
+    .where({ id: restaurantId })
+    .select("id", "name", "parent_restaurant_id", "is_branch")
+    .first();
+  const parentRestaurantId = restaurantRow?.parent_restaurant_id || restaurantId;
   const branches = await knex("restaurants")
-    .where({ parent_restaurant_id: restaurantId, is_active: true });
+    .where({ parent_restaurant_id: parentRestaurantId, is_active: true });
 
   let targetRestaurantId = restaurantId;
   let autoAssigned = false;
@@ -512,7 +517,34 @@ export async function createPhoneOrder(knex, input) {
   const rawBranch = String(branch_name || "").trim();
   const branchRequested =
     !!rawBranch && !["none", "null", "n/a", "na", "any", "no", "no preference"].includes(rawBranch.toLowerCase());
-  const chosenBranch = pickNamedBranch(branches, branch_name);
+
+  // Try branch_name, then free-text area labels the agent often sends instead of exact names.
+  const spokenCandidates = [
+    branch_name,
+    input.area,
+    input.branch,
+    input.branch_area,
+    delivery_notes,
+  ]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+
+  let chosenBranch = null;
+  for (const spoken of spokenCandidates) {
+    chosenBranch = pickNamedBranch(branches, spoken);
+    if (chosenBranch) break;
+  }
+
+  // Single accepting branch → auto-assign when the caller did not name one clearly.
+  const accepting = branches.filter((b) => b.is_accepting_orders !== false);
+  if (!chosenBranch && accepting.length === 1 && (isPickup || !branchRequested)) {
+    chosenBranch = accepting[0];
+  }
+
+  console.log(
+    `🏪 Branch resolve: parent=${parentRestaurantId} spoken=${JSON.stringify(spokenCandidates)} ` +
+      `matched=${chosenBranch?.name || "NONE"} branches=${branches.map((b) => b.name).join(" | ")}`,
+  );
 
   if (chosenBranch) {
     targetRestaurantId = chosenBranch.id;
@@ -521,19 +553,18 @@ export async function createPhoneOrder(knex, input) {
     autoAssigned = true;
     assignmentStatus = "assigned";
   } else if (branches.length > 0 && (isPickup || branchRequested)) {
-    // Pickup always needs a named branch. If the agent named an area that did not match, do not
-    // silently park the order on the parent HQ — ask the caller to confirm the area again.
+    // Pickup / named area must map to a real branch — do not park on parent HQ.
     const areas = [...new Set(branches.map((b) => branchArea(b)).filter(Boolean))];
     const err = new Error(
-      `Could not match branch "${rawBranch || "(missing)"}". Ask the caller which area: ${areas.join(" or ")}.`,
+      `Could not match branch "${rawBranch || spokenCandidates[0] || "(missing)"}". Ask the caller which area: ${areas.join(" or ")}.`,
     );
     err.isBranchError = true;
     err.availableAreas = areas;
-    err.requestedBranch = rawBranch || null;
+    err.requestedBranch = rawBranch || spokenCandidates[0] || null;
     throw err;
   } else if (branches.length > 0 && !isPickup) {
     if (lat != null && lng != null) {
-      const nearest = await findNearestBranch(knex, restaurantId, lat, lng);
+      const nearest = await findNearestBranch(knex, parentRestaurantId, lat, lng);
       if (nearest) {
         targetRestaurantId = nearest.branch.id;
         assignedBranchName = nearest.branch.name;
@@ -542,17 +573,20 @@ export async function createPhoneOrder(knex, input) {
         autoAssigned = true;
         assignmentStatus = "assigned";
       } else {
-        // Outside all branch radii -> stays with parent restaurant
-        targetRestaurantId = restaurantId;
+        targetRestaurantId = parentRestaurantId;
         assignmentStatus = "unassigned_out_of_range";
         autoAssigned = false;
       }
     } else {
-      // Could not geocode address -> flag for review
-      targetRestaurantId = restaurantId;
+      targetRestaurantId = parentRestaurantId;
       assignmentStatus = "needs_review";
       autoAssigned = false;
     }
+  } else if (restaurantRow?.is_branch) {
+    // Tool resolved to a branch with no siblings listed — keep order on that branch.
+    targetRestaurantId = restaurantId;
+    assignedBranchName = restaurantRow.name;
+    assignmentStatus = "assigned";
   }
 
   let menu = await knex("menu_items")

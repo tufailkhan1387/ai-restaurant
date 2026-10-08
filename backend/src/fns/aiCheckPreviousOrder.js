@@ -1,4 +1,5 @@
 import { getKnex } from "../db.js";
+import { branchArea } from "../lib/branchLocation.js";
 import { resolveRestaurantFamilyIds } from "../lib/tableSessions.js";
 import { normalizeElevenLabsToolBody, phoneMatchVariants, resolveRestaurantIdForVoiceTools } from "../lib/voiceWebhookUtils.js";
 
@@ -43,14 +44,13 @@ export async function aiCheckPreviousOrder(req, res) {
         has_active_reservation: false,
         has_previous_order: false,
         message:
-          "Translate and tell the caller in their language: I cannot check previous orders because the caller's phone number is not available. Continue taking a new order normally.",
+          "Translate and tell the caller in their LOCKED language only: I cannot check previous orders because the caller's phone number is not available. Continue taking a new order normally.",
       });
     }
 
     const familyIds = await resolveRestaurantFamilyIds(knex, restaurantId);
     const ids = familyIds.length ? familyIds : [restaurantId];
 
-    // Active table reservation across parent + branches
     let activeReservation = null;
     const reservationQb = knex("table_reservations")
       .whereIn("restaurant_id", ids)
@@ -62,7 +62,6 @@ export async function aiCheckPreviousOrder(req, res) {
       activeReservation = await reservationQb.first();
     }
 
-    // Latest food order across parent + branches (exclude empty / reservation-only noise)
     let order = null;
     const orderQb = knex("orders")
       .whereIn("restaurant_id", ids)
@@ -73,18 +72,29 @@ export async function aiCheckPreviousOrder(req, res) {
     }
 
     let itemDetails = null;
-    let previousFulfillment = null;
+    let previousItems = [];
+    let branchName = null;
+    let branchAreaLabel = null;
     if (order) {
       const items = await knex("order_items").where({ order_id: order.id }).orderBy("id", "asc");
       if (items.length) {
-        itemDetails = items
+        previousItems = items.map((i) => ({
+          name: i.item_name,
+          quantity: i.quantity,
+          notes: i.notes || null,
+        }));
+        itemDetails = previousItems
           .map((i) => {
-            let details = `${i.quantity} ${i.item_name}`;
+            let details = `${i.quantity} ${i.name}`;
             if (i.notes) details += ` (${i.notes})`;
             return details;
           })
           .join(", ");
-        previousFulfillment = order.fulfillment_type;
+      }
+      const branch = await knex("restaurants").where({ id: order.restaurant_id }).first();
+      if (branch) {
+        branchName = branch.name;
+        branchAreaLabel = branchArea(branch);
       }
     }
 
@@ -97,16 +107,22 @@ export async function aiCheckPreviousOrder(req, res) {
         .filter(Boolean)
         .join(" at ");
       parts.push(
-        `This caller already has an active table reservation for ${when} (party of ${activeReservation.party_size}). ` +
-          `Tell them in their language that their table is already reserved, they should complete that booking first, ` +
-          `and do NOT create another table reservation until it is done. They may still place a food order.`,
+        `Active table reservation for ${when} (party of ${activeReservation.party_size}). ` +
+          `Tell them in their LOCKED language that their table is already reserved and they must complete that booking before a new reservation. They may still place food.`,
       );
     }
 
-    if (itemDetails) {
+    if (itemDetails && order) {
       parts.push(
-        `The customer previously ordered: ${itemDetails}. Ask them in their language if they would like to repeat this exact same order. ` +
-          `If yes, reuse these items and still collect branch / delivery-or-pickup details before place_order.`,
+        `Previous food order found. Items: ${itemDetails}. ` +
+          `Name: ${order.customer_name || "unknown"}. Phone: ${order.customer_phone || phone}. ` +
+          `Fulfillment: ${order.fulfillment_type || "delivery"}. ` +
+          `Branch/area: ${branchAreaLabel || branchName || "unknown"}. ` +
+          `Address: ${order.delivery_address || "n/a"}. ` +
+          `Ask in their LOCKED language if they want to REPEAT this same order. ` +
+          `If YES: do NOT re-collect name/phone/branch from scratch. Tell them these saved details and ask if they want to CHANGE anything (name, phone, branch/area, or delivery/pickup). ` +
+          `If they say no changes, reuse everything and go to order summary + place_order with branch_name "${branchName || "none"}". ` +
+          `If they change only one field, update that field only and keep the rest.`,
       );
     }
 
@@ -116,7 +132,7 @@ export async function aiCheckPreviousOrder(req, res) {
         has_active_reservation: false,
         has_previous_order: false,
         message:
-          "Translate and tell the caller in their language: No previous orders or active table reservations found. Continue taking a new order normally.",
+          "Translate and tell the caller in their LOCKED language only: No previous orders or active table reservations found. Continue a new order normally.",
       });
     }
 
@@ -124,9 +140,16 @@ export async function aiCheckPreviousOrder(req, res) {
       found: true,
       has_active_reservation: !!activeReservation,
       has_previous_order: !!itemDetails,
-      message: `Translate and tell the caller in their language: ${parts.join(" ")}`,
+      message: `Respond ONLY in the caller's LOCKED language: ${parts.join(" ")}`,
       previous_items: itemDetails,
-      previous_fulfillment_type: previousFulfillment,
+      previous_items_list: previousItems,
+      previous_fulfillment_type: order?.fulfillment_type || null,
+      previous_customer_name: order?.customer_name || null,
+      previous_customer_phone: order?.customer_phone || phone,
+      previous_branch_name: branchName,
+      previous_branch_area: branchAreaLabel,
+      previous_delivery_address: order?.delivery_address || null,
+      previous_order_number: order?.order_number || null,
       reservation_date: activeReservation?.reservation_date || null,
       reservation_time: activeReservation ? String(activeReservation.start_time || "").slice(0, 5) : null,
       party_size: activeReservation?.party_size || null,

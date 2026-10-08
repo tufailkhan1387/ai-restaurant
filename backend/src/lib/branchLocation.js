@@ -121,9 +121,10 @@ export function branchOrderingSection(branches) {
 
   lines.push("Ask this before the street address on a delivery order. After they choose the area, ask for the complete delivery address and accept it on the first try.");
   lines.push("For a pickup order, do not ask for a street address.");
-  lines.push("Ask the area question in the caller's locked language, but pass the matching exact English branch_name (quoted above) to place_order and reserve_table.");
+  lines.push("Ask the area in the caller's locked language.");
+  lines.push("On place_order / reserve_table, set branch_name to EITHER the exact quoted branch name OR the area label (e.g. Johar Town, Kashmir Road, Iqbal Town). The server matches both.");
   lines.push("Use only a city and area from this list.");
-  lines.push("Never invent a city, area, or branch. Never pass none after they choose an area.");
+  lines.push("Never invent a city, area, or branch. Never pass none after they choose an area. Never skip branch_name on pickup.");
   return lines.join("\n");
 }
 
@@ -142,17 +143,39 @@ function normalizeBranchLabel(value) {
   return clean(value)
     .toLowerCase()
     .replace(/[’'`]/g, "")
-    .replace(/\b(branch|restaurant|royal|the)\b/g, " ")
+    .replace(/\b(branch|restaurant|royal|the|its|it's|is)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+/**
+ * Common STT mishears for Lahore areas (e.g. "Johar Town" → "party town").
+ * Keys are normalized fragments; values are the canonical area tokens to inject.
+ */
+const AREA_STT_ALIASES = [
+  { match: /\b(party|johar|johur|johar'?s|jawar|joher)\s*(town)?\b/i, inject: "johar town" },
+  { match: /\b(iqbal|ikbal|eqbal)\s*(town)?\b/i, inject: "iqbal town" },
+  { match: /\b(kashmir|kashmer|cashmere)\s*(road|rd)?\b/i, inject: "kashmir road" },
+];
+
+function applyAreaAliases(spoken) {
+  const original = String(spoken || "");
+  const text = normalizeBranchLabel(original);
+  for (const alias of AREA_STT_ALIASES) {
+    if (alias.match.test(text) || alias.match.test(original)) {
+      return normalizeBranchLabel(alias.inject);
+    }
+  }
+  return text;
+}
+
 /** Match a spoken branch, area, or "city area" to one open branch. */
 export function matchBranchChoice(branches, spoken) {
-  const raw = normalizeBranchLabel(spoken);
+  const raw = applyAreaAliases(spoken);
   if (!raw || ["none", "null", "n/a", "na", "any", "no", "no preference"].includes(raw)) return null;
   const open = (branches || []).filter((branch) => branch && branch.is_accepting_orders !== false && branch.is_active !== false);
-  const spokenTokens = raw.split(" ").filter((t) => t.length > 1);
+  // Unique tokens only — duplicate "town" must not make every *Town branch look like a match.
+  const spokenTokens = [...new Set(raw.split(" ").filter((t) => t.length > 1))];
 
   const scored = open
     .map((branch) => {
@@ -167,12 +190,15 @@ export function matchBranchChoice(branches, spoken) {
       for (const label of labels) {
         const norm = normalizeBranchLabel(label);
         if (!norm) continue;
-        if (norm === raw) score = Math.max(score, 5);
+        if (norm === raw || raw === area || raw === name) score = Math.max(score, 5);
+        else if (area && (raw === area || raw.includes(area) || area.includes(raw))) score = Math.max(score, 4);
         else if (raw.includes(norm) || norm.includes(raw)) score = Math.max(score, norm.length > 3 ? 3 : 0);
         else if (spokenTokens.length) {
           const labelTokens = new Set(norm.split(" ").filter((t) => t.length > 1));
-          const overlap = spokenTokens.filter((t) => labelTokens.has(t)).length;
-          if (overlap >= 2 || (overlap === 1 && spokenTokens.some((t) => t.length >= 5 && labelTokens.has(t)))) {
+          // Ignore ultra-common tokens that every *Town / *Road branch shares.
+          const meaningful = spokenTokens.filter((t) => !["town", "road", "phase", "area"].includes(t));
+          const overlap = meaningful.filter((t) => labelTokens.has(t)).length;
+          if (overlap >= 1 && meaningful.some((t) => t.length >= 4 && labelTokens.has(t))) {
             score = Math.max(score, overlap >= 2 ? 3 : 2);
           }
         }

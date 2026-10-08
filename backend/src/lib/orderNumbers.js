@@ -46,16 +46,28 @@ const WORD_TO_DIGIT = {
   nau: "9",
 };
 
-/** Turn "two six one..." / "do chhe ek..." into digits before canonicalizing. */
+/** Turn "two six one..." / "do chhe ek..." / Devanagari digits into digits before canonicalizing. */
 export function replaceSpokenDigits(raw) {
   let text = String(raw || "")
     .toLowerCase()
-    .replace(/[’'`]/g, "");
+    .replace(/[’'`]/g, "")
+    // Devanagari digits ०-९
+    .replace(/०/g, "0")
+    .replace(/१/g, "1")
+    .replace(/२/g, "2")
+    .replace(/३/g, "3")
+    .replace(/४/g, "4")
+    .replace(/५/g, "5")
+    .replace(/६/g, "6")
+    .replace(/७/g, "7")
+    .replace(/८/g, "8")
+    .replace(/९/g, "9");
 
-  // Normalize spelled "O R D" / "oh are dee" before digit word replacement
+  // Normalize spelled "O R D" / "oh are dee" / "ओ आर डी" style before digit word replacement
   text = text
     .replace(/\b(o|oh|zero)\s*[-\s]*\b(r|are)\s*[-\s]*\b(d|dee|the)\b/g, "ord")
-    .replace(/\border\s*(number|no|num)?\b/g, "ord");
+    .replace(/\border\s*(number|no|num|#)?\b/g, "ord")
+    .replace(/\bord\s*[-–]?\s*/g, "ord ");
 
   // "double six" → 66, "triple zero" → 000
   text = text.replace(/\b(double|triple)\s+([a-z]+)\b/g, (_, mult, word) => {
@@ -65,6 +77,8 @@ export function replaceSpokenDigits(raw) {
   });
 
   text = text.replace(/\b([a-z]+)\b/g, (word) => WORD_TO_DIGIT[word] ?? word);
+  // Collapse "ORD- 261008- 14" style spacing around dashes
+  text = text.replace(/ord\s*[-–]?\s*/gi, "ORD").replace(/(\d)\s+[-–]\s+(\d)/g, "$1$2");
   return text;
 }
 
@@ -111,10 +125,23 @@ export function expandOrderNumberCandidates(raw) {
     addCanonical(`ORD${date5.slice(0, 4)}0${date5.slice(4)}${seq}`);
   } else if (digitsOnly.length === 9 && digitsOnly.startsWith("20")) {
     addCanonical(`ORD${digitsOnly.slice(2, 8)}${digitsOnly.slice(8)}`);
+  } else if (digitsOnly.length >= 6 && digitsOnly.length <= 10) {
+    // Today's stamp + trailing seq (helps when STT drops ORD or muddles dashes)
+    const stamp = orderDateStamp();
+    if (digitsOnly.startsWith(stamp) || digitsOnly.includes(stamp)) {
+      const after = digitsOnly.startsWith(stamp)
+        ? digitsOnly.slice(stamp.length)
+        : digitsOnly.slice(digitsOnly.indexOf(stamp) + stamp.length);
+      if (after) addCanonical(`ORD${stamp}${after}`);
+    }
+    // Last 8 digits as YYMMDD+NN
+    if (digitsOnly.length > 8) {
+      addCanonical(`ORD${digitsOnly.slice(-8)}`);
+    }
   }
 
   // Explicit 5-digit date forms like ORD-26108-02 (must have a separator before the seq)
-  const fiveDate = upper.match(/^ORD\D*(\d{5})\D+(\d{1,3})$/i);
+  const fiveDate = upper.match(/ORD\D*(\d{5})\D+(\d{1,3})/i);
   if (fiveDate) {
     const d5 = fiveDate[1];
     const seq = fiveDate[2];

@@ -128,6 +128,23 @@ export async function resolveRestaurantIdForVoiceTools(knex, b) {
     if (row) return { id: row.id };
   }
 
+  // Synthflow sends caller_phone (= dialed number) on tool calls - match against telnyx/twilio phone
+  if (b.caller_phone) {
+    const raw = String(b.caller_phone).trim();
+    const norm = normalizeE164(raw);
+    let row = await knex("restaurants").where({ telnyx_phone_number: raw }).select("id").first();
+    if (!row && norm && norm !== raw) {
+      row = await knex("restaurants").where({ telnyx_phone_number: norm }).select("id").first();
+    }
+    if (!row) {
+      row = await knex("restaurants").where({ twilio_phone_number: raw }).select("id").first();
+    }
+    if (!row && norm && norm !== raw) {
+      row = await knex("restaurants").where({ twilio_phone_number: norm }).select("id").first();
+    }
+    if (row) return { id: row.id };
+  }
+
   const active = await knex("restaurants").where({ is_active: true }).select("id").orderBy("created_at", "asc");
   if (active.length === 1) return { id: active[0].id };
   if (active.length === 0) return { id: null, error: "no active restaurant found" };

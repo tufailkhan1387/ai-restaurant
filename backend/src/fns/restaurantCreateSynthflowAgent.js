@@ -451,6 +451,7 @@ export async function restaurantCreateSynthflowAgent(req, res) {
       min_words_to_interrupt: 1,
       interruption_fade_out: 1,
       send_user_idle_reminders: false,
+      transcriber_speech_recognition: "high_accuracy",
       ...(voiceId ? { voice_id: voiceId } : {}),
     };
 

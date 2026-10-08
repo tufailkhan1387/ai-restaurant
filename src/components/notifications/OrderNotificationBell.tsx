@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bell,
@@ -143,6 +143,24 @@ function canSeeNotification(
   return true;
 }
 
+/** Parent HQ: parent + all branches. Branch portal: only that branch. */
+function getAlertRestaurantIds(
+  restaurantId: string | null | undefined,
+  restaurants: { id: string; parent_restaurant_id?: string | null; is_branch?: boolean }[],
+  activeRestaurant: { id?: string; parent_restaurant_id?: string | null; is_branch?: boolean } | null,
+): string[] {
+  if (!restaurantId) return [];
+  const isBranch = Boolean(
+    activeRestaurant?.is_branch ||
+      (activeRestaurant?.parent_restaurant_id != null && activeRestaurant.parent_restaurant_id !== ""),
+  );
+  if (isBranch) return [restaurantId];
+  const rootId = activeRestaurant?.parent_restaurant_id || restaurantId;
+  const family = restaurants.filter((r) => r.id === rootId || r.parent_restaurant_id === rootId);
+  const ids = family.map((r) => r.id).filter(Boolean);
+  return ids.length ? ids : [restaurantId];
+}
+
 function tidyLabel(value?: string | null) {
   return String(value || "").replace(/\bTable\s+Table\b/gi, "Table");
 }
@@ -151,10 +169,12 @@ export function OrderNotificationBell() {
   const { t } = useTranslation(["orders", "common"]);
   const navigate = useNavigate();
   const { role, isReceptionist } = useAuth();
-  const { restaurantId } = useActiveRestaurant();
+  const { restaurantId, activeRestaurant, restaurants } = useActiveRestaurant();
   const isSuperAdmin = role === "super_admin";
   const isDriver = role === "driver";
-  const canAlert = !isDriver; 
+  const canAlert = !isDriver;
+  const alertRestaurantIds = getAlertRestaurantIds(restaurantId, restaurants, activeRestaurant);
+  const alertRestaurantIdSet = useMemo(() => new Set(alertRestaurantIds), [alertRestaurantIds]); 
 
   const [notifications, setNotifications] = useState<OrderNotification[]>(() => loadStoredNotifications(restaurantId));
   const [ringing, setRinging] = useState(false);
@@ -236,7 +256,13 @@ export function OrderNotificationBell() {
     (order: Omit<OrderNotification, "seen"> & { seen?: boolean }, triggerAlert = true) => {
       if (!canAlert) return;
 
-      if (order.restaurant_id && restaurantId && order.restaurant_id !== restaurantId) {
+      // Accept alerts for the active restaurant or any sibling branch under the same parent HQ.
+      if (
+        order.restaurant_id &&
+        restaurantId &&
+        order.restaurant_id !== restaurantId &&
+        !alertRestaurantIdSet.has(order.restaurant_id)
+      ) {
         return;
       }
 
@@ -311,7 +337,7 @@ export function OrderNotificationBell() {
         }
       }
     },
-    [startRinging, t, canAlert, restaurantId, isReceptionist, role]
+    [startRinging, t, canAlert, restaurantId, alertRestaurantIdSet, isReceptionist, role]
   );
 
   const addNotificationRef = useRef(addNotification);
@@ -323,7 +349,8 @@ export function OrderNotificationBell() {
       if (!canAlert) return;
       const customEvent = e as CustomEvent<Omit<OrderNotification, "seen"> & { restaurant_id?: string }>;
       if (customEvent.detail && customEvent.detail.id) {
-        if (customEvent.detail.restaurant_id && restaurantId && customEvent.detail.restaurant_id !== restaurantId) {
+        const rid = customEvent.detail.restaurant_id;
+        if (rid && restaurantId && rid !== restaurantId && !alertRestaurantIdSet.has(rid)) {
           return;
         }
         addNotificationRef.current(customEvent.detail, true);
@@ -334,7 +361,7 @@ export function OrderNotificationBell() {
     return () => {
       window.removeEventListener("new-order-created", handleNewOrderEvent);
     };
-  }, [canAlert, restaurantId]);
+  }, [canAlert, restaurantId, alertRestaurantIdSet]);
 
   // 2. Periodic background poll
   useEffect(() => {
@@ -342,6 +369,11 @@ export function OrderNotificationBell() {
 
     let cancelled = false;
     let isInitial = true;
+    const scopeIds = alertRestaurantIds.length ? alertRestaurantIds : [restaurantId];
+    const orderScopeFilter =
+      scopeIds.length === 1
+        ? `restaurant_id.eq.${scopeIds[0]},pending_transfer_to_restaurant_id.eq.${restaurantId}`
+        : `restaurant_id.in.(${scopeIds.join(",")}),pending_transfer_to_restaurant_id.eq.${restaurantId}`;
 
     async function checkNewOrders() {
       if (cancelled || !restaurantId || !canAlert) return;
@@ -353,7 +385,7 @@ export function OrderNotificationBell() {
         const { data: orderRows } = await supabase
           .from("orders")
           .select("id, restaurant_id, order_number, customer_name, total_amount, created_at, transfer_status, pending_transfer_to_restaurant_id, source, call_id, fulfillment_type")
-          .or(`restaurant_id.eq.${restaurantId},pending_transfer_to_restaurant_id.eq.${restaurantId}`)
+          .or(orderScopeFilter)
           .order("created_at", { ascending: false })
           .limit(15);
         const orderSourceById = new Map<string, string>();
@@ -499,7 +531,7 @@ export function OrderNotificationBell() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [restaurantId, canAlert, isReceptionist, role]);
+  }, [restaurantId, alertRestaurantIds, canAlert, isReceptionist, role]);
 
   const handlePopoverChange = (open: boolean) => {
     setPopoverOpen(open);

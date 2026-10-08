@@ -2,10 +2,24 @@ import { Router } from "express";
 import { getKnex } from "../db.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
+import { resolveRestaurantFamilyIds } from "../lib/tableSessions.js";
 
 const router = Router();
 
 const CALL_AGENT_SOURCES = new Set(["phone", "call", "voice", "ai", "synthflow", "elevenlabs"]);
+
+/** Parent HQ sees parent + all branches; a branch only sees itself. */
+async function restaurantIdsForNotificationScope(knex, restaurantId) {
+  if (!restaurantId) return [];
+  const rest = await knex("restaurants")
+    .where({ id: restaurantId })
+    .select("id", "parent_restaurant_id", "is_branch")
+    .first();
+  if (!rest) return [restaurantId];
+  const isBranch = Boolean(rest.is_branch || rest.parent_restaurant_id);
+  if (isBranch) return [restaurantId];
+  return resolveRestaurantFamilyIds(knex, restaurantId);
+}
 
 function readMetadata(metadata) {
   if (!metadata) return {};
@@ -99,7 +113,8 @@ router.get("/", optionalAuth, requireAuth, async (req, res) => {
       .limit(Math.min(parseInt(limit, 10) || 50, 100));
 
     if (restaurant_id) {
-      q = q.where("n.restaurant_id", restaurant_id);
+      const scopeIds = await restaurantIdsForNotificationScope(knex, String(restaurant_id));
+      q = q.whereIn("n.restaurant_id", scopeIds.length ? scopeIds : [String(restaurant_id)]);
     } else if (req.user?.restaurantIds?.length) {
       q = q.whereIn("n.restaurant_id", req.user.restaurantIds);
     } else {
@@ -138,7 +153,11 @@ router.get("/", optionalAuth, requireAuth, async (req, res) => {
     // Count unread
     let unreadCountQ = knex("notifications").where("is_read", false);
     if (restaurant_id) {
-      unreadCountQ = unreadCountQ.where("restaurant_id", restaurant_id);
+      const scopeIds = await restaurantIdsForNotificationScope(knex, String(restaurant_id));
+      unreadCountQ = unreadCountQ.whereIn(
+        "restaurant_id",
+        scopeIds.length ? scopeIds : [String(restaurant_id)],
+      );
     } else if (req.user?.restaurantIds?.length) {
       unreadCountQ = unreadCountQ.whereIn("restaurant_id", req.user.restaurantIds);
     } else {
@@ -188,7 +207,8 @@ router.post("/read-all", optionalAuth, requireAuth, async (req, res) => {
 
     let q = knex("notifications").where("is_read", false);
     if (restaurant_id) {
-      q = q.where("restaurant_id", restaurant_id);
+      const scopeIds = await restaurantIdsForNotificationScope(knex, String(restaurant_id));
+      q = q.whereIn("restaurant_id", scopeIds.length ? scopeIds : [String(restaurant_id)]);
     } else if (req.user?.restaurantIds?.length) {
       q = q.whereIn("restaurant_id", req.user.restaurantIds);
     } else {

@@ -114,9 +114,11 @@ export function toSynthflowLanguage(code) {
     tr: "tr-TR",
     nl: "nl-NL",
     pl: "pl-PL",
+    multi: "multi",
+    auto: "multi",
   };
   if (c.includes("-")) return c;
-  return map[c] || "en-US";
+  return map[c] || "multi";
 }
 
 /**

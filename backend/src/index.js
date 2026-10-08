@@ -14,7 +14,13 @@ import branchesRoutes from "./routes/branches.js";
 import notificationsRoutes from "./routes/notifications.js";
 import reservationsRoutes from "./routes/reservations.js";
 import tableSessionsRoutes from "./routes/tableSessions.js";
+import uberOrdersRoutes from "./routes/uberOrders.js";
 import { twilioInboundWebhook } from "./fns/twilioInboundWebhook.js";
+import { uberWebhookHttpHandler } from "./uber/webhookHandler.js";
+import { makeWebhookHttpHandler } from "./integrations/webhookHttp.js";
+import * as deliverooAdapter from "./integrations/deliveroo/adapter.js";
+import * as justeatAdapter from "./integrations/justeat/adapter.js";
+import * as doordashAdapter from "./integrations/doordash/adapter.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3033);
@@ -61,9 +67,39 @@ app.get("/api/health", (_req, res) => {
       SYNTHFLOW_WORKSPACE_ID: present("SYNTHFLOW_WORKSPACE_ID"),
       SYNTHFLOW_WEBHOOK_SECRET: present("SYNTHFLOW_WEBHOOK_SECRET"),
       PUBLIC_API_URL: present("PUBLIC_API_URL"),
+      UBER_CLIENT_ID: present("UBER_CLIENT_ID"),
+      UBER_ENV: process.env.UBER_ENV || null,
+      UBER_AUTO_ACCEPT: process.env.UBER_AUTO_ACCEPT || "false",
+      UBER_ENABLED: process.env.UBER_ENABLED || "true",
+      DELIVEROO_ENABLED: process.env.DELIVEROO_ENABLED || "false",
+      JUSTEAT_ENABLED: process.env.JUSTEAT_ENABLED || "false",
+      DOORDASH_ENABLED: process.env.DOORDASH_ENABLED || "false",
+      DOORDASH_ENV: process.env.DOORDASH_ENV || null,
     },
   });
 });
+
+// Marketplace webhooks need the raw body for HMAC signature verification.
+app.post(
+  "/webhooks/uber",
+  express.raw({ type: "*/*", limit: "2mb" }),
+  uberWebhookHttpHandler,
+);
+app.post(
+  "/webhooks/deliveroo",
+  express.raw({ type: "*/*", limit: "2mb" }),
+  makeWebhookHttpHandler(deliverooAdapter),
+);
+app.post(
+  "/webhooks/justeat",
+  express.raw({ type: "*/*", limit: "2mb" }),
+  makeWebhookHttpHandler(justeatAdapter),
+);
+app.post(
+  "/webhooks/doordash",
+  express.raw({ type: "*/*", limit: "2mb" }),
+  makeWebhookHttpHandler(doordashAdapter),
+);
 
 app.use("/api/auth", jsonParser, authRoutes);
 app.use("/api/uploads", uploadsRoutes);
@@ -75,6 +111,7 @@ app.use("/api/notifications", jsonParser, notificationsRoutes);
 app.use("/api", jsonParser, branchesRoutes);
 app.use("/api", jsonParser, reservationsRoutes);
 app.use("/api", jsonParser, tableSessionsRoutes);
+app.use("/api", jsonParser, uberOrdersRoutes);
 
 app.post(
   "/api/functions/twilio-inbound-webhook",

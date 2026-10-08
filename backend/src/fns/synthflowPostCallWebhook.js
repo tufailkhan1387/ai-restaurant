@@ -658,15 +658,39 @@ export async function synthflowPostCallWebhook(req, res) {
         reservationResult = { created: false, reason: "missing_time" };
         console.log("⏭ Synthflow reservation skipped: no booking time in call");
       } else {
-        const availableTable = await findAvailableTable(knex, {
-          restaurantId: reservationRestaurantId,
-          partySize,
-          reservationDate: resDate,
-          startTime: resTime,
-          slotDurationHours: duration,
-        });
+        let hasOlderDuplicate = false;
+        if (custPhone && custPhone !== "Unknown") {
+          const phoneDigits = String(custPhone).replace(/\D/g, "");
+          if (phoneDigits) {
+            const dup = await knex("table_reservations")
+              .whereIn("restaurant_id", [restaurant.id, reservationRestaurantId])
+              .andWhere(function() {
+                this.where("customer_phone", custPhone)
+                    .orWhere("customer_phone", `+${phoneDigits}`)
+                    .orWhere("customer_phone", phoneDigits);
+                if (phoneDigits.length === 10) this.orWhere("customer_phone", `+1${phoneDigits}`);
+                if (phoneDigits.length === 12 && phoneDigits.startsWith("92")) this.orWhere("customer_phone", `0${phoneDigits.slice(2)}`);
+              })
+              .whereIn("status", ["pending", "confirmed"])
+              .where("reservation_date", ">=", knex.raw("CURRENT_DATE"))
+              .first();
+            if (dup) hasOlderDuplicate = true;
+          }
+        }
 
-        const createdRes = await createReservation(knex, {
+        if (hasOlderDuplicate) {
+          reservationResult = { created: false, reason: "already_has_active_reservation" };
+          console.log("⏭ Synthflow reservation skipped: caller already has an active reservation for today or future");
+        } else {
+          const availableTable = await findAvailableTable(knex, {
+            restaurantId: reservationRestaurantId,
+            partySize,
+            reservationDate: resDate,
+            startTime: resTime,
+            slotDurationHours: duration,
+          });
+
+          const createdRes = await createReservation(knex, {
           restaurantId: reservationRestaurantId,
           tableId: availableTable ? availableTable.id : null,
           customerName: custName,
@@ -703,6 +727,7 @@ export async function synthflowPostCallWebhook(req, res) {
         };
 
         console.log(`✅ Synthflow table reservation created: id=${createdRes.id} table=${availableTable?.table_number || "unassigned"} time=${resTime}`);
+        }
       }
     }
 

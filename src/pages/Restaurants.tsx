@@ -54,6 +54,7 @@ const LANGUAGES = [
   { code: "ko", label: "Korean" },
   { code: "zh", label: "Chinese" },
   { code: "tr", label: "Turkish" },
+  { code: "multi", label: "Multilingual (Auto-detect)" },
 ];
 
 /** URL-safe slug for restaurant routing (also used on insert/update). */

@@ -141,6 +141,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   pt: "Portuguese",
   ar: "Arabic",
   hi: "Hindi",
+  multi: "Multilingual (Auto-detect)",
 };
 
 function formatTime(t: string) {

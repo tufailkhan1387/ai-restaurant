@@ -74,7 +74,7 @@ export async function aiOrderStatus(req, res) {
     if (!code) {
       return res.json({
         found: false,
-        message: "I need your order number, for example ORD-260929-01, to look that up.",
+        message: "Translate and tell the caller in their language: I need your order number, for example ORD-260929-01, to look that up.",
       });
     }
 
@@ -90,7 +90,7 @@ export async function aiOrderStatus(req, res) {
     if (!order) {
       return res.json({
         found: false,
-        message: `I couldn't find an order with number ${code}. Could you double-check the order number?`,
+        message: `Translate and tell the caller in their language: I couldn't find an order with number ${code}. Could you double-check the order number?`,
       });
     }
 
@@ -99,7 +99,7 @@ export async function aiOrderStatus(req, res) {
       : null;
 
     const tableBit = order.table_number ? ` for table ${order.table_number}` : "";
-    const message = `Order ${order.order_number} for ${order.customer_name}${tableBit} is ${statusLabel(order.status, order.fulfillment_type)}.${
+    const message = `Translate and tell the caller in their language: Order ${order.order_number} for ${order.customer_name}${tableBit} is ${statusLabel(order.status, order.fulfillment_type)}.${
       eta ? ` Estimated time around ${eta}.` : ""
     } Total ${Number(order.total_amount).toFixed(2)}.`;
 

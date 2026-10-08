@@ -31,7 +31,7 @@ export async function aiReserveTable(req, res) {
       return res.status(200).json({
         success: false,
         message:
-          "I need a few more details: your name, date of reservation, preferred time, and number of guests. Could you provide those?",
+          "Translate and tell the caller in their language: I need a few more details: your name, date of reservation, preferred time, and number of guests. Could you provide those?",
       });
     }
 
@@ -40,7 +40,7 @@ export async function aiReserveTable(req, res) {
     const restaurantId = resolved.id;
 
     if (!restaurantId) {
-      return res.status(200).json({ success: false, message: resolved.error || "Could not identify the restaurant." });
+      return res.status(200).json({ success: false, message: `Translate and tell the caller in their language: ${resolved.error || "Could not identify the restaurant."}` });
     }
     const branchRestaurantId = await resolveSpokenBranchId(
       knex,
@@ -59,11 +59,44 @@ export async function aiReserveTable(req, res) {
     if (!isoTime) {
       return res.status(200).json({
         success: false,
-        message: "What time would you like to book? Please say the time once, for example 7 PM.",
+        message: "Translate and tell the caller in their language: What time would you like to book? Please say the time once, for example 7 PM.",
       });
     }
 
     console.log(`👤 Customer: ${customer_name} | Party: ${pSize} | Date: ${isoDate} | Time: ${isoTime} (raw=${reservation_time}) | Duration: ${duration}h`);
+
+    let phoneToUse = customer_phone;
+    if (phoneToUse && /same|this|my|number|<user_phone_number>/i.test(phoneToUse)) {
+      phoneToUse = body.caller_phone || body.twilio_from || body.from || customer_phone;
+    }
+    if (phoneToUse === "<user_phone_number>") phoneToUse = null;
+
+    if (phoneToUse) {
+      const phoneDigits = String(phoneToUse).replace(/\D/g, "");
+      if (phoneDigits) {
+        const existing = await knex("table_reservations")
+          .where({ restaurant_id: branchRestaurantId })
+          .andWhere(function() {
+            this.where("customer_phone", phoneToUse)
+                .orWhere("customer_phone", `+${phoneDigits}`)
+                .orWhere("customer_phone", phoneDigits);
+            if (phoneDigits.length === 10) this.orWhere("customer_phone", `+1${phoneDigits}`);
+            if (phoneDigits.length === 12 && phoneDigits.startsWith("92")) this.orWhere("customer_phone", `0${phoneDigits.slice(2)}`);
+          })
+          .whereIn("status", ["pending", "confirmed"])
+          .where("reservation_date", ">=", knex.raw("CURRENT_DATE"))
+          .orderBy("reservation_date", "asc")
+          .first();
+
+        if (existing) {
+          return res.status(200).json({
+            success: false,
+            available: false,
+            message: `Translate and tell the caller in their language: You already have an active table reservation for ${existing.reservation_date} at ${String(existing.start_time).slice(0, 5)}. Your previous booking must be completed before you can reserve a new table.`,
+          });
+        }
+      }
+    }
 
     const availableTable = await findAvailableTable(knex, {
       restaurantId: branchRestaurantId,
@@ -78,7 +111,7 @@ export async function aiReserveTable(req, res) {
         success: false,
         available: false,
         message:
-          `I'm sorry, no table is free at ${isoTime} on ${isoDate}. ` +
+          `Translate and tell the caller in their language: I'm sorry, no table is free at ${isoTime} on ${isoDate}. ` +
           `Would you like a different time?`,
       });
     }
@@ -100,7 +133,7 @@ export async function aiReserveTable(req, res) {
       restaurantId: branchRestaurantId,
       tableId: availableTable.id,
       customerName: customer_name,
-      customerPhone: customer_phone,
+      customerPhone: phoneToUse,
       customerEmail: customer_email,
       partySize: pSize,
       reservationDate: isoDate,
@@ -123,7 +156,7 @@ export async function aiReserveTable(req, res) {
     console.log(`✅ Reservation created: id=${reservation.id} table=${availableTable.table_number}`);
 
     const confirmMsg =
-      `Your table reservation is confirmed! Table ${availableTable.table_number} ` +
+      `Translate and tell the caller in their language: Your table reservation is confirmed! Table ${availableTable.table_number} ` +
       `(seats up to ${availableTable.capacity}) has been reserved for ${pSize} guest(s) ` +
       `on ${isoDate} at ${isoTime}. ` +
       `Your reservation ID is ${reservation.id.slice(0, 8).toUpperCase()}. ` +

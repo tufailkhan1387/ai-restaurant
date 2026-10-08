@@ -113,6 +113,7 @@ const AGENT_LANGUAGES = [
   { code: "ko", label: "Korean (한국어)" },
   { code: "zh", label: "Chinese (中文)" },
   { code: "tr", label: "Turkish (Türkçe)" },
+  { code: "multi", label: "Multilingual (Auto-detect)" },
 ];
 const LANGUAGES = AGENT_LANGUAGES;
 

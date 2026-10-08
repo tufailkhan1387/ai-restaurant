@@ -145,6 +145,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
   const ids = [...already];
   const errors = [];
   const lookup = {};
+  if (restaurantId) lookup.restaurant_id = restaurantId;
   if (identity.synthflowAgentId) lookup.synthflow_agent_id = identity.synthflowAgentId;
   if (identity.phone) lookup.twilio_to = identity.phone;
 
@@ -158,7 +159,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         name: "place_order",
         description:
           "FOOD ORDERS ONLY. Save the caller's food order and return the real order number. Never call this when the caller is reserving a table. Call this once after the caller confirms a food order and names a branch. Pass branch_name as the exact branch they chose. Then read order_number out loud.",
-        speech_while_using_the_tool: "One moment while I save your order.",
+        speech_while_using_the_tool: "",
         failure_timeout: 20,
         headers: [{ key: "Content-Type", value: "application/json" }],
         variables_during_the_call: [
@@ -175,6 +176,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           ...lookup,
           customer_name: "<customer_name>",
           customer_phone: "<customer_phone>",
+          caller_phone: "<user_phone_number>",
           delivery_address: "<delivery_address>",
           items: "<order_items>",
           fulfillment_type: "<fulfillment_type>",
@@ -195,7 +197,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         name: "get_order_status",
         description:
           "Look up an existing food order and return its status. Pass order_number exactly as ORD-YYMMDD-NN, including the dash and the leading zero, for example ORD-261002-04. Also works if the caller drops the dash or says 4 instead of 04.",
-        speech_while_using_the_tool: "Let me check that order.",
+        speech_while_using_the_tool: "",
         failure_timeout: 15,
         headers: [{ key: "Content-Type", value: "application/json" }],
         variables_during_the_call: [
@@ -216,7 +218,7 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
         name: "reserve_table",
         description:
           "TABLE RESERVATIONS ONLY. Book a restaurant table at the branch the caller chose. Never use place_order for a table. Never say order, bill, or order number. Pass branch_name as the exact branch for the city and area they chose.",
-        speech_while_using_the_tool: "One moment while I reserve your table.",
+        speech_while_using_the_tool: "",
         failure_timeout: 20,
         headers: [{ key: "Content-Type", value: "application/json" }],
         variables_during_the_call: [
@@ -232,12 +234,32 @@ async function ensureLiveOrderActions(restaurantId, existingIds = [], identity =
           ...lookup,
           customer_name: "<customer_name>",
           customer_phone: "<customer_phone>",
+          caller_phone: "<user_phone_number>",
           party_size: "<party_size>",
           reservation_date: "<reservation_date>",
           reservation_time: "<reservation_time>",
           slot_duration_hours: "<slot_duration_hours>",
           branch_name: "<branch_name>",
           source: "phone",
+        }),
+      },
+    },
+    {
+      key: "check_previous_order",
+      action: {
+        http_mode: "POST",
+        url: liveToolUrl("ai-check-previous-order"),
+        run_action_before_call_start: false,
+        name: "check_previous_order",
+        description:
+          "Check if the caller has a previous order. Call this silently at the very beginning when a caller wants to order food, to see if they want to repeat their last order.",
+        speech_while_using_the_tool: "",
+        failure_timeout: 10,
+        headers: [{ key: "Content-Type", value: "application/json" }],
+        variables_during_the_call: [],
+        json_body_stringified: JSON.stringify({
+          ...lookup,
+          customer_phone: "<user_phone_number>",
         }),
       },
     },

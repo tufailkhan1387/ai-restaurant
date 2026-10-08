@@ -76,3 +76,31 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Marketplace orders (Uber Eats, Deliveroo, Just Eat)
+
+Backend details: `backend/README.md`. Partner checklists: `docs/integrations/deliveroo.md`, `docs/integrations/justeat.md`.
+
+**Security:** `JWT_SECRET` should be rotated if JWTs were ever logged. Uber / Deliveroo / Just Eat secrets must only live in `backend/.env` (never commit them).
+
+PowerShell (from the repo root):
+
+```powershell
+$env:UBER_CLIENT_SECRET = "..."
+npm run uber:check --prefix backend
+npm run fetch-orders --prefix backend
+```
+
+Local webhooks:
+
+```powershell
+ngrok http 3033
+```
+
+Dashboard URLs:
+
+- Uber: `https://<host>/webhooks/uber`
+- Deliveroo: `https://<host>/webhooks/deliveroo`
+- Just Eat: `https://<host>/webhooks/justeat`
+
+Sandbox vs production: set `UBER_ENV=sandbox` or `production` (token URL and API base are paired in code). Same idea for `DELIVEROO_ENV` / `JUSTEAT_ENV` once those partners are enabled.

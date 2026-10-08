@@ -4,7 +4,6 @@ import { getKnex } from "../db.js";
 export async function optionalAuth(req, _res, next) {
   try {
     const h = req.headers.authorization || "";
-    console.log("Auth Header:", h);
     const token = h.startsWith("Bearer ") ? h.slice(7) : null;
     if (!token) {
       req.user = null;

@@ -132,7 +132,7 @@ function canSeeNotification(
 ) {
   const isReservation = n.type === "new_reservation" || n.source === "reservation";
   const isKitchen = role === "kitchen" || role === "chef";
-  const isAdmin = role === "admin" || role === "manager";
+  const isAdmin = role === "admin" || role === "manager" || role === "super_admin";
   const isStaff = role === "staff";
   if (isReservation) return isReceptionist || isAdmin;
   if (isReceptionist) return false;
@@ -154,7 +154,7 @@ export function OrderNotificationBell() {
   const { restaurantId } = useActiveRestaurant();
   const isSuperAdmin = role === "super_admin";
   const isDriver = role === "driver";
-  const canAlert = !isSuperAdmin && !isDriver;
+  const canAlert = !isDriver; 
 
   const [notifications, setNotifications] = useState<OrderNotification[]>(() => loadStoredNotifications(restaurantId));
   const [ringing, setRinging] = useState(false);
@@ -305,7 +305,8 @@ export function OrderNotificationBell() {
           duration: 7000,
         });
 
-        if (prefsRef.current.enabled && (!isReservation || isReceptionist)) {
+        const isAdmin = role === "admin" || role === "manager" || role === "super_admin";
+        if (prefsRef.current.enabled && (!isReservation || isReceptionist || isAdmin)) {
           startRinging();
         }
       }

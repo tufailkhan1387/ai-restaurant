@@ -25,6 +25,7 @@ import { syncRestaurantMenuToSynthflow } from "../fns/syncRestaurantMenuToSynthf
 import { synthflowPostCallWebhook } from "../fns/synthflowPostCallWebhook.js";
 import { synthflowSyncCalls } from "../fns/synthflowSyncCalls.js";
 import { synthflowTestCall } from "../fns/synthflowTestCall.js";
+import { aiCheckPreviousOrder } from "../fns/aiCheckPreviousOrder.js";
 
 const router = Router();
 
@@ -37,6 +38,7 @@ const PUBLIC_HANDLERS = {
   "synthflow-post-call-webhook": synthflowPostCallWebhook,
   "synthflow-sync-calls": synthflowSyncCalls,
   "synthflow-sync-call": synthflowSyncCalls,
+  "ai-check-previous-order": aiCheckPreviousOrder,
 };
 
 const AUTH_HANDLERS = {

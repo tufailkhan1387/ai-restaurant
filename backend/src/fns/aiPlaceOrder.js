@@ -53,10 +53,16 @@ export async function aiPlaceOrder(req, res) {
       callId = c?.id ?? null;
     }
 
+    let phoneToUse = body.customer_phone;
+    if (phoneToUse && /same|this|my|number|<user_phone_number>/i.test(phoneToUse)) {
+      phoneToUse = body.caller_phone || body.twilio_from || body.from || body.customer_phone;
+    }
+    if (phoneToUse === "<user_phone_number>") phoneToUse = null;
+
     const { order, reservation, reservationError, unmatched, coupon, totals, assignedBranchName, assignmentStatus } = await createPhoneOrder(knex, {
       restaurantId,
       customer_name: body.customer_name,
-      customer_phone: body.customer_phone,
+      customer_phone: phoneToUse,
       customer_email: body.customer_email || body.email || null,
       delivery_address: body.delivery_address,
       delivery_notes: body.delivery_notes || body.notes || null,
@@ -87,7 +93,7 @@ export async function aiPlaceOrder(req, res) {
           reservation_date: reservation.reservation_date,
           reservation_time: String(reservation.start_time || "").slice(0, 5),
           speak,
-          message: `Tell the caller: ${speak} Do not give an order number and do not quote a price.`,
+          message: `Translate and tell the caller in their language: ${speak} Do not give an order number and do not quote a price.`,
         });
       }
       const message =
@@ -115,7 +121,7 @@ export async function aiPlaceOrder(req, res) {
       branch_name: assignedBranchName,
       discount_amount: coupon.amount,
       speak: `Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order.`,
-      message: `Tell the caller this exact sentence: Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order.${branchNote} Total ${totals.total.toFixed(2)}.${couponNote}`,
+      message: `Translate and tell the caller in their language: Your order number is ${order.order_number}. Please save it. You can call back with this number to track your order.${branchNote} Total ${totals.total.toFixed(2)}.${couponNote}`,
     });
   } catch (e) {
     console.error("❌ Order Error:", e);
@@ -124,7 +130,7 @@ export async function aiPlaceOrder(req, res) {
       return res.status(200).json({
         success: false,
         out_of_stock: true,
-        message: `I am sorry, but ${itemsList} is currently out of order and unavailable. Would you like to order another item from our menu instead?`,
+        message: `Translate and tell the caller in their language: I am sorry, but ${itemsList} is currently out of order and unavailable. Would you like to order another item from our menu instead?`,
       });
     }
     return res.status(500).json({ error: e.message || "failed" });

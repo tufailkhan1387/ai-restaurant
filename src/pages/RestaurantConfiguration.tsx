@@ -49,6 +49,7 @@ const LANGUAGES = [
   { code: "fr", label: "French" }, { code: "de", label: "German" },
   { code: "it", label: "Italian" }, { code: "pt", label: "Portuguese" },
   { code: "ar", label: "Arabic" }, { code: "hi", label: "Hindi" },
+  { code: "multi", label: "Multilingual (Auto-detect)" },
 ];
 
 export default function RestaurantConfiguration() {

@@ -47,6 +47,7 @@ import {
   Check,
   UtensilsCrossed,
   ChefHat,
+  RefreshCw,
 } from "lucide-react";
 import { CreateManualOrderDialog } from "@/components/orders/CreateManualOrderDialog";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +63,12 @@ import { getOrderStatusLabel, formatDate, formatTime } from "@/i18n/formatters";
 import { getApiBase } from "@/lib/apiBase";
 import { getToken } from "@/lib/authStorage";
 import { orderTakerLabel } from "@/lib/orderTaker";
+import {
+  ORDER_CHANNELS,
+  ORDER_CHANNEL_LABELS,
+  matchesOrderChannel,
+  orderChannel,
+} from "@/lib/orderChannel";
 
 interface Order {
   id: string;
@@ -221,6 +228,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
   const [toDate, setToDate] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [syncingMarketplace, setSyncingMarketplace] = useState(false);
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
   const [driverFilter, setDriverFilter] = useState("all");
@@ -319,6 +327,61 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
     if (m.data) setMenuItems(m.data as any);
 
     setLoading(false);
+  };
+
+  const syncMarketplaceOrders = async () => {
+    setSyncingMarketplace(true);
+    try {
+      const token = getToken() || (await supabase.auth.getSession()).data.session?.access_token;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${getApiBase()}/api/marketplace/sync`, {
+        method: "POST",
+        headers,
+        body: "{}",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Marketplace sync failed");
+
+      const platforms = Array.isArray(data.platforms) ? data.platforms : [];
+      const parts = platforms.map((p: any) => {
+        const name =
+          p.source === "uber"
+            ? "Uber"
+            : p.source === "doordash"
+              ? "DoorDash"
+              : p.source === "deliveroo"
+                ? "Deliveroo"
+                : p.source === "justeat"
+                  ? "Just Eat"
+                  : String(p.source || "?");
+        if (p.skipped) {
+          if (p.reason === "disabled") return `${name}: off`;
+          if (p.reason === "not_configured") return `${name}: needs credentials`;
+          if (p.reason === "webhook_only") return `${name}: webhook only`;
+          return `${name}: skipped`;
+        }
+        if (p.ok === false) return `${name}: error`;
+        if (p.noStores) return `${name}: no stores`;
+        return `${name}: ${p.total ?? 0}`;
+      });
+
+      toast({
+        title: t("orders:syncMarketplaceOk", "Marketplace sync finished"),
+        description: parts.length
+          ? `${parts.join(" · ")} · ${t("orders:syncMarketplaceTotal", "{{count}} order(s)", { count: data.total ?? 0 })}`
+          : t("orders:syncMarketplaceTotal", "{{count}} order(s)", { count: data.total ?? 0 }),
+      });
+      await load();
+    } catch (err: any) {
+      toast({
+        title: t("common:error", "Error"),
+        description: err?.message || "Marketplace sync failed",
+        variant: "destructive",
+      });
+    } finally {
+      setSyncingMarketplace(false);
+    }
   };
 
   const handleTransferOrder = async () => {
@@ -542,20 +605,8 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
           if (!hasCategoryItem) return false;
         }
 
-        // 4. Source Filter
-        if (sourceFilter !== "all") {
-          const src = (o.source || "").toLowerCase();
-          if (sourceFilter === "call" && !(o.call_id || src.includes("call"))) return false;
-          if (sourceFilter === "online" && !(src.includes("online") || src.includes("web") || src.includes("qr") || src.includes("dine"))) return false;
-          if (
-            sourceFilter === "dashboard" &&
-            !(src.includes("dashboard") || src.includes("pos") || src.includes("house") || src.includes("manual"))
-          ) {
-            return false;
-          }
-          if (sourceFilter === "takeaway" && !(src.includes("take") || src.includes("pickup"))) return false;
-          if (sourceFilter === "app" && !src.includes("app")) return false;
-        }
+        // 4. Channel / app filter
+        if (!matchesOrderChannel(sourceFilter, o.source, o.call_id)) return false;
 
         // 5. Payment Status
         if (paymentStatusFilter !== "all") {
@@ -809,7 +860,24 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
             )}
 
             {role !== "kitchen" && role !== "chef" && role !== "receptionist" && (
-              <CreateManualOrderDialog onOrderCreated={() => void load()} />
+              <div className="flex flex-col items-stretch gap-1.5 min-w-[9.5rem]">
+                <CreateManualOrderDialog onOrderCreated={() => void load()} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-lg gap-1.5 w-full"
+                  disabled={syncingMarketplace}
+                  onClick={() => void syncMarketplaceOrders()}
+                >
+                  {syncingMarketplace ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  {t("orders:syncMarketplace", "Sync")}
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -845,7 +913,7 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
           <CardContent className="p-4 space-y-4">
             <div className={cn(
               "grid grid-cols-1 gap-3",
-              siblingBranches.length > 1 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+              siblingBranches.length > 1 ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5" : "sm:grid-cols-2 lg:grid-cols-4"
             )}>
               {/* 1. Food Category Filter (Most Left) */}
               <div className="space-y-1.5">
@@ -888,6 +956,26 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                   </Select>
                 </div>
               )}
+
+              {/* Channel / app filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block leading-5">
+                  {t("orders:channel", "Channel")}
+                </label>
+                <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                  <SelectTrigger className="h-9.5">
+                    <SelectValue placeholder={t("orders:allChannels", "All Channels")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("orders:allChannels", "All Channels")}</SelectItem>
+                    {ORDER_CHANNELS.map((ch) => (
+                      <SelectItem key={ch} value={ch}>
+                        {t(`orders:channel_${ch}`, ORDER_CHANNEL_LABELS[ch])}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {/* 3. Date Filter */}
               <div className="space-y-1.5">
@@ -1042,8 +1130,9 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                   </Badge>
                 )}
                 {sourceFilter !== "all" && (
-                  <Badge variant="secondary" className="gap-1 font-medium capitalize">
-                    {t("orders:source", "Source")}: {sourceFilter}
+                  <Badge variant="secondary" className="gap-1 font-medium">
+                    {t("orders:channel", "Channel")}:{" "}
+                    {t(`orders:channel_${sourceFilter}`, ORDER_CHANNEL_LABELS[sourceFilter as keyof typeof ORDER_CHANNEL_LABELS] || sourceFilter)}
                     <X className="h-3 w-3 cursor-pointer" onClick={() => setSourceFilter("all")} />
                   </Badge>
                 )}
@@ -1177,6 +1266,14 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                         </span>
 
                         {(() => {
+                          const channel = orderChannel(o.source, o.call_id);
+                          if (channel) {
+                            return (
+                              <Badge variant="outline" className="bg-sky-500/10 text-sky-800 dark:text-sky-200 border-sky-500/30 text-xs font-semibold">
+                                {t(`orders:channel_${channel}`, ORDER_CHANNEL_LABELS[channel])}
+                              </Badge>
+                            );
+                          }
                           const taker = orderTakerLabel(o.source, o.call_id);
                           if (!taker) return null;
                           return (
@@ -1417,9 +1514,17 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                 <div>
                   <p className="font-semibold text-foreground text-base">{t("orders:noMatchingOrders", "No matching orders found")}</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {activeFiltersCount > 0
-                      ? t("orders:tryChangingFilters", "Try changing your search query or resetting filters.")
-                      : t("orders:noOrdersAvailable", "No orders are currently available in this view.")}
+                    {sourceFilter === "uber"
+                      ? t("orders:emptyUber", "No Uber Eats orders in the database. Uber has not linked a store to this app yet.")
+                      : sourceFilter === "doordash"
+                        ? t("orders:emptyDoordash", "No DoorDash orders yet. Marketplace credentials and Orders webhook are required.")
+                        : sourceFilter === "deliveroo"
+                          ? t("orders:emptyDeliveroo", "No Deliveroo orders yet. Partner API access is still required.")
+                          : sourceFilter === "justeat"
+                            ? t("orders:emptyJusteat", "No Just Eat orders yet. Partner API access is still required.")
+                            : activeFiltersCount > 0
+                              ? t("orders:tryChangingFilters", "Try changing your search query or resetting filters.")
+                              : t("orders:noOrdersAvailable", "No orders are currently available in this view.")}
                   </p>
                 </div>
                 {activeFiltersCount > 0 && (
@@ -1428,6 +1533,20 @@ export function OrdersListView({ status = "all", title, description, icon }: Pro
                     {t("orders:resetAllFilters", "Reset all filters")}
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={syncingMarketplace}
+                  onClick={() => void syncMarketplaceOrders()}
+                  className="gap-1.5 mt-2"
+                >
+                  {syncingMarketplace ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  {t("orders:syncMarketplace", "Sync")}
+                </Button>
               </CardContent>
             </Card>
           )}

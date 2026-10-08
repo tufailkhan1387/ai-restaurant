@@ -608,19 +608,31 @@ export async function synthflowPostCallWebhook(req, res) {
       if (!existingReservation && custPhone && custPhone !== "Unknown") {
         const since = new Date(Date.now() - 20 * 60 * 1000).toISOString();
         const phoneTail = String(custPhone).replace(/\D/g, "").slice(-10);
+        const callerPhoneTail = String(callerPhone).replace(/\D/g, "").slice(-10);
+        
         const familyRows = await knex("restaurants").where({ parent_restaurant_id: restaurant.id }).select("id");
         const familyIds = [restaurant.id, reservationRestaurantId, ...familyRows.map((row) => row.id)];
+        
         let recentQuery = knex("table_reservations")
           .whereIn("restaurant_id", familyIds)
           .where({ reservation_date: resDate })
           .whereIn("status", ["pending", "confirmed", "seated"])
           .andWhere("created_at", ">=", since)
           .orderBy("created_at", "desc");
-        if (phoneTail.length >= 8) {
-          recentQuery = recentQuery.whereRaw(
-            "right(regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g'), 10) = ?",
-            [phoneTail],
-          );
+          
+        if (phoneTail.length >= 8 || callerPhoneTail.length >= 8) {
+          recentQuery = recentQuery.andWhere(function() {
+             this.where("customer_phone", custPhone)
+                 .orWhere("customer_phone", callerPhone);
+                 
+             if (phoneTail.length >= 8) {
+                 this.orWhereRaw("right(regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g'), 10) = ?", [phoneTail]);
+             }
+             if (callerPhoneTail.length >= 8) {
+                 this.orWhereRaw("right(regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g'), 10) = ?", [callerPhoneTail]);
+             }
+             this.orWhereRaw("ai_extracted_data->'raw'->>'caller_phone' = ?", [callerPhone]);
+          });
         } else {
           recentQuery = recentQuery.where({ customer_phone: custPhone });
         }

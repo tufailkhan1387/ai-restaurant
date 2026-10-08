@@ -156,3 +156,5 @@ npm test --prefix backend
 <!-- Trigger deploy 10/08/2026 11:58:57 -->
 
 <!-- Transcript Fix 10/08/2026 12:11:32 -->
+
+<!-- Reservation Transcript Fix 10/08/2026 12:21:06 -->

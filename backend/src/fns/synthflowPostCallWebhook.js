@@ -523,11 +523,20 @@ export async function synthflowPostCallWebhook(req, res) {
     // Also link any existing order by same caller phone for this restaurant
     if (callRow?.id && callerPhone !== "Unknown" && restaurant?.id) {
       try {
-        const recentOrderByPhone = await knex("orders")
-          .where({ restaurant_id: restaurant.id, customer_phone: callerPhone })
+        const phoneDigits = String(callerPhone).replace(/\D/g, "").slice(-10);
+        let query = knex("orders")
+          .where({ restaurant_id: restaurant.id })
           .whereNull("call_id")
-          .orderBy("created_at", "desc")
-          .first();
+          .orderBy("created_at", "desc");
+        
+        if (phoneDigits.length >= 8) {
+          query = query.andWhere(function() {
+            this.where("customer_phone", callerPhone)
+                .orWhereRaw("ai_extracted_data->'raw'->>'caller_phone' = ?", [callerPhone])
+                .orWhereRaw("right(regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g'), 10) = ?", [phoneDigits]);
+          });
+        }
+        const recentOrderByPhone = await query.first();
         if (recentOrderByPhone) {
           const currentAiData = recentOrderByPhone.ai_extracted_data || {};
           await knex("orders").where({ id: recentOrderByPhone.id }).update({

@@ -37,6 +37,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useActiveRestaurant } from "@/hooks/useActiveRestaurant";
 import { getApiBase, resolveMediaUrl } from "@/lib/apiBase";
 import { getCurrencySymbol } from "@/lib/restaurant";
+import { VoiceMinutesCard } from "@/components/settings/VoiceMinutesCard";
 
 /** Row from `restaurants` (includes fields set when the tenant was created in super admin). */
 interface Restaurant {
@@ -687,6 +688,8 @@ export default function RestaurantSettings() {
           </div>
         </div>
       </header>
+
+      <VoiceMinutesCard restaurantId={restaurantId} />
 
       <Card className="overflow-hidden border shadow-sm">
         <CardHeader className="border-b bg-muted/30 pb-4">

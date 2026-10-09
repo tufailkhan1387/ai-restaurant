@@ -1,10 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Restaurant">
   <rect width="64" height="64" rx="14" fill="#F26A1B"/>
   <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-    <!-- knife: left bottom ? right top -->
     <path d="M18 46 L42 18"/>
     <path d="M42 18 C47 13 51 16 48 23 L43 30"/>
-    <!-- fork: right bottom ? left top -->
     <path d="M46 46 L26 22"/>
     <path d="M21 15 L26 22"/>
     <path d="M26 13 L26 22"/>

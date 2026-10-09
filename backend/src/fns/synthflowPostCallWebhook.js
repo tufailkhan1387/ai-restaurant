@@ -11,6 +11,7 @@ import {
   parseReservationTime,
   lastSpokenReservationTime,
 } from "../lib/tableReservationService.js";
+import { applyCallDurationToMinutes } from "../billing/minutePacks.js";
 
 function truthyYes(v) {
   if (v == null) return false;
@@ -477,6 +478,7 @@ export async function synthflowPostCallWebhook(req, res) {
     if (synthflowCallId) {
       callRow = await knex("calls").where({ synthflow_call_id: synthflowCallId }).first();
     }
+    const previousDurationSeconds = Number(callRow?.duration_seconds || 0) || 0;
 
     const callPatch = {
       phone_number: callerPhone,
@@ -498,6 +500,18 @@ export async function synthflowPostCallWebhook(req, res) {
     } else {
       const [created] = await knex("calls").insert(callPatch).returning("*");
       callRow = created;
+    }
+
+    if (restaurant?.id && durationSeconds > 0) {
+      try {
+        await applyCallDurationToMinutes(knex, {
+          restaurantId: restaurant.id,
+          durationSeconds,
+          previousDurationSeconds,
+        });
+      } catch (minErr) {
+        console.warn("Voice minutes deduct failed:", minErr.message);
+      }
     }
 
     // Save conversation turns into conversations table

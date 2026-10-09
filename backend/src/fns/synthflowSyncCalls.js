@@ -1,6 +1,7 @@
 import { getKnex } from "../db.js";
 import { synthflowRequest } from "../lib/synthflowClient.js";
 import { normalizeE164 } from "../lib/voiceWebhookUtils.js";
+import { applyCallDurationToMinutes } from "../billing/minutePacks.js";
 
 function mapCallStatus(raw) {
   const s = String(raw || "").toLowerCase();
@@ -95,6 +96,7 @@ export async function synthflowSyncCalls(req, res) {
             : sfCall.call_summary || sfCall.summary || null;
 
         let callRow = await knex("calls").where({ synthflow_call_id: synthflowCallId }).first();
+        const previousDurationSeconds = Number(callRow?.duration_seconds || 0) || 0;
 
         const callPatch = {
           phone_number: callerPhone,
@@ -116,6 +118,18 @@ export async function synthflowSyncCalls(req, res) {
         } else {
           const [created] = await knex("calls").insert(callPatch).returning("*");
           callRow = created;
+        }
+
+        if (durationSeconds > 0 && callPatch.direction === "inbound") {
+          try {
+            await applyCallDurationToMinutes(knex, {
+              restaurantId: rest.id,
+              durationSeconds,
+              previousDurationSeconds,
+            });
+          } catch (minErr) {
+            console.warn("Voice minutes deduct failed:", minErr.message);
+          }
         }
         totalSyncedCalls++;
 

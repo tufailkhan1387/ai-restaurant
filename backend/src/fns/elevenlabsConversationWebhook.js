@@ -1,5 +1,6 @@
 import { getKnex } from "../db.js";
 import { resolveRestaurantIdFromElConversation } from "../lib/voiceWebhookUtils.js";
+import { applyCallDurationToMinutes } from "../billing/minutePacks.js";
 
 export async function elevenlabsConversationWebhook(req, res) {
   try {
@@ -83,6 +84,12 @@ export async function elevenlabsConversationWebhook(req, res) {
       if (adLead?.call_id) callId = adLead.call_id;
     }
 
+    let previousDurationSeconds = 0;
+    if (callId) {
+      const existing = await knex("calls").select("duration_seconds", "restaurant_id").where({ id: callId }).first();
+      previousDurationSeconds = Number(existing?.duration_seconds || 0) || 0;
+    }
+
     const callPatch = {
       status:
         payload.status === "done"
@@ -95,6 +102,8 @@ export async function elevenlabsConversationWebhook(req, res) {
       recording_url: recordingUrl,
       notes: payload.analysis?.summary || null,
       elevenlabs_conversation_id: payload.conversation_id,
+      provider: "elevenlabs",
+      ...(resolvedRestaurantId && !isAutoDialer ? { restaurant_id: resolvedRestaurantId } : {}),
       ended_at:
         payload.status === "done" || payload.status === "failed"
           ? new Date().toISOString()
@@ -126,6 +135,23 @@ export async function elevenlabsConversationWebhook(req, res) {
         await knex("auto_dialer_leads")
           .update({ call_id: callId })
           .where("id", autoDialerLeadId);
+      }
+    }
+
+    if (
+      !isAutoDialer &&
+      resolvedRestaurantId &&
+      durationSeconds > 0 &&
+      (payload.status === "done" || payload.status === "failed" || callId)
+    ) {
+      try {
+        await applyCallDurationToMinutes(knex, {
+          restaurantId: resolvedRestaurantId,
+          durationSeconds,
+          previousDurationSeconds,
+        });
+      } catch (minErr) {
+        console.warn("Voice minutes deduct failed:", minErr.message);
       }
     }
 

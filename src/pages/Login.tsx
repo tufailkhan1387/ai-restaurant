@@ -11,7 +11,7 @@ import {
   ArrowLeft,
   KeyRound,
 } from "lucide-react";
-import { BRAND_ASSETS } from "@/lib/brand";
+import { BRAND_ASSETS, PRODUCT_NAME } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,7 +63,7 @@ export default function Login() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 animate-pulse">
-          <img src={BRAND_ASSETS.appIcon} alt="" className="h-12 w-12 rounded-2xl shadow-lg shadow-primary/30" />
+          <img src={BRAND_ASSETS.appIcon} alt={PRODUCT_NAME} className="h-12 w-12 rounded-2xl shadow-lg" />
           <span className="text-sm font-medium text-muted-foreground">{t("common:loading", "Loading…")}</span>
         </div>
       </div>
@@ -238,8 +238,7 @@ export default function Login() {
         />
 
         <div className="relative z-10 flex items-center gap-3">
-          <img src={BRAND_ASSETS.appIcon} alt="" className="h-11 w-11 rounded-2xl shadow-lg" />
-          <span className="text-lg font-semibold tracking-tight">Royal Restaurant</span>
+          <img src={BRAND_ASSETS.logoHorizontal} alt={PRODUCT_NAME} className="h-9 w-auto max-w-[200px]" />
         </div>
 
         <div className="relative z-10 max-w-md space-y-5">
@@ -256,7 +255,7 @@ export default function Login() {
         </div>
 
         <p className="relative z-10 text-sm text-primary-foreground/50">
-          © {new Date().getFullYear()} Royal Restaurant
+          © {new Date().getFullYear()} {PRODUCT_NAME}
         </p>
       </aside>
 
@@ -276,10 +275,9 @@ export default function Login() {
         />
 
         <div className="relative w-full max-w-[400px] animate-fade-in my-auto">
-          <div className="flex items-center gap-2 mb-6 lg:hidden">
-            <img src={BRAND_ASSETS.appIcon} alt="" className="h-9 w-9 rounded-xl shadow-md shadow-primary/30" />
-            <p className="text-base font-bold tracking-tight text-foreground">Royal Restaurant</p>
-          </div>
+          {/* <div className="mb-6 flex items-center justify-center lg:justify-start">
+            <img src={BRAND_ASSETS.logoHorizontal} alt={PRODUCT_NAME} className="h-9 w-auto max-w-[200px]" />
+          </div> */}
 
           <div className="mb-8 space-y-2 text-center lg:text-left">
             {view !== "login" ? (

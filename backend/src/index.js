@@ -31,6 +31,8 @@ const allowedOrigins = [
   process.env.PUBLIC_APP_URL,
   "http://localhost:8080",
   "http://127.0.0.1:8080",
+  "http://ringtable.io",
+  "https://ringtable.io",
   "https://airestaurant.toolkitpro.cloud"
 ].filter(Boolean);
 
@@ -57,7 +59,7 @@ app.get("/api/health", (_req, res) => {
   const present = (key) => Boolean(String(process.env[key] || "").trim());
   res.json({
     ok: true,
-    service: "airestaurantorder-api",
+    service: "ringtable-api",
     env_file: envFilePath || null,
     cwd: process.cwd(),
     config: {

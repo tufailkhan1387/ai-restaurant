@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { featuresForPlan } from "./planFeatures.js";
-import { includedMinutesForPlan } from "./minutePacks.js";
 
 export function slugifyName(name) {
   const base = String(name || "")
@@ -96,9 +95,6 @@ export async function provisionPaidSignup(knex, subscription, {
           is_branch: false,
           subscription_plan: locked.plan,
           subscription_status: "active",
-          voice_minutes_included: includedMinutesForPlan(locked.plan),
-          voice_minutes_purchased: 0,
-          voice_minutes_used: 0,
         })
         .returning("*");
       restaurantId = restaurant.id;
@@ -109,6 +105,8 @@ export async function provisionPaidSignup(knex, subscription, {
         email,
       });
 
+      // One restaurant portal per owner email
+      await trx("restaurant_members").where({ user_id: userId }).del();
       await trx("restaurant_members").insert({
         user_id: userId,
         restaurant_id: restaurantId,
@@ -131,7 +129,6 @@ export async function provisionPaidSignup(knex, subscription, {
     await trx("restaurants").where({ id: restaurantId }).update({
       subscription_plan: locked.plan,
       subscription_status: "active",
-      voice_minutes_included: includedMinutesForPlan(locked.plan),
       updated_at: new Date(),
     });
 

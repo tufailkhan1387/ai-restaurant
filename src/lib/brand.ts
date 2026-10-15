@@ -1,20 +1,27 @@
-/** Product brand — keep UI copy in sync with these constants. */
+/** Official product brand — keep UI copy in sync with these assets. */
 
-export const PRODUCT_NAME = "AI Restaurant";
-export const PRODUCT_BYLINE = "by Qubetech";
-export const PRODUCT_COMPANY = "Qubetech";
+export const PRODUCT_NAME = "Ringtable";
 export const PRODUCT_EMAIL = "join@ringtable.io";
 export const PRODUCT_TAGLINE = "Never miss a restaurant order again.";
 export const PRODUCT_DESCRIPTION =
-  "AI Restaurant answers every call, takes pickup orders, books tables, and sends phone, QR, website and staff orders straight to your kitchen — in one order inbox.";
+  "Ringtable answers every call, takes pickup orders, books tables, and sends phone, QR, website and staff orders straight to your kitchen - in one order inbox.";
 
 export const BRAND_ASSETS = {
-  /** Orange utensils app mark */
-  appIcon: "/brand/app-icon.png",
-  appIconSvg: "/brand/app-icon.svg",
+  /** Square app mark (dark tile) — favicon / compact UI */
+  appIcon: "/brand/ringtable-app-icon.svg",
+  appIconPng: "/brand/ringtable-app-icon.png",
+  /** Icon only (no tile) */
+  icon: "/brand/ringtable-icon.svg",
+  /** Full wordmark — light backgrounds */
+  logoHorizontal: "/brand/ringtable-logo-horizontal.svg",
+  logoHorizontalPng: "/brand/ringtable-logo-horizontal.png",
+  /** Full wordmark — dark backgrounds */
+  logoHorizontalWhite: "/brand/ringtable-logo-horizontal-white.svg",
+  logoStacked: "/brand/ringtable-logo-stacked.svg",
+  logoOnCharcoal: "/brand/ringtable-logo-on-charcoal.svg",
+  logoOnCream: "/brand/ringtable-logo-on-cream.svg",
 } as const;
 
 export function productTitle(suffix?: string) {
-  if (suffix) return `${PRODUCT_NAME} — ${suffix} | ${PRODUCT_COMPANY}`;
-  return `${PRODUCT_NAME} | ${PRODUCT_COMPANY}`;
+  return suffix ? `${PRODUCT_NAME} — ${suffix}` : PRODUCT_NAME;
 }

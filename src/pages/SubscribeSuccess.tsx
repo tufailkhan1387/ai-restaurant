@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { getApiBase } from "@/lib/apiBase";
 import { BILLING_PLANS, BillingPlanId, formatPlanPrice } from "@/lib/billingPlans";
-import { BRAND_ASSETS, PRODUCT_BYLINE, PRODUCT_NAME, productTitle } from "@/lib/brand";
+import { BRAND_ASSETS, PRODUCT_NAME, productTitle } from "@/lib/brand";
 import "./landing.css";
 
 type Subscription = {
@@ -78,14 +78,8 @@ export default function SubscribeSuccess() {
     <div className="lp">
       <nav className="navwrap">
         <div className="container navrow">
-          <Link className="brand" to="/" aria-label={`${PRODUCT_NAME} ${PRODUCT_BYLINE}`}>
-            <span className="lg" aria-hidden="true">
-              <img src={BRAND_ASSETS.appIcon} alt="" width={44} height={44} />
-            </span>
-            <span className="brand-name">
-              {PRODUCT_NAME}
-              <small>{PRODUCT_BYLINE}</small>
-            </span>
+          <Link className="brand" to="/">
+            <img className="brand-wordmark" src={BRAND_ASSETS.logoHorizontalWhite} alt={PRODUCT_NAME} width={168} height={42} />
           </Link>
         </div>
       </nav>

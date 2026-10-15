@@ -15,13 +15,12 @@ import {
   isDummyStripeSecret,
   listPlans,
   priceLockedUntil,
+  usesDummyStripeCredentials,
 } from "../billing/plans.js";
 import {
-  creditPurchasedMinutes,
-  ensureIncludedMinutes,
   getMinutePack,
+  getMinutesBalance,
   listMinutePacks,
-  resolveMinuteUsage,
 } from "../billing/minutePacks.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -48,14 +47,20 @@ function publicSubscription(row) {
   };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 async function findSubscription(knex, sessionId) {
   const id = String(sessionId || "").trim();
   if (!id) return null;
-  return knex("billing_subscriptions")
-    .where(function match() {
-      this.where({ id }).orWhere({ stripe_checkout_session_id: id });
-    })
-    .first();
+  // `id` is uuid — never compare non-UUID Stripe session ids (cs_test_…) against it.
+  if (UUID_RE.test(id)) {
+    return knex("billing_subscriptions")
+      .where(function match() {
+        this.where({ id }).orWhere({ stripe_checkout_session_id: id });
+      })
+      .first();
+  }
+  return knex("billing_subscriptions").where({ stripe_checkout_session_id: id }).first();
 }
 
 function stripeClient() {
@@ -136,27 +141,19 @@ export async function billingWebhookHandler(req, res) {
     const knex = getKnex();
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
-      if (session.metadata?.type === "minute_pack") {
-        const purchase = await knex("billing_minute_purchases")
-          .where({ stripe_checkout_session_id: session.id })
-          .first();
-        if (purchase && purchase.status !== "paid") {
-          await knex("billing_minute_purchases")
-            .where({ id: purchase.id })
-            .update({
-              status: "paid",
-              paid_at: new Date(),
-              stripe_payment_intent_id: session.payment_intent || purchase.stripe_payment_intent_id,
-              updated_at: new Date(),
-            });
-          await creditPurchasedMinutes(knex, {
-            restaurantId: purchase.restaurant_id,
-            minutes: purchase.minutes,
-          });
-        }
-      } else {
-        const row = await knex("billing_subscriptions").where({ stripe_checkout_session_id: session.id }).first();
-        if (row) await syncStripeSession(knex, row);
+      const row = await knex("billing_subscriptions").where({ stripe_checkout_session_id: session.id }).first();
+      if (row) await syncStripeSession(knex, row);
+      if (session.metadata?.kind === "ai_minute_pack" || session.metadata?.purchase_id) {
+        const purchaseId = session.metadata.purchase_id;
+        const q = knex("ai_minute_purchases").where({ status: "pending" });
+        if (purchaseId) q.andWhere({ id: purchaseId });
+        else q.andWhere({ stripe_checkout_session_id: session.id });
+        await q.update({
+          status: "paid",
+          paid_at: new Date(),
+          stripe_checkout_session_id: session.id,
+          updated_at: new Date(),
+        });
       }
     } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
       const sub = event.data.object;
@@ -207,6 +204,7 @@ router.get("/plans", (_req, res) => {
 router.get("/config", (_req, res) => {
   res.json({
     mode: billingMode(),
+    dummy_credentials: usesDummyStripeCredentials(),
     publishable_key: billingMode() === "stripe" ? process.env.STRIPE_PUBLISHABLE_KEY || null : null,
   });
 });
@@ -313,7 +311,6 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    const stripe = await stripeClient();
     const [pending] = await knex("billing_subscriptions")
       .insert({
         plan: plan.id,
@@ -330,6 +327,26 @@ router.post("/signup", async (req, res) => {
         updated_at: now,
       })
       .returning("*");
+
+    // Dummy Stripe keys → local Checkout page (test card 4242…). Real keys → Stripe-hosted Checkout.
+    if (usesDummyStripeCredentials()) {
+      const sessionId = `cs_test_${pending.id}`;
+      await knex("billing_subscriptions")
+        .where({ id: pending.id })
+        .update({ stripe_checkout_session_id: sessionId, updated_at: new Date() });
+      // Relative path so local/prod hosts both work with dummy credentials.
+      return res.json({
+        mode: "stripe",
+        checkout_url: `/signup/checkout?session=${sessionId}`,
+        session_id: sessionId,
+        dummy_credentials: true,
+      });
+    }
+
+    const stripe = await stripeClient();
+    if (!stripe) {
+      return res.status(503).json({ error: "Stripe is not configured." });
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -354,7 +371,7 @@ router.post("/signup", async (req, res) => {
             currency: "usd",
             unit_amount: amount,
             recurring: { interval: interval === "year" ? "year" : "month" },
-            product_data: { name: `AI Restaurant ${plan.name}`, description: plan.blurb },
+            product_data: { name: `Ringtable ${plan.name}`, description: plan.blurb },
           },
         },
       ],
@@ -368,6 +385,84 @@ router.post("/signup", async (req, res) => {
   } catch (err) {
     console.error("Signup checkout failed:", err);
     return res.status(500).json({ error: err.message || "Could not start signup" });
+  }
+});
+
+/** Local Stripe Checkout (dummy credentials): load pending signup session. */
+router.get("/signup/checkout/:sessionId", async (req, res) => {
+  try {
+    const knex = getKnex();
+    const row = await findSubscription(knex, req.params.sessionId);
+    if (!row || !row.pending_password_hash) {
+      return res.status(404).json({ error: "Checkout session not found." });
+    }
+    if (row.status === "active" && row.restaurant_id) {
+      return res.json({
+        already_paid: true,
+        success_url: `/signup/success?session=${row.stripe_checkout_session_id || row.id}`,
+      });
+    }
+    const plan = getPlan(row.plan);
+    return res.json({
+      session_id: row.stripe_checkout_session_id || row.id,
+      plan: row.plan,
+      plan_name: plan?.name || row.plan,
+      interval: row.billing_interval,
+      amount_cents: row.amount_cents,
+      currency: row.currency || "usd",
+      restaurant_name: row.restaurant_name,
+      customer_email: row.customer_email,
+      status: row.status,
+      dummy_credentials: true,
+      test_card: "4242 4242 4242 4242",
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Could not load checkout" });
+  }
+});
+
+/** Local Stripe Checkout (dummy credentials): pay with Stripe test card, then claim. */
+router.post("/signup/pay", async (req, res) => {
+  try {
+    if (!usesDummyStripeCredentials() && billingMode() !== "stripe") {
+      return res.status(400).json({ error: "Use Stripe Checkout for live payments." });
+    }
+    if (!usesDummyStripeCredentials()) {
+      return res.status(400).json({ error: "This endpoint is only for dummy Stripe credentials." });
+    }
+
+    const sessionId = String(req.body?.session || req.body?.session_id || "").trim();
+    if (!sessionId) return res.status(400).json({ error: "Missing checkout session" });
+
+    const card = evaluateDummyCard(req.body?.card || {});
+    if (!card.ok) return res.status(402).json({ error: card.message, code: card.code });
+
+    const knex = getKnex();
+    let row = await findSubscription(knex, sessionId);
+    if (!row || !row.pending_password_hash) {
+      return res.status(404).json({ error: "Checkout session not found." });
+    }
+
+    const periodEnd = addBillingPeriod(new Date(), row.billing_interval);
+    const [updated] = await knex("billing_subscriptions")
+      .where({ id: row.id })
+      .update({
+        status: "active",
+        card_last4: card.last4,
+        current_period_end: row.current_period_end || periodEnd,
+        price_locked_until: row.price_locked_until || priceLockedUntil(row.plan, new Date()),
+        updated_at: new Date(),
+      })
+      .returning("*");
+    row = updated || row;
+
+    return res.json({
+      ok: true,
+      success_url: `/signup/success?session=${row.stripe_checkout_session_id || row.id}`,
+    });
+  } catch (err) {
+    console.error("Dummy signup pay failed:", err);
+    return res.status(500).json({ error: err.message || "Payment failed" });
   }
 });
 
@@ -502,7 +597,7 @@ router.post("/checkout", optionalAuth, async (req, res) => {
             currency: "usd",
             unit_amount: amount,
             recurring: { interval: interval === "year" ? "year" : "month" },
-            product_data: { name: `AI Restaurant ${plan.name}`, description: plan.blurb },
+            product_data: { name: `Ringtable ${plan.name}`, description: plan.blurb },
           },
         },
       ],
@@ -569,161 +664,128 @@ router.post("/checkout/:sessionId/cancel", async (req, res) => {
   }
 });
 
-router.get("/minute-packs", (_req, res) => {
-  res.json({ packs: listMinutePacks(), mode: billingMode() });
-});
+async function assertRestaurantAccess(req, restaurantId) {
+  const isSuper = req.user?.roles?.includes("super_admin");
+  if (isSuper) return true;
+  return (req.user?.restaurantIds || []).includes(restaurantId);
+}
 
-/** Current voice-minute balance for a restaurant (My Restaurant settings). */
+async function loadPlanContext(knex, restaurantId) {
+  const resolved = await resolveRestaurantPlan(knex, restaurantId);
+  const ownerId = resolved.restaurant?.id || restaurantId;
+  const sub = await knex("billing_subscriptions")
+    .where({ restaurant_id: ownerId })
+    .whereIn("status", ["active", "trialing"])
+    .orderBy("created_at", "desc")
+    .first();
+  return { resolved, ownerId, sub };
+}
+
+/** GET /api/billing/minutes/:restaurantId — plan allowance, used, remaining, packs */
 router.get("/minutes/:restaurantId", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
     const rid = req.params.restaurantId;
-    const isSuper = req.user?.roles?.includes("super_admin");
-    const allowed = isSuper || req.user?.restaurantIds?.includes(rid);
-    if (!allowed) return res.status(403).json({ error: "Forbidden" });
-
-    let restaurant = await knex("restaurants").where({ id: rid }).first();
-    if (!restaurant) return res.status(404).json({ error: "Restaurant not found" });
-    restaurant = await ensureIncludedMinutes(knex, restaurant);
-    const usage = await resolveMinuteUsage(knex, restaurant);
-
+    if (!(await assertRestaurantAccess(req, rid))) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const { resolved, ownerId, sub } = await loadPlanContext(knex, rid);
+    const balance = await getMinutesBalance(knex, ownerId, resolved.plan, sub);
     return res.json({
-      restaurant_id: rid,
-      restaurant_name: restaurant.name,
-      subscription_status: restaurant.subscription_status || null,
-      ...usage,
-      packs: listMinutePacks(),
-      mode: billingMode(),
+      ...balance,
+      subscription_status: resolved.restaurant?.subscription_status || sub?.status || null,
+      restaurant_id: ownerId,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Minutes balance error:", err);
     return res.status(500).json({ error: err.message || "Could not load minutes" });
   }
 });
 
-async function applyMinutePurchase(knex, purchase) {
-  if (!purchase || purchase.status === "paid") return purchase;
-  const [updated] = await knex("billing_minute_purchases")
-    .where({ id: purchase.id })
-    .update({
-      status: "paid",
-      paid_at: purchase.paid_at || new Date(),
-      updated_at: new Date(),
-    })
-    .returning("*");
-  const row = updated || purchase;
-  if (row.status === "paid") {
-    await creditPurchasedMinutes(knex, { restaurantId: row.restaurant_id, minutes: row.minutes });
-  }
-  return row;
-}
+router.get("/minute-packs", (_req, res) => {
+  res.json({ packs: listMinutePacks() });
+});
 
-async function syncMinuteStripeSession(knex, purchase) {
-  if (!purchase || purchase.mode !== "stripe") return applyMinutePurchase(knex, purchase);
-  if (purchase.status === "paid") return purchase;
-  const stripe = await stripeClient();
-  if (!stripe || !purchase.stripe_checkout_session_id) return purchase;
-  const session = await stripe.checkout.sessions.retrieve(purchase.stripe_checkout_session_id);
-  if (session.payment_status !== "paid" && session.status !== "complete") return purchase;
-  const [updated] = await knex("billing_minute_purchases")
-    .where({ id: purchase.id })
-    .update({
-      stripe_payment_intent_id: session.payment_intent || purchase.stripe_payment_intent_id,
-      updated_at: new Date(),
-    })
-    .returning("*");
-  return applyMinutePurchase(knex, updated || purchase);
-}
-
-/** Buy extra voice minutes for a restaurant. Dummy card or Stripe Checkout. */
-router.post("/minutes/purchase", optionalAuth, requireAuth, async (req, res) => {
+/**
+ * POST /api/billing/minutes/checkout
+ * body: { restaurant_id, pack_id }
+ * Dummy Stripe → credits minutes immediately. Real Stripe → Checkout session.
+ */
+router.post("/minutes/checkout", optionalAuth, requireAuth, async (req, res) => {
   try {
     const knex = getKnex();
-    const restaurantId = String(req.body?.restaurant_id || "").trim();
-    const pack = getMinutePack(req.body?.pack);
-    if (!restaurantId || !pack) {
-      return res.status(400).json({ error: "Choose a restaurant and a minute pack." });
+    const rid = String(req.body?.restaurant_id || "").trim();
+    const pack = getMinutePack(req.body?.pack_id);
+    if (!rid) return res.status(400).json({ error: "restaurant_id is required" });
+    if (!pack) return res.status(400).json({ error: "Choose a minute pack." });
+    if (!(await assertRestaurantAccess(req, rid))) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
-    const isSuper = req.user?.roles?.includes("super_admin");
-    const allowed = isSuper || req.user?.restaurantIds?.includes(restaurantId);
-    if (!allowed) return res.status(403).json({ error: "Forbidden" });
-
-    const restaurant = await knex("restaurants").where({ id: restaurantId }).first();
-    if (!restaurant) return res.status(404).json({ error: "Restaurant not found" });
-
-    const email = String(req.body?.email || req.user?.email || restaurant.contact_email || "").trim().toLowerCase();
+    const { resolved, ownerId, sub } = await loadPlanContext(knex, rid);
     const now = new Date();
     const mode = billingMode();
 
-    if (mode === "dummy") {
-      const card = evaluateDummyCard(req.body?.card || {});
-      if (!card.ok) return res.status(402).json({ error: card.message, code: card.code });
-
-      const [purchase] = await knex("billing_minute_purchases")
+    // Local / dummy credentials: credit instantly so settings UX is one click
+    if (mode === "dummy" || usesDummyStripeCredentials()) {
+      const [row] = await knex("ai_minute_purchases")
         .insert({
-          restaurant_id: restaurantId,
-          user_id: req.user.id,
+          restaurant_id: ownerId,
           pack_id: pack.id,
           minutes: pack.minutes,
           amount_cents: pack.amountCents,
           currency: "usd",
           status: "paid",
-          mode: "dummy",
-          customer_email: email || null,
-          card_last4: card.last4,
+          mode: mode === "dummy" ? "dummy" : "stripe_test",
+          created_by: req.user.id,
           paid_at: now,
           created_at: now,
           updated_at: now,
+          stripe_checkout_session_id: `min_dummy_${Date.now()}`,
         })
         .returning("*");
 
-      await creditPurchasedMinutes(knex, { restaurantId, minutes: pack.minutes });
-      const fresh = await ensureIncludedMinutes(knex, await knex("restaurants").where({ id: restaurantId }).first());
-      const usage = await resolveMinuteUsage(knex, fresh);
-
+      const balance = await getMinutesBalance(knex, ownerId, resolved.plan, sub);
       return res.json({
-        mode: "dummy",
-        purchase: {
-          id: purchase.id,
-          pack_id: pack.id,
-          minutes: pack.minutes,
-          amount_cents: pack.amountCents,
-          status: "paid",
-        },
-        ...usage,
+        success: true,
+        mode: "instant",
+        purchase: row,
+        balance,
+        message: `Added ${pack.minutes.toLocaleString()} minutes to your balance.`,
       });
     }
 
-    const stripe = await stripeClient();
-    const [pending] = await knex("billing_minute_purchases")
+    const [pending] = await knex("ai_minute_purchases")
       .insert({
-        restaurant_id: restaurantId,
-        user_id: req.user.id,
+        restaurant_id: ownerId,
         pack_id: pack.id,
         minutes: pack.minutes,
         amount_cents: pack.amountCents,
         currency: "usd",
-        status: "incomplete",
+        status: "pending",
         mode: "stripe",
-        customer_email: email || null,
+        created_by: req.user.id,
         created_at: now,
         updated_at: now,
       })
       .returning("*");
 
+    const stripe = await stripeClient();
+    if (!stripe) {
+      return res.status(503).json({ error: "Stripe is not configured." });
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer_email: email || undefined,
       client_reference_id: pending.id,
-      success_url: `${appBaseUrl()}/restaurant-settings?minutes_session={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appBaseUrl()}/restaurant-settings?minutes_canceled=1`,
+      success_url: `${appBaseUrl()}/restaurant-settings?minutes_paid=${pending.id}`,
+      cancel_url: `${appBaseUrl()}/restaurant-settings?minutes_cancel=1`,
       metadata: {
+        kind: "ai_minute_pack",
         purchase_id: pending.id,
-        restaurant_id: restaurantId,
+        restaurant_id: ownerId,
         pack_id: pack.id,
         minutes: String(pack.minutes),
-        type: "minute_pack",
       },
       line_items: [
         {
@@ -732,63 +794,66 @@ router.post("/minutes/purchase", optionalAuth, requireAuth, async (req, res) => 
             currency: "usd",
             unit_amount: pack.amountCents,
             product_data: {
-              name: `AI Restaurant ${pack.label}`,
-              description: `Extra AI voice minutes for ${restaurant.name}`,
+              name: `Ringtable AI minutes — ${pack.label}`,
+              description: `${pack.minutes} extra AI call minutes`,
             },
           },
         },
       ],
     });
 
-    await knex("billing_minute_purchases")
+    await knex("ai_minute_purchases")
       .where({ id: pending.id })
       .update({ stripe_checkout_session_id: session.id, updated_at: new Date() });
 
-    return res.json({ mode: "stripe", checkout_url: session.url, session_id: session.id });
+    return res.json({
+      success: true,
+      mode: "stripe",
+      checkout_url: session.url,
+      session_id: session.id,
+      purchase_id: pending.id,
+    });
   } catch (err) {
-    console.error("Minute purchase failed:", err);
+    console.error("Minute pack checkout failed:", err);
     return res.status(500).json({ error: err.message || "Could not start minute purchase" });
   }
 });
 
-/** After Stripe redirect for minute packs. */
+/** Mark minute pack paid after Stripe Checkout (webhook or success page claim). */
 router.post("/minutes/claim", optionalAuth, requireAuth, async (req, res) => {
   try {
-    const sessionId = String(req.body?.session || req.body?.session_id || "").trim();
-    if (!sessionId) return res.status(400).json({ error: "Missing checkout session" });
-
     const knex = getKnex();
-    let purchase = await knex("billing_minute_purchases")
-      .where(function match() {
-        this.where({ id: sessionId }).orWhere({ stripe_checkout_session_id: sessionId });
-      })
-      .first();
-    if (!purchase) return res.status(404).json({ error: "Purchase not found" });
-
-    const isSuper = req.user?.roles?.includes("super_admin");
-    const allowed = isSuper || req.user?.restaurantIds?.includes(purchase.restaurant_id);
-    if (!allowed) return res.status(403).json({ error: "Forbidden" });
-
-    purchase = await syncMinuteStripeSession(knex, purchase);
-    if (purchase.status !== "paid") {
-      return res.status(402).json({ error: "Payment is not complete yet." });
+    const purchaseId = String(req.body?.purchase_id || "").trim();
+    const sessionId = String(req.body?.session_id || "").trim();
+    if (!purchaseId && !sessionId) {
+      return res.status(400).json({ error: "purchase_id or session_id required" });
     }
 
-    const restaurant = await ensureIncludedMinutes(
-      knex,
-      await knex("restaurants").where({ id: purchase.restaurant_id }).first()
-    );
-    const usage = await resolveMinuteUsage(knex, restaurant);
-    return res.json({
-      purchase: {
-        id: purchase.id,
-        pack_id: purchase.pack_id,
-        minutes: purchase.minutes,
-        amount_cents: purchase.amount_cents,
-        status: purchase.status,
-      },
-      ...usage,
-    });
+    let row = purchaseId
+      ? await knex("ai_minute_purchases").where({ id: purchaseId }).first()
+      : await knex("ai_minute_purchases").where({ stripe_checkout_session_id: sessionId }).first();
+    if (!row) return res.status(404).json({ error: "Purchase not found" });
+    if (!(await assertRestaurantAccess(req, row.restaurant_id))) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    if (row.status !== "paid" && row.mode === "stripe" && row.stripe_checkout_session_id) {
+      const stripe = await stripeClient();
+      if (stripe) {
+        const session = await stripe.checkout.sessions.retrieve(row.stripe_checkout_session_id);
+        if (session.payment_status === "paid" || session.status === "complete") {
+          const [updated] = await knex("ai_minute_purchases")
+            .where({ id: row.id })
+            .update({ status: "paid", paid_at: new Date(), updated_at: new Date() })
+            .returning("*");
+          row = updated || row;
+        }
+      }
+    }
+
+    const { resolved, ownerId, sub } = await loadPlanContext(knex, row.restaurant_id);
+    const balance = await getMinutesBalance(knex, ownerId, resolved.plan, sub);
+    return res.json({ success: true, purchase: row, balance });
   } catch (err) {
     console.error("Minute claim failed:", err);
     return res.status(500).json({ error: err.message || "Could not claim minutes" });

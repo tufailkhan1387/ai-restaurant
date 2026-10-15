@@ -139,13 +139,21 @@
 .lp .ann a { color: #fff; text-decoration: none; background: rgba(255, 255, 255, 0.22); padding: 4px 12px; border-radius: 99px; margin-left: 8px; white-space: nowrap; border: 1px solid rgba(255, 255, 255, 0.28); }
 .lp .ann a:hover { background: rgba(255, 255, 255, 0.34); }
 .lp .navwrap { position: sticky; top: 0; z-index: 40; background: rgba(12, 22, 38, 0.92); backdrop-filter: blur(16px); border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.lp #demo,
+.lp #watch,
+.lp #how,
+.lp #engine,
+.lp #ai,
+.lp #results,
+.lp #roi,
+.lp #pricing { scroll-margin-top: 72px; }
 .lp .navrow { display: flex; align-items: center; gap: 28px; flex-wrap: nowrap; min-height: 72px; }
 .lp .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 17px; color: #fff; text-decoration: none; white-space: nowrap; flex: none; letter-spacing: -0.02em; }
 .lp .brand-name { display: flex; flex-direction: column; line-height: 1.05; }
 .lp .brand small { font-weight: 500; color: #8b97ab; font-size: 12px; letter-spacing: 0; margin-top: 3px; }
 .lp .brand-wordmark { display: block; height: 36px; width: auto; max-width: min(188px, 46vw); }
 .lp .lg { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; flex: none; overflow: hidden; box-shadow: 0 8px 16px -10px rgba(0, 0, 0, 0.45); }
-.lp .lg img { display: block; width: 44px; height: 44px; object-fit: cover; }
+.lp .lg img { display: block; width: 44px; height: 44px; }
 .lp .nav-toggle { display: none; margin-left: auto; width: 42px; height: 36px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: transparent; color: #fff; }
 .lp .nav-menu { display: flex; align-items: center; flex: 1; min-width: 0; gap: 16px; }
 .lp .navlinks { display: flex; align-items: center; justify-content: center; gap: 2px; list-style: none; margin: 0; padding: 0; flex: 1; }
@@ -365,6 +373,59 @@
 .lp .tb { background: rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px; font-size: 14px; height: 100%; }
 .lp .tb b { display: block; font-size: 15px; margin-bottom: 3px; }
 .lp .demo { background: #fff; border-radius: 20px; padding: 28px; color: var(--ink); }
+/* .cta p is peach for dark CTA copy — reset inside the white demo card */
+.lp .cta .demo,
+.lp .cta .demo p,
+.lp .cta .demo .text-mut { color: var(--mut); }
+.lp .cta .demo b,
+.lp .cta .demo .fw-bold { color: var(--ink); }
+.lp .cal-demo { padding-bottom: 20px; }
+.lp .cal-embed-wrap {
+  min-height: 520px;
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.lp .cal-embed-wrap iframe { width: 100% !important; }
+
+.lp .lp-video { position: relative; overflow: hidden; background: #0b1422; box-shadow: 0 28px 60px -28px rgba(15, 27, 45, 0.55); }
+.lp .lp-video-wide {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 27, 45, 0.08);
+  aspect-ratio: 16 / 9;
+}
+.lp .lp-video-reel {
+  width: min(100%, 320px);
+  margin: 0 auto;
+  border-radius: 28px;
+  border: 3px solid #1a2433;
+  aspect-ratio: 9 / 16;
+  max-height: 620px;
+}
+.lp .lp-video-el {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #0b1422;
+}
+.lp .lp-video-wide .lp-video-el { object-fit: contain; background: #0b1422; }
+.lp .lp-reel-block { text-align: center; }
+.lp .lp-reel-label {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--or);
+  margin-bottom: 14px;
+}
+.lp .lp-reel-caption { font-size: 14px; margin-top: 14px; margin-bottom: 0; }
 .lp .lbl { font-size: 12px; font-weight: 600; color: #334155; margin: 6px 0 8px; }
 .lp .chip-check { display: none; }
 .lp .chip { display: inline-block; font-size: 12px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 99px; margin: 0 6px 8px 0; color: #334155; cursor: pointer; user-select: none; }

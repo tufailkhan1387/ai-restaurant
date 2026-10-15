@@ -17,31 +17,53 @@ export const PLAN_FEATURES: Record<BillingPlanId, PlanFeatures> = {
 
 export const BILLING_PLANS: Record<
   BillingPlanId,
-  { name: string; monthly: number; yearly: number; yearlyNote: string; includedMinutes: number }
+  { name: string; monthly: number; yearly: number; yearlyNote: string; highlights: string[] }
 > = {
-  starter: { name: "Starter", monthly: 299, yearly: 2990, yearlyNote: "2 months free", includedMinutes: 1000 },
-  growth: { name: "Growth", monthly: 599, yearly: 5990, yearlyNote: "2 months free", includedMinutes: 2500 },
-  pilot: { name: "Pilot", monthly: 400, yearly: 4800, yearlyNote: "Same $400/mo rate, billed yearly", includedMinutes: 2500 },
+  starter: {
+    name: "Starter",
+    monthly: 299,
+    yearly: 2990,
+    yearlyNote: "2 months free",
+    highlights: [
+      "AI Receptionist",
+      "1,000 minutes",
+      "Phone + QR ordering",
+      "Reservations",
+      "One Order Inbox & KDS",
+      "AI performance dashboard",
+      "1 location - no branches or staff seats",
+    ],
+  },
+  growth: {
+    name: "Growth",
+    monthly: 599,
+    yearly: 5990,
+    yearlyNote: "2 months free",
+    highlights: [
+      "2,500 AI call minutes",
+      "Multiple branches included",
+      "User management included",
+      "Kitchen login - dedicated access for kitchen staff",
+      "Receptionist login - dedicated access for reservation staff",
+      "Salesperson login - dedicated access for sales staff",
+      "Multilingual support included",
+      "Direct support available",
+    ],
+  },
+  pilot: {
+    name: "Pilot",
+    monthly: 400,
+    yearly: 4800,
+    yearlyNote: "Same $400/mo rate, billed yearly",
+    highlights: [
+      "Everything in Growth",
+      "Same $400 price locked for 1 year",
+      "Weekly check-in with our team",
+      "Shape the product roadmap",
+      "4 spots remaining",
+    ],
+  },
 };
-
-/** One-time top-up packs (keep in sync with backend/src/billing/minutePacks.js). */
-export type MinutePackId = "m300" | "m500" | "m1000" | "m2000";
-
-export const MINUTE_PACKS: Record<
-  MinutePackId,
-  { id: MinutePackId; minutes: number; dollars: number; label: string }
-> = {
-  m300: { id: "m300", minutes: 300, dollars: 60, label: "300 minutes" },
-  m500: { id: "m500", minutes: 500, dollars: 100, label: "500 minutes" },
-  m1000: { id: "m1000", minutes: 1000, dollars: 170, label: "1,000 minutes" },
-  m2000: { id: "m2000", minutes: 2000, dollars: 300, label: "2,000 minutes" },
-};
-
-export function includedMinutesForPlan(plan: string | null | undefined) {
-  const key = String(plan || "").toLowerCase() as BillingPlanId;
-  if (!key) return BILLING_PLANS.growth.includedMinutes;
-  return BILLING_PLANS[key]?.includedMinutes ?? BILLING_PLANS.growth.includedMinutes;
-}
 
 export function planAmount(plan: BillingPlanId, interval: BillingInterval) {
   const row = BILLING_PLANS[plan];
